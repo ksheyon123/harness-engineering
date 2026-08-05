@@ -90,7 +90,7 @@
 
 ---
 
-## ~~#5 · `index-sync` 훅이 죽어 있다~~ <sub>P3</sub> ▸ **완료** `HASH_PLACEHOLDER`
+## ~~#5 · `index-sync` 훅이 죽어 있다~~ <sub>P3</sub> ▸ **완료** `823a567`
 
 > **결론: 뺐다.** 훅(`.claude/hooks/index-sync.mjs`)·`settings.json` 의 `PostToolUse` 등록·`index.json` 의 `components` 키·설계 문서 §7.2 를 함께 제거했다. spec: [`harness/index-sync-removal/spec.md`](./harness/index-sync-removal/spec.md).
 >
@@ -197,7 +197,7 @@ SyntaxError: Invalid or unexpected token
 | ✔ | ~~#4 qa-hash glob~~ | **완료** | #1 에 흡수 |
 | ✔ | ~~#8 CRLF 체크아웃~~ | **완료** `f6a4f1f` | P0. 모든 worktree 에서 게이트가 깨져 있었다 |
 | ✔ | ~~#3 worktree 기준 브랜치·설치 명령~~ | **완료** `1ffebe1` | 파이프라인 의식의 선행 조건이었다 |
-| ✔ | ~~#5 index-sync 결정~~ | **완료** `HASH_PLACEHOLDER` | 판단은 **제거**로 확정. 한 번도 동작한 적 없었고, 드리프트는 단일 출처화로 이미 다루고 있다 |
+| ✔ | ~~#5 index-sync 결정~~ | **완료** `823a567` | 판단은 **제거**로 확정. 한 번도 동작한 적 없었고, 드리프트는 단일 출처화로 이미 다루고 있다 |
 | 1 | #7 verify-branch 면제 경로 | 대기 | 하네스 자기 코드(`scripts/`·`.githooks/`)를 고치는 항목에 선행 |
 | 2 | #2 Phase 1 서술 제거 | 대기 | 값싸고, QA 산출물을 실제로 오염시킨다. **#5 뒤에 한다** — 같은 `harness-engineering.md` §11 을 고친다 |
 | — | #6 doggy rules | 대기 | 별도 저장소, 독립적으로 가능 |
