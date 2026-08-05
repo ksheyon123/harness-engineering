@@ -146,6 +146,47 @@
 
 ---
 
+## #8 · CRLF 체크아웃이 모든 worktree 에서 게이트를 깨뜨린다 <sub>P0</sub> ▸ **완료**
+
+**증상** — Windows(`core.autocrlf=true`)에서 **새로 만든 worktree 에서는 게이트가 항상 실패한다.** 메인 체크아웃에서는 통과한다. 즉 파이프라인 의식을 시작하는 순간 첫 worktree 에서 바로 막히고, `pre-push` 도 그 트리에서 게이트를 돌리므로 push 가 불가능해진다.
+
+```
+FAIL scripts/gate.test.mjs
+SyntaxError: Invalid or unexpected token
+ ❯ scripts/gate.test.mjs:2:1
+   2| import {
+    | ^
+```
+
+에러가 **테스트 파일의 import 문**을 가리켜서 테스트 코드 문제로 보이지만, 실제로 깨진 것은 **import 되는 쪽**(`scripts/gate.mjs`)이다.
+
+**원인** — `#!` 셰뱅 + CRLF 조합에서 vite-node 의 셰뱅 처리가 깨진다. 단일 변수 실험으로 확인:
+
+| 모듈 | 결과 |
+|---|:--:|
+| LF, 셰뱅 없음 | ✅ |
+| CRLF, 셰뱅 없음 | ✅ |
+| CRLF + 비ASCII 주석, 셰뱅 없음 | ✅ |
+| LF + 셰뱅 | ✅ |
+| **CRLF + 셰뱅** | **❌ SyntaxError** |
+
+`gate.mjs` 의 CRLF 를 LF 로 바꾸는 것만으로 실패→통과가 뒤집혔다. 하네스 스크립트는 전부 `#!/usr/bin/env node` 로 시작하므로 **전 파일이 이 조건에 해당한다.**
+
+**메인 체크아웃이 통과한 이유는 우연이다** — 그 파일들은 에디터가 LF 로 쓴 뒤 한 번도 재체크아웃되지 않았다. `git checkout`/`worktree add` 가 도는 순간 CRLF 가 된다. 원격에서 클론한 사람도 같은 실패를 겪는다.
+
+**근거**
+- `git config core.autocrlf` → `true`
+- `git show HEAD:scripts/gate.mjs` → CRLF 0개(인덱스는 LF). 변환은 **체크아웃에서만** 일어난다
+- `.gitattributes` 부재
+
+**고친 것** — `.gitattributes` 에 `* text=auto eol=lf` 를 둔다. 인덱스가 이미 LF 라 **저장소 내용은 한 바이트도 바뀌지 않는다** — 체크아웃 동작만 고정된다. `.sh`/훅에도 LF 가 맞다.
+
+**완료 조건** — 새 worktree 를 만들어 의존성을 설치하면 `node scripts/gate.mjs` 가 통과한다.
+
+**주의** — 이미 만들어진 워킹트리는 재체크아웃해야 반영된다(`git checkout -- .`). 그리고 이 항목은 `#3` 진행 중 부트스트랩 worktree 에서 발견됐다 — **파이프라인 의식을 실제로 밟지 않았으면 드러나지 않았을 결함이다.**
+
+---
+
 ## 우선순위 요약
 
 | 순서 | 항목 | 상태 | 이유 |
