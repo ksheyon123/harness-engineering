@@ -68,13 +68,14 @@ npm install   # prepare 훅이 core.hooksPath 를 .githooks 로 설정한다
 
 ## 알려진 제약
 
-이 저장소는 Turborepo 기반 프로젝트에서 하네스 부분만 분리한 것이라, 아직 그 프로젝트 구조에 결합된 지점이 남아 있다. 다른 프로젝트에 적용하려면 아래를 손봐야 한다.
+이 저장소는 Turborepo 기반 프로젝트에서 하네스 부분만 분리한 것이라, 아직 그 프로젝트 구조에 결합된 지점이 남아 있다.
 
 | 위치 | 결합 내용 |
 |---|---|
 | `.githooks/pre-push` | 게이트 대상이 `apps/web`·`packages/ui` 로 하드코딩(`TSC_DIRS`/`TEST_DIR`). 없으면 건너뛰므로 push 는 막히지 않지만, 그만큼 **객관 게이트가 무력화**된다 |
-| `scripts/worktree-add.mjs` | base 브랜치가 `dev` 로 고정 |
+| `scripts/worktree-add.mjs` | base 브랜치가 `dev`, 패키지 매니저가 npm 으로 고정 |
 | `.claude/hooks/qa-hash.mjs` | 테스트 파일 패턴이 `*.test.ts(x)` 로 고정 |
-| `.claude/CLAUDE.md` | '검증 명령' 절이 비어 있다 — 도입 프로젝트가 채워야 하고, `pre-push` 의 게이트 대상과 일치시켜야 한다 |
+| `.claude/agents/qa.md` | "테스트 러너가 없다"는 낡은 전제가 남아 QA 산출물을 오염시킬 수 있다 |
+| `.claude/hooks/index-sync.mjs` | `components` 매핑이 비어 있어 아무 동작도 하지 않는다 |
 
-또한 `.claude/hooks/index-sync.mjs` 는 `harness/index.json` 의 `components` 매핑을 읽는데, 현재 매핑이 비어 있어 아무 동작도 하지 않는다.
+각 항목의 원인·수정 방향·완료 조건은 [`BACKLOG.md`](./BACKLOG.md) 에 정리돼 있다.
