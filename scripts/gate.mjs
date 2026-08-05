@@ -19,6 +19,7 @@ export const CONFIG_PATH = "harness/config.json";
 
 export const DEFAULTS = {
   baseBranch: "dev",
+  installCommand: "npm install",
   testFilePatterns: ["**/*.test.{ts,tsx}"],
   skipDirs: ["node_modules", ".git", ".next", "dist", ".turbo"],
 };
@@ -56,8 +57,18 @@ export function loadConfig(text) {
     gate[kind] = list;
   }
 
+  // installCommand 는 worktree-add.mjs 가 쓴다. 값이 있는데 문자열이 아니거나 비어 있으면
+  // throw 한다 — gate 항목의 dir/cmd 와 같은 결이다. 오타가 조용히 기본값(npm)으로 둔갑하면
+  // pnpm 저장소에서 설치가 헛돌고, 그 사실은 그 worktree 의 게이트가 깨질 때까지 드러나지 않는다.
+  if (raw.installCommand !== undefined) {
+    if (typeof raw.installCommand !== "string" || !raw.installCommand) {
+      throw new Error(`installCommand 는 비어 있지 않은 문자열이어야 합니다`);
+    }
+  }
+
   return {
     baseBranch: raw.baseBranch ?? DEFAULTS.baseBranch,
+    installCommand: raw.installCommand ?? DEFAULTS.installCommand,
     testFilePatterns: raw.testFilePatterns ?? DEFAULTS.testFilePatterns,
     skipDirs: raw.skipDirs ?? DEFAULTS.skipDirs,
     gate,

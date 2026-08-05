@@ -37,6 +37,24 @@ describe("loadConfig", () => {
     expect(cfg.testFilePatterns).toEqual(["a"]);
   });
 
+  // installCommand: worktree-add.mjs 가 쓰는 설치 명령의 단일 출처.
+  // 미설정 시 기본값은 현재 동작(npm install) 이어야 한다 — 기존 저장소가 깨지면 안 된다.
+  it("installCommand 가 없으면 기본값 'npm install' 이다", () => {
+    expect(loadConfig("{}").installCommand).toBe("npm install");
+    expect(DEFAULTS.installCommand).toBe("npm install");
+  });
+
+  it("명시된 installCommand 를 그대로 돌려준다", () => {
+    const cfg = loadConfig(JSON.stringify({ installCommand: "pnpm install" }));
+    expect(cfg.installCommand).toBe("pnpm install");
+  });
+
+  // 설정 오타가 조용히 기본값으로 둔갑하면 안 된다 — gate 항목의 dir/cmd 검사와 같은 결.
+  it("installCommand 가 문자열이 아니거나 빈 문자열이면 throw 한다", () => {
+    expect(() => loadConfig(JSON.stringify({ installCommand: 42 }))).toThrow(/installCommand/);
+    expect(() => loadConfig(JSON.stringify({ installCommand: "" }))).toThrow(/installCommand/);
+  });
+
   // 설정 오타가 '게이트 없음' 으로 조용히 둔갑하면 안 된다.
   it("JSON 파싱에 실패하면 throw 한다", () => {
     expect(() => loadConfig("{ not json ")).toThrow();

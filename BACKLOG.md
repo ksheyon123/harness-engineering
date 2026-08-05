@@ -6,7 +6,7 @@
 
 > **파이프라인 의식을 적용한다(#1 완료).** 게이트가 신호를 못 내서 의식을 생략하던 전제는 해소됐다 — `node scripts/gate.mjs` 가 이 저장소의 vitest 스위트를 실제로 돌리고, 테스트 파일이 있으므로 QA 커버리지 매트릭스도 실질을 갖는다. 이후 항목은 spec 작성 → `harness/index.json` 등록 → worktree → 새 세션 → 게이트 → QA → 커밋/push 의 정규 흐름으로 진행한다.
 >
-> **단, worktree 생성에는 선행 조건이 하나 남아 있다.** 이 저장소엔 `dev` 브랜치가 없는데 `worktree-add.mjs:112` 는 분기 기준을 `dev` 로 하드코딩하고 있어(`harness/config.json` 의 `baseBranch: "main"` 을 읽지 않는다) 그대로는 실패한다. **#3 을 먼저 하거나**, 그 전까지는 `git worktree add -b <branch> ../<repo>-<task> main` 으로 수동 생성한다. 또한 등록된 task 브랜치에서 `scripts/`·`.githooks/` 를 메인 체크아웃에서 편집하면 `verify-branch` 가 막으므로(#7), 하네스 자기 코드를 고치는 항목은 worktree 에서 작업해야 한다.
+> **worktree 생성의 선행 조건은 해소됐다(#3 완료).** `worktree-add.mjs` 가 `harness/config.json` 의 `baseBranch`(이 저장소는 `main`)에서 분기하므로 `node scripts/worktree-add.mjs <branch> --launch` 가 그대로 동작한다. 다만 등록된 task 브랜치에서 `scripts/`·`.githooks/` 를 메인 체크아웃에서 편집하면 `verify-branch` 가 막으므로(#7), 하네스 자기 코드를 고치는 항목은 worktree 에서 작업해야 한다.
 
 ---
 
@@ -50,7 +50,9 @@
 
 ---
 
-## #3 · `worktree-add.mjs` 가 `dev` 와 npm 을 가정한다 <sub>P2</sub>
+## ~~#3 · `worktree-add.mjs` 가 `dev` 와 npm 을 가정한다~~ <sub>P2</sub> ▸ **완료**
+
+> **[`harness/worktree-config/spec.md`](./harness/worktree-config/spec.md) 로 이관 후 구현 완료.** `worktree-add.mjs` 가 `gate.mjs` 의 `loadConfig` 를 import 해 `baseBranch`·`installCommand` 를 읽는다(파서 사본을 만들지 않는다). 기준 ref 는 `<base>` → `origin/<base>` 순으로 찾고 **둘 다 없으면 에러로 멈춘다**(`HEAD` 로 물러서지 않는다). 기존 브랜치 attach 경로는 기준 ref 를 요구하지 않아 회귀가 없다. `scripts/worktree-add.test.mjs`(29 테스트)로 순수 함수를 덮었다.
 
 **증상** — 기준 브랜치가 `dev` 로 고정이라 `main` 만 쓰는 프로젝트에서 바로 실패한다. 패키지 매니저도 npm 고정이라 pnpm/yarn/bun 프로젝트에서 설치 단계가 헛돈다.
 

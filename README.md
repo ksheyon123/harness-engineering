@@ -32,7 +32,7 @@ scripts/
   worktree-add.mjs        # 브랜치별 worktree 생성 + 세션 자동 기동
   token-usage.mjs         # 토큰/비용 집계
 harness/
-  config.json             # 게이트 대상의 단일 출처 (+ baseBranch, testFilePatterns)
+  config.json             # 게이트 대상의 단일 출처 (+ baseBranch, installCommand, testFilePatterns)
   index.json              # 브랜치 → spec 경로 매핑
   <task>/spec.md          # 기획자 산출물 — 기능 목록
   <task>/qa-checklist.md  # QA 산출물 — 커버리지 매트릭스
@@ -69,6 +69,7 @@ npm install   # prepare 훅이 core.hooksPath 를 .githooks 로 설정한다
    ```json
    {
      "baseBranch": "dev",
+     "installCommand": "npm install",
      "testFilePatterns": ["**/*.test.{ts,tsx}"],
      "gate": {
        "typecheck": [{ "dir": "apps/web", "cmd": "npx tsc --noEmit" }],
@@ -80,6 +81,8 @@ npm install   # prepare 훅이 core.hooksPath 를 .githooks 로 설정한다
      }
    }
    ```
+
+   `baseBranch` 는 게이트의 merge-base 산출과 `worktree-add.mjs` 의 분기 기준을 겸한다. `installCommand` 는 `worktree-add.mjs` 가 새 worktree에서 돌릴 설치 명령이다(기본값 `npm install` — pnpm/yarn/bun 이면 여기서 바꾼다. lockfile 로 자동 감지하지 않는다: 추측이 틀리면 조용히 잘못된 매니저로 설치한다).
 
    `{{BASE}}` 는 `merge-base(baseBranch, HEAD)` 로 치환된다(브랜치 변경분만 검사). 산출할 수 없으면 `fallbackCmd` 로 물러선다. 존재하지 않는 `dir` 은 경고 후 건너뛰고, 설정 파일 자체가 없으면 게이트 없이 통과한다 — 도입 초기에 push 가 부당하게 막히지 않게 하기 위함이다. 반대로 파일이 있는데 JSON 이 깨져 있으면 **중단**한다(오타가 '게이트 없음' 으로 둔갑하면 안 된다).
 
@@ -105,6 +108,7 @@ npm install   # prepare 훅이 core.hooksPath 를 .githooks 로 설정한다
 | `worktree-enforce` | task 시작을 worktree 우선으로 강제 (`verify-branch.mjs`) |
 | `token-usage` | 세션 토큰/비용 사후 집계 (`token-usage.mjs`) |
 | `gate-pipeline` | 게이트 정의·실행 단일화 + `pre-commit` 도입 (`gate.mjs`, `config.json`) |
+| `worktree-config` | `worktree-add.mjs` 의 분기 기준·설치 명령을 `config.json` 에서 읽기 |
 
 ## 알려진 제약
 
@@ -112,7 +116,6 @@ npm install   # prepare 훅이 core.hooksPath 를 .githooks 로 설정한다
 
 | 위치 | 결합 내용 |
 |---|---|
-| `scripts/worktree-add.mjs` | base 브랜치가 `dev`, 패키지 매니저가 npm 으로 고정. `config.json` 의 `baseBranch` 를 아직 읽지 않는다 |
 | `.claude/agents/qa.md` | "테스트 러너가 없다"는 낡은 전제가 남아 QA 산출물을 오염시킬 수 있다 |
 | `.claude/hooks/verify-branch.mjs` | 면제 경로가 `harness/`·`.claude/` 뿐이라 `scripts/`·`.githooks/` 의 하네스 자기 코드가 '제품 소스' 로 취급된다 |
 | `.claude/hooks/index-sync.mjs` | `components` 매핑이 비어 있어 아무 동작도 하지 않는다 |

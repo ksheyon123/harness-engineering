@@ -1,13 +1,17 @@
 #!/usr/bin/env node
 // worktree 생성 헬퍼.
-// 저장소 밖 형제 디렉터리에 worktree 를 만들고 dev 에서 분기한다.
+// 저장소 밖 형제 디렉터리에 worktree 를 만들고, harness/config.json 의 baseBranch 에서 분기한다.
 // 규약은 .claude/CLAUDE.md '## worktree 동시작업 규약' 참고.
 // setup-githooks.mjs 와 같은 결: .git 이 없으면 조용히 종료, 비가역(remove/prune)은 하지 않는다.
+//
+// 설정은 스스로 파싱하지 않고 gate.mjs 의 loadConfig 를 import 한다 — 같은 설정을 다르게
+// 해석하는 사본을 만들지 않기 위함이다(harness/gate-pipeline/spec.md 가 세운 경계).
 
-import { execFileSync } from "node:child_process";
+import { execFileSync, execSync } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
 import { basename, dirname, join, resolve, relative, isAbsolute, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
+import { loadConfig, DEFAULTS, CONFIG_PATH } from "./gate.mjs";
 
 const BRANCH_RE = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/;
 
@@ -66,22 +70,57 @@ export function parseWorktreeList(porcelain) {
   return out;
 }
 
-// 로컬 브랜치 존재 여부.
-function branchExists(branch) {
+// ref 존재 여부. `origin/x` 는 refs/remotes/, 그 외는 refs/heads/ 로 검증한다
+// (rev-parse 와 달리 태그·SHA 를 브랜치로 오인하지 않는다).
+function refExists(ref) {
+  const full = ref.startsWith("origin/") ? `refs/remotes/${ref}` : `refs/heads/${ref}`;
   try {
-    execFileSync("git", ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`], {
-      stdio: "ignore",
-    });
+    execFileSync("git", ["show-ref", "--verify", "--quiet", full], { stdio: "ignore" });
     return true;
   } catch {
     return false;
   }
 }
 
+// 로컬 브랜치 존재 여부.
+function branchExists(branch) {
+  return refExists(branch);
+}
+
+// 기준 브랜치명 → 실제로 분기에 쓸 ref. `<base>` → `origin/<base>` 순으로 찾는다.
+// 순수 함수(refExists 주입) → git 없이 테스트할 수 있다. gate.mjs 의 planGate(dirExists) 와 같은 관례.
+//
+// 탐색 순서가 gate.mjs 의 mergeBase 와 반대(저쪽은 origin/ 우선)인 것은 의도적이다:
+// 분기는 '사람이 방금 로컬에 만든 기준 브랜치' 를 존중해야 하고, merge-base 는 '원격 기준선과의
+// 공통 조상' 이라 원격이 먼저다. origin/ 폴백을 두는 이유는 갓 클론한 저장소에 로컬 추적
+// 브랜치가 없을 수 있기 때문이다.
+//
+// 둘 다 없으면 HEAD 로 물러서지 않고 throw 한다 — 조용히 물러서면 의도치 않은 커밋에서
+// 분기되고, 그 사실은 머지할 때에야 드러난다. 실패 방향이 나쁘다.
+export function resolveBaseRef(base, { refExists: exists }) {
+  for (const ref of [base, `origin/${base}`]) {
+    if (exists(ref)) return ref;
+  }
+  throw new Error(
+    `기준 브랜치를 찾을 수 없습니다: '${base}' 도 'origin/${base}' 도 없습니다 — ` +
+      `${CONFIG_PATH} 의 baseBranch 를 확인하세요`,
+  );
+}
+
+// `git worktree add` 인자 조립. 브랜치가 이미 있으면 attach(-b·기준 ref 불필요),
+// 없으면 기준 ref 에서 새로 분기한다. 브랜치명·경로는 항상 인자 배열로 넘어가 셸을 거치지 않는다.
+export function worktreeAddArgs({ branch, path, baseRef, branchExists }) {
+  return branchExists
+    ? ["worktree", "add", path, branch]
+    : ["worktree", "add", "-b", branch, path, baseRef];
+}
+
 // worktree 를 멱등하게 확보한다. 이미 같은 브랜치의 worktree 가 그 경로에 있으면 재사용한다.
-//  반환: { created: boolean } — created=false 면 기존 worktree 재사용.
-//  throw: 경로가 다른 브랜치의 worktree거나, worktree 가 아닌 일반 디렉터리로 점유돼 있을 때.
-function ensureWorktree(branch, path) {
+//  반환: { created: boolean, baseRef: string|null } — created=false 면 기존 worktree 재사용,
+//        baseRef=null 이면 기존 브랜치를 attach 한 것(분기 기준을 쓰지 않았다).
+//  throw: 경로가 다른 브랜치의 worktree거나, worktree 가 아닌 일반 디렉터리로 점유돼 있을 때,
+//        또는 새 브랜치를 만들어야 하는데 기준 브랜치를 찾을 수 없을 때.
+function ensureWorktree(branch, path, baseBranch) {
   let list = [];
   try {
     const porcelain = execFileSync("git", ["worktree", "list", "--porcelain"], {
@@ -94,7 +133,7 @@ function ensureWorktree(branch, path) {
 
   const atPath = list.find((w) => samePath(w.path, path));
   if (atPath) {
-    if (atPath.branch === branch) return { created: false };
+    if (atPath.branch === branch) return { created: false, baseRef: null };
     throw new Error(
       `경로가 다른 브랜치(${atPath.branch ?? "detached"})의 worktree 입니다: ${path}`,
     );
@@ -105,13 +144,14 @@ function ensureWorktree(branch, path) {
     throw new Error(`경로가 이미 존재하지만 worktree 가 아닙니다: ${path} — 먼저 정리하세요`);
   }
 
-  // 브랜치가 이미 있으면 -b 없이 attach, 없으면 dev 에서 새로 분기.
-  if (branchExists(branch)) {
-    execFileSync("git", ["worktree", "add", path, branch], { stdio: "inherit" });
-  } else {
-    execFileSync("git", ["worktree", "add", "-b", branch, path, "dev"], { stdio: "inherit" });
-  }
-  return { created: true };
+  // 브랜치가 이미 있으면 -b 없이 attach, 없으면 기준 ref 에서 새로 분기.
+  // attach 경로에서는 resolveBaseRef 를 부르지 않는다 — 그러지 않으면 기준 브랜치가 없는
+  // 저장소에서 기존 브랜치 attach 마저 막힌다(지금 되는 동작이라 회귀가 된다).
+  const exists = branchExists(branch);
+  const baseRef = exists ? null : resolveBaseRef(baseBranch, { refExists });
+  const args = worktreeAddArgs({ branch, path, baseRef, branchExists: exists });
+  execFileSync("git", args, { stdio: "inherit" });
+  return { created: true, baseRef };
 }
 
 // --- 세션 기동 헬퍼 (순수 함수: import 시 부수효과 없음 → 단위 테스트 가능) ---
@@ -169,11 +209,12 @@ export function displayLaunchCommand(path, seed) {
     : launchCommandFor(path, seed);
 }
 
-// 플랫폼에 맞는 "수동 npm install" 안내 명령. win32=PowerShell(Set-Location), 그 외=POSIX(cd &&).
-export function installCommandFor(path) {
+// 플랫폼에 맞는 "수동 설치" 안내 명령. win32=PowerShell(Set-Location), 그 외=POSIX(cd &&).
+// installCommand 는 harness/config.json 에서 온다(단일 출처). 인용 규칙만 여기서 정한다.
+export function installCommandFor(path, installCommand) {
   return process.platform === "win32"
-    ? `Set-Location ${powershellSingleQuote(path)}; npm install`
-    : `cd ${shellSingleQuote(path)} && npm install`;
+    ? `Set-Location ${powershellSingleQuote(path)}; ${installCommand}`
+    : `cd ${shellSingleQuote(path)} && ${installCommand}`;
 }
 
 // Terminal.app 으로 명령을 실행하는 AppleScript. command 는 AppleScript 큰따옴표
@@ -242,8 +283,8 @@ function usage() {
     [
       "사용법: node scripts/worktree-add.mjs <branch> [--install] [--launch] [--seed \"<문구>\"]",
       "  예) node scripts/worktree-add.mjs feat/monthly-view --launch",
-      "  저장소 밖 형제 디렉터리에 worktree 를 만들고 dev 에서 분기합니다.",
-      "  --install : 생성 후 그 worktree 에서 npm install 까지 실행합니다.",
+      `  저장소 밖 형제 디렉터리에 worktree 를 만들고 ${CONFIG_PATH} 의 baseBranch 에서 분기합니다.`,
+      `  --install : 생성 후 그 worktree 에서 설치 명령(${CONFIG_PATH} 의 installCommand)까지 실행합니다.`,
       "  --launch  : (--install 포함) 생성·설치 후 그 worktree 에서 개발 세션을 새 터미널 창에서 자동 실행합니다(macOS=Terminal.app, Windows=PowerShell). 실패/미지원 플랫폼이면 기동 명령을 출력합니다.",
       '  --seed "…" : --launch 시 새 세션의 초기 프롬프트(seed)를 지정합니다(생략 시 브랜치에서 도출).',
       "  ※ 이미 같은 브랜치의 worktree 가 있으면 재사용합니다(재실행 시 세션만 다시 기동). node_modules 가 있으면 install 도 건너뜁니다.",
@@ -284,18 +325,35 @@ function main(argv) {
     process.exit(1);
   }
 
+  // 설정은 root 기준으로 읽는다 — cwd 에 의존하면 하위 디렉터리에서 다른 결과가 난다
+  // (qa-hash.mjs 가 상대경로를 써서 해시가 어긋났던 전례를 반복하지 않는다).
+  // 파일 부재는 정상(아직 설정하지 않은 저장소) → DEFAULTS. 있는데 깨졌으면 중단(gate.mjs 와 같은 판단).
+  const configFile = join(root, CONFIG_PATH);
+  let config = DEFAULTS;
+  if (existsSync(configFile)) {
+    try {
+      config = loadConfig(readFileSync(configFile, "utf8"));
+    } catch (e) {
+      console.error(`[worktree-add] ❌ ${e.message}`);
+      process.exit(1);
+    }
+  }
+
   // 멱등 확보: 이미 같은 브랜치의 worktree 가 그 경로에 있으면 재사용한다(--launch 재실행 대응).
   // 인자 배열로 셸 인젝션 방지.
   let created;
+  let baseRef;
   try {
-    ({ created } = ensureWorktree(branch, path));
+    ({ created, baseRef } = ensureWorktree(branch, path, config.baseBranch));
   } catch (e) {
     console.error(`[worktree-add] ❌ worktree 확보 실패 — ${e.message}`);
     process.exit(1);
   }
 
   if (created) {
-    console.log(`[worktree-add] ✅ ${path}  (브랜치 ${branch}, dev 분기)`);
+    // 실제로 분기에 쓴 ref 를 그대로 출력한다(로컬/origin 어느 쪽을 썼는지가 드러나야 한다).
+    const how = baseRef ? `${baseRef} 분기` : "기존 브랜치 attach";
+    console.log(`[worktree-add] ✅ ${path}  (브랜치 ${branch}, ${how})`);
     console.log("[worktree-add] core.hooksPath 는 공유 config 라 worktree 에 자동 적용됩니다.");
   } else {
     console.log(`[worktree-add] ↩ 기존 worktree 재사용: ${path}  (브랜치 ${branch})`);
@@ -304,28 +362,34 @@ function main(argv) {
   // 재사용 worktree 에 node_modules 가 이미 있으면 install 은 불필요(시간 낭비)하니 건너뛴다.
   const depsPresent = existsSync(join(path, "node_modules"));
   if (doInstall && !created && depsPresent) {
-    console.log("[worktree-add] node_modules 가 이미 있어 npm install 을 건너뜁니다.");
+    console.log(`[worktree-add] node_modules 가 이미 있어 '${config.installCommand}' 를 건너뜁니다.`);
   } else if (doInstall) {
-    console.log("[worktree-add] npm install 실행...");
+    console.log(`[worktree-add] ${config.installCommand} 실행...`);
     try {
+      // 설치 명령은 셸을 거쳐 실행된다. 신뢰 모델은 gate.mjs 의 cmd 와 같다 —
+      // harness/config.json 은 저장소에 커밋된 파일이고, 그것을 고칠 수 있는 사람은 이미
+      // 코드를 고칠 수 있다. 새로운 신뢰 경계를 만들지 않는다.
+      // (브랜치명 등 사용자 입력은 여전히 인자 배열로 넘겨 인젝션을 막는다 — 그 구분은 유지한다.)
+      //
       // Windows: npm 은 npm.cmd 라 execFileSync('npm') 가 셸 없이 실패하고, Git Bash(MSYS) 하위에선
       // esbuild 등 native postinstall 바이너리가 0xC0000142(DLL init 실패)로 깨진다.
-      // → PowerShell 로 install 을 돌려 둘 다 회피한다. 그 외 OS 는 npm 을 직접 스폰.
+      // → PowerShell 로 install 을 돌려 둘 다 회피한다. 그 외 OS 는 기본 셸에 맡긴다.
       if (process.platform === "win32") {
-        execFileSync("powershell", ["-NoProfile", "-Command", "npm install"], {
+        execFileSync("powershell", ["-NoProfile", "-Command", config.installCommand], {
           cwd: path,
           stdio: "inherit",
         });
       } else {
-        execFileSync("npm", ["install"], { cwd: path, stdio: "inherit" });
+        execSync(config.installCommand, { cwd: path, stdio: "inherit" });
       }
     } catch {
+      // 설치 실패로 worktree 를 지우지 않는다 — 삭제는 비가역이다.
       console.warn(
-        `[worktree-add] ⚠ npm install 실패 — worktree 는 유지됩니다. '${installCommandFor(path)}' 를 수동 실행하세요.`,
+        `[worktree-add] ⚠ '${config.installCommand}' 실패 — worktree 는 유지됩니다. '${installCommandFor(path, config.installCommand)}' 를 수동 실행하세요.`,
       );
     }
   } else {
-    console.log(`[worktree-add] 다음 단계: ${installCommandFor(path)}`);
+    console.log(`[worktree-add] 다음 단계: ${installCommandFor(path, config.installCommand)}`);
   }
 
   // --launch: 그 worktree 에서 개발 세션을 새 터미널 창에서 기동한다(실패/미지원 시 기동 명령 출력 폴백).

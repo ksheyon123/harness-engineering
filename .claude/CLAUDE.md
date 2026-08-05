@@ -32,7 +32,7 @@ UserPromptSubmit 로더가 현재 브랜치의 기능 목록(spec)을 컨텍스�
 - **부분 스테이징 금지**: 커밋 시 워킹트리 전체를 스테이징한다(`git add -A`). `pre-commit`은 워킹트리를 검사하므로 스테이징 안 된 변경이 남아 있으면 **커밋을 거부한다** — 검사한 내용과 실제 커밋되는 내용이 어긋나는 것을 막기 위함이다.
 - **커밋 단위**: spec 1개당 1커밋(끝에서 한 번) — **코드 + 테스트 + `qa-checklist.md`를 한 커밋에 담는다**. 여러 spec을 한 세션에서 진행하면 spec마다 커밋한다.
 - **브랜치 안전**: `main`/`dev`에는 **직접 커밋하지 않는다**. 현재 브랜치가 `main`/`dev`면 멈추고 사용자에게 작업 브랜치 생성을 요청한다(`harness/index.json`에 매핑된 작업 브랜치에서만 커밋).
-- **분기 기준**: 작업 브랜치는 **`dev`에서 분기한다**(`main` 아님), 항상 최신 `dev` 기준. **task 시작은 worktree 우선**: 메인 체크아웃에서 `git checkout -b` 하지 말고 `node scripts/worktree-add.mjs feat/<task> --launch` 로 worktree를 만들어 **그 디렉터리에서 새 세션을 연다**(`--launch` 가 install + 새 터미널 창에서 세션 자동 기동(macOS=Terminal.app, Windows=PowerShell), 실패/미지원 시 기동 명령 출력으로 폴백 — 아래 'worktree 동시작업 규약'). 새 세션은 `load-spec` 로더가 브랜치 기준으로 spec 을 자동 주입하므로 그 세션이 개발자로서 자율 구현한다. spec이 등록된 task의 소스를 메인 체크아웃에서 편집하면 `verify-branch` 훅이 **`deny`로 차단**한다 — 메인에서는 진행 불가, **반드시 worktree에서** 한다(단일 작업이어도 예외 없음). 등록 전 ad-hoc 수정·`harness/`·`.claude/` 메타작업은 메인에서 가능.
+- **분기 기준**: 작업 브랜치는 **`harness/config.json` 의 `baseBranch` 에서 분기한다**(항상 최신 기준). 분기 기준을 바꾸려면 그 파일을 고친다 — 여기에 값을 적지 않는다(사본은 강제력을 더하지 않으면서 원본과 어긋난다). **task 시작은 worktree 우선**: 메인 체크아웃에서 `git checkout -b` 하지 말고 `node scripts/worktree-add.mjs feat/<task> --launch` 로 worktree를 만들어 **그 디렉터리에서 새 세션을 연다**(`--launch` 가 install + 새 터미널 창에서 세션 자동 기동(macOS=Terminal.app, Windows=PowerShell), 실패/미지원 시 기동 명령 출력으로 폴백 — 아래 'worktree 동시작업 규약'). 새 세션은 `load-spec` 로더가 브랜치 기준으로 spec 을 자동 주입하므로 그 세션이 개발자로서 자율 구현한다. spec이 등록된 task의 소스를 메인 체크아웃에서 편집하면 `verify-branch` 훅이 **`deny`로 차단**한다 — 메인에서는 진행 불가, **반드시 worktree에서** 한다(단일 작업이어도 예외 없음). 등록 전 ad-hoc 수정·`harness/`·`.claude/` 메타작업은 메인에서 가능.
 - **자동 push**: 커밋 후 **현재 작업 브랜치로 push 한다**(`git push -u origin <현재-브랜치>`). pre-push는 `pre-commit`이 검증한 트리면 객관 게이트를 건너뛰고(rebase·자동 머지·`--no-verify`로 트리가 바뀐 경우에만 다시 돈다), 위에서 주입한 `input_hash`가 일치하면 QA를 스킵한다.
   - **push도 `main`/`dev`엔 절대 하지 않는다** — `harness/index.json`에 매핑된 작업 브랜치로만.
   - pre-push가 push를 거부하면(객관 게이트 실패, 또는 해시 불일치로 재생성된 QA 산출물이 미커밋) 멈추고 그 출력을 그대로 보고한다. 후자면 그 산출물을 커밋하고 다시 push 한다.
@@ -56,11 +56,11 @@ UserPromptSubmit 로더가 현재 브랜치의 기능 목록(spec)을 컨텍스�
 
 - **세션 단위**: worktree 1개 = 개발자 세션 1개. 두 작업을 동시에 = 메인 세션 2개가 각자의 worktree에서 독립 실행된다(세션 간 컨텍스트는 공유되지 않는다).
 - **생성 위치**: worktree는 **저장소 트리 밖 형제 디렉터리**(`../<repo>-<task>`)에 만든다. **저장소 내부(예: `.claude/worktrees/`)에는 두지 않는다** — 타입 검사·테스트 러너의 글로빙과 `.gitignore`가 그 트리를 untracked/중첩 repo로 오인한다.
-- **생성 방법**: `node scripts/worktree-add.mjs <branch>` 를 쓴다(형제 경로 산출 + `dev`에서 분기). 플래그:
-  - `--install` : 그 worktree에서 의존성 설치까지 한다.
+- **생성 방법**: `node scripts/worktree-add.mjs <branch>` 를 쓴다(형제 경로 산출 + `harness/config.json` 의 `baseBranch` 에서 분기). 플래그:
+  - `--install` : 그 worktree에서 의존성 설치까지 한다(설치 명령은 `harness/config.json` 의 `installCommand`).
   - `--launch` : `--install` 을 포함하고, 생성·설치 후 **그 worktree에서 개발 세션을 새 터미널 창에서 자동 실행**한다(macOS=Terminal.app/osascript, Windows=새 PowerShell 창/cmd start + `-EncodedCommand`). seed 는 브랜치에서 도출하며(또는 `--seed "<문구>"`로 지정), 새 세션은 `load-spec` 가 spec 을 자동 주입한다. 미지원 플랫폼/실패 시 기동 명령(`cd '<path>' && claude '<seed>'`) 출력으로 폴백한다. 미등록 브랜치/누락 spec 이면 경고만 한다(차단 안 함).
-  - 수동이면 `git worktree add -b <branch> ../<repo>-<task> dev`.
-- **분기 기준**: worktree는 항상 **최신 `dev`에서 분기**한다. 오래된 커밋에서 자르면 그 시점의 (stale) 훅/설정을 쓰게 됨을 유의한다. `core.hooksPath`는 공유 config라 worktree에 자동 적용된다.
+  - 수동이면 `git worktree add -b <branch> ../<repo>-<task> <baseBranch>`.
+- **분기 기준**: worktree는 항상 **최신 `baseBranch`에서 분기**한다(값은 `harness/config.json`). 로컬 `<baseBranch>` 가 없으면 `origin/<baseBranch>` 로 물러서고, 둘 다 없으면 **에러로 멈춘다** — `HEAD` 로 조용히 물러서면 의도치 않은 커밋에서 분기된다. 오래된 커밋에서 자르면 그 시점의 (stale) 훅/설정을 쓰게 됨을 유의한다. `core.hooksPath`는 공유 config라 worktree에 자동 적용된다.
 - **의존성**: 새 worktree에는 `node_modules`가 따라오지 않는다. 각 worktree에서 설치가 필요하다(`pre-push`가 그 트리에서 객관 게이트를 돌리므로 설치가 없으면 게이트가 실패한다). dev 서버를 동시에 띄우면 포트가 겹치므로 한쪽은 다른 포트를 쓴다.
 - **push**: 각 worktree 세션은 **자기 작업 브랜치만** push한다(브랜치가 다르므로 서로 충돌하지 않는다). 위 "자동 커밋 + push" 규약을 그대로 따른다.
 - **메인 체크아웃 금지(소스, 하드)**: spec이 등록된 task 브랜치의 코드 작업은 **worktree에서만** 한다. 메인 체크아웃에서 그 코드를 편집하면 `verify-branch` 훅이 **`deny`로 차단**한다 — 단일 작업이어도 예외 없이 worktree를 쓴다. `harness/`·`.claude/` 하네스 메타작업(spec·qa-checklist·CLAUDE.md·훅)은 면제다 — 이들은 메인에서 그대로 수정한다.
@@ -70,7 +70,7 @@ UserPromptSubmit 로더가 현재 브랜치의 기능 목록(spec)을 컨텍스�
 `harness/index.json`은 모든 작업이 공유하는 단일 파일을 브랜치별로 편집하므로, worktree 병렬 작업 시 머지 충돌이 쉽게 난다. 이를 막기 위해:
 
 - index.json 편집(새 task 등록 등)은 **한 시점에 한 세션만** 수행한다.
-- 편집은 **최신 `dev` 기준**으로 하고, 등록 후 **즉시 머지/rebase**해 다른 worktree와 벌어지지 않게 한다.
+- 편집은 **최신 `baseBranch` 기준**으로 하고, 등록 후 **즉시 머지/rebase**해 다른 worktree와 벌어지지 않게 한다.
 - 코드 작업 세션(또는 dev 에이전트)은 index.json을 건드리지 않는 것을 기본으로 한다 — 코드/테스트/qa-checklist만 수정한다.
 
 ## 셸 작업 규약
