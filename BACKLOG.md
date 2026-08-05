@@ -2,39 +2,26 @@
 
 `doggy-groommer-scheduler` 에서 하네스만 분리하면서 드러난 잔여 작업. **한 번에 하나씩** 진행한다.
 
-각 항목은 이 저장소의 프로토콜대로 `harness/<task>/spec.md` 를 먼저 쓰고(planner 또는 직접), worktree 에서 구현한다. 항목마다 제안 브랜치명을 적어 뒀다.
+각 항목은 이 저장소의 프로토콜대로 `harness/<task>/spec.md` 를 먼저 쓰고(planner 또는 직접) 구현한다. 항목마다 제안 브랜치명을 적어 뒀다.
 
-> **선행 조건 — `dev` 브랜치가 없다.** `.claude/CLAUDE.md` 는 작업 브랜치를 `dev` 에서 분기하도록 규정하고 `scripts/worktree-add.mjs` 도 `dev` 를 기준으로 삼는데, 이 저장소에는 `main` 밖에 없다. 첫 task 를 시작하기 전에 `dev` 를 만들거나(`git branch dev main && git push -u origin dev`), 아래 **#3** 을 먼저 처리해 기준 브랜치를 설정 가능하게 만든다.
+> **파이프라인 의식은 아직 생략한다.** 이 저장소는 (1) `dev` 브랜치가 없어 `worktree-add.mjs` 가 실패하고, (2) 검사할 코드·테스트가 없어 1층 객관 게이트가 항상 "건너뜀"으로 통과하며, (3) 테스트 파일이 없어 QA 커버리지 매트릭스가 전부 `❌` 로 나온다. 즉 의식을 치러도 신호가 0이다. **#1 이 테스트 러너를 도입해 하네스가 자기 게이트를 갖게 되면** 그때부터 의식이 값을 갖는다. 그 전까지는 spec 만 쓰고 `main` 에서 직접 구현한다.
 
 ---
 
-## #1 · 게이트 대상이 두 곳에 중복돼 있다 <sub>P1</sub>
+## #1 · 게이트 대상이 두 곳에 중복돼 있다 <sub>P1</sub> ▸ **spec 작성됨**
 
-**증상** — 1층 객관 게이트의 대상이 서로 다른 두 파일에 각각 하드코딩돼 있고, 사람이 수동으로 일치시켜야 한다. 어긋나면 **세션에서는 통과한 코드가 push 에서 막힌다.** 원인이 코드가 아니라 설정 불일치라 진단도 오래 걸린다.
+> **[`harness/gate-pipeline/spec.md`](./harness/gate-pipeline/spec.md) 로 이관됨.** 논의 과정에서 아래 원안보다 범위가 커졌다 — 설정 파일만으로는 pre-push(sh 의 JSON 파싱)와 세션(직접 스폰)이 **같은 설정을 다르게 해석**할 여지가 남아, 단일 *실행 진입점*(`scripts/gate.mjs`)이 추가됐다. 또한 아래 #7(pre-commit)과 #4(qa-hash glob), 그리고 테스트 러너 도입이 같은 spec 에 합쳐졌다.
+
+**증상** — 1층 객관 게이트의 대상이 서로 다른 두 파일에 각각 하드코딩돼 있고, 사람이 수동으로 일치시켜야 한다. **가설이 아니라 이미 일어난 일이다** — 분리 이전 저장소에서 CLAUDE.md 는 세션에게 `apps/web` 테스트를 지시했지만 `pre-push` 의 `TEST_DIR` 은 `packages/ui` 뿐이라, `apps/web` 의 테스트는 push 게이트에서 **한 번도 실행된 적이 없다**. 드리프트 방향이 나빠서(문서가 게이트보다 넓음) 세션은 "통과시켰다"고 믿었다.
 
 **근거**
 - `.githooks/pre-push:15` — `TSC_DIRS="apps/web packages/ui"`
 - `.githooks/pre-push:35` — `TEST_DIR="packages/ui"`
-- `.claude/CLAUDE.md` '검증 명령' 절 — 개발자 세션이 참조하는 같은 정보
+- `02d9cf1:.claude/CLAUDE.md` '검증 명령' 절 — `apps/web`: `npx vitest run`, `packages/ui`: `npm run type-check`(pre-push 는 `npx tsc --noEmit`)
 
-**바꿀 것** — 단일 소스를 만들고 양쪽이 그걸 읽게 한다. 예: `harness/harness.config.json`
+**핵심 판단** — 중복된 것은 *행동 규칙*이 아니라 *사실*이다. 세션에게 필요한 건 게이트를 **실행**하는 것이지 게이트의 **내용을 아는** 것이 아니다. 그리고 강제되는 사실을 소프트 문서(CLAUDE.md)에 복사해두면 강제력은 안 늘고 오정보 위험만 는다 — 낡은 목록은 세션에게 *틀린 확신*을 준다.
 
-```json
-{
-  "gate": {
-    "typecheck": [{ "dir": "apps/web", "cmd": "npx tsc --noEmit" }],
-    "test": [{ "dir": "packages/ui", "cmd": "npx vitest run" }]
-  }
-}
-```
-
-`pre-push` 는 이 파일을 `node -e` 로 읽어 순회하고, CLAUDE.md 의 '검증 명령' 절은 "이 파일을 보라"로 바꾼다.
-
-**완료 조건**
-- 게이트 대상을 한 곳에서만 고치면 세션·pre-push 양쪽에 반영된다
-- 설정 파일이 없거나 대상 디렉터리가 없으면 **경고 후 건너뛴다**(현재 동작 유지 — push 를 부당하게 막지 않는다)
-
-**브랜치** `refactor/gate-config`
+**브랜치** `refactor/gate-pipeline`
 
 ---
 
@@ -79,7 +66,9 @@
 
 ---
 
-## #4 · `qa-hash.mjs` 의 테스트 파일 패턴이 고정이다 <sub>P2</sub>
+## #4 · `qa-hash.mjs` 의 테스트 파일 패턴이 고정이다 <sub>P2</sub> ▸ **spec 에 합쳐짐**
+
+> [`harness/gate-pipeline/spec.md`](./harness/gate-pipeline/spec.md) 의 'qa-hash.mjs 의 테스트 파일 패턴을 설정에서 읽기' 기능으로 흡수. 그 작업이 이 저장소에 `.test.mjs` 테스트를 만들기 때문에, 같이 고치지 않으면 **테스트를 고쳐도 해시가 안 바뀌는 상태를 새로 만드는** 셈이 된다.
 
 **증상** — `*.test.ts(x)` 만 해시 입력으로 잡는다. `*.spec.ts`·`__tests__/`·비-TS 프로젝트의 테스트는 해시에 안 들어가서, **테스트를 고쳐도 해시가 안 바뀌고 QA 가 스킵된다.** 실패 방향이 조용해서(막히는 게 아니라 낡은 QA 가 통과됨) 눈치채기 어렵다.
 
@@ -133,13 +122,35 @@
 
 ---
 
+## #7 · `verify-branch` 의 면제 경로에 하네스 자기 코드가 빠져 있다 <sub>P2</sub>
+
+**증상** — 하네스 메타작업 면제 목록이 `harness/` 와 `.claude/` 뿐이라, **`scripts/` 와 `.githooks/` 는 '제품 소스'로 취급**된다. 등록된 task 브랜치에서 `scripts/gate.mjs` 나 `.githooks/pre-commit` 을 메인 체크아웃에서 편집하면 `deny` 로 차단된다.
+
+원본 저장소에선 작업 대부분이 `apps/`·`packages/` 라 드러나지 않았지만, **이 저장소는 거의 모든 작업이 `scripts/`·`.githooks/`** 라 첫 task 부터 부딪힌다.
+
+**근거**
+- `.claude/hooks/verify-branch.mjs:79-83` — `isHarnessMeta` 판정이 `harness/`·`.claude/` 만 본다
+- `.claude/CLAUDE.md` — *"`harness/`·`.claude/` 하네스 메타작업(spec·qa-checklist·CLAUDE.md·**훅**)은 면제"* 라고 적혀 있으나, `.githooks/` 의 훅은 면제가 아니다. **문서 의도와 코드가 어긋나 있다.**
+
+**바꿀 것** — `isHarnessMeta` 에 `scripts/`·`.githooks/` 를 추가하거나, 면제 경로 목록을 `harness/config.json` 으로 뺀다(후자가 #1 의 결과와 일관된다).
+
+**주의** — 면제를 넓히면 그만큼 worktree 강제가 느슨해진다. 하네스 코드와 제품 코드가 같은 저장소에 있는 도입 프로젝트에서는 `scripts/` 가 제품 스크립트일 수도 있다. 그래서 하드코딩보다 **설정으로 빼는 쪽**이 맞다.
+
+**완료 조건** — 등록된 task 브랜치의 메인 체크아웃에서 `.githooks/pre-push` 를 편집해도 차단되지 않고, 제품 소스는 여전히 차단된다.
+
+**브랜치** `fix/verify-branch-exempt`
+
+---
+
 ## 우선순위 요약
 
-| 순서 | 항목 | 이유 |
-|:--:|---|---|
-| 1 | #1 게이트 설정 단일화 | 가장 현실적인 실패 모드. #3·#4 가 이 설정 파일에 얹힌다 |
-| 2 | #2 Phase 1 서술 제거 | 값싸고, QA 산출물을 실제로 오염시킨다 |
-| 3 | #3 worktree 기준 브랜치 | 다른 프로젝트 도입의 첫 걸림돌 |
-| 4 | #4 qa-hash glob | 조용히 실패해서 발견이 늦다 |
-| 5 | #5 index-sync 결정 | 구현 전에 존폐 판단이 먼저 |
-| — | #6 doggy rules | 별도 저장소, 독립적으로 가능 |
+| 순서 | 항목 | 상태 | 이유 |
+|:--:|---|---|---|
+| 1 | #1 게이트 파이프라인 (+#4, pre-commit, 테스트 러너) | **spec 작성됨** | 가장 현실적인 실패 모드. 이 저장소에 자기 게이트를 만든다 |
+| 2 | #2 Phase 1 서술 제거 | 대기 | 값싸고, QA 산출물을 실제로 오염시킨다 |
+| 3 | #7 verify-branch 면제 경로 | 대기 | 이 저장소에서 파이프라인 의식을 쓰려면 선행 |
+| 4 | #3 worktree 기준 브랜치 | 대기 | 다른 프로젝트 도입의 첫 걸림돌. #1 의 설정 파일에 얹힌다 |
+| 5 | #5 index-sync 결정 | 대기 | 구현 전에 존폐 판단이 먼저 |
+| — | #6 doggy rules | 대기 | 별도 저장소, 독립적으로 가능 |
+
+> **#1 은 파이프라인 의식(dev 브랜치 → index 등록 → worktree → 새 세션 → QA 스폰)을 생략하고 `main` 에서 직접 진행한다.** 이유: 이 저장소엔 검사할 코드도 테스트도 없어 1층 게이트가 신호를 못 내고, QA 매트릭스도 전부 `❌` 로 나온다. 게이트를 고치는 작업이 그 게이트를 통과해야 하는 순환도 생긴다. **#1 이 끝나면 하네스가 자기 테스트를 갖게 되므로, 그 다음부터는 파이프라인 의식이 실제 신호를 낸다.**
