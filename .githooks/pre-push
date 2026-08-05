@@ -1,49 +1,39 @@
 #!/bin/sh
 # 하네스 pre-push 훅.
-#   1층(객관): tsc(전체) + vitest(변경분만, merge-base(dev) 대비) — 깨지면 push 중단.
+#   1층(객관): scripts/gate.mjs — 단, pre-commit 이 이미 검증한 트리면 건너뛴다.
 #   2층(주관): headless QA(haiku)가 기능 체크리스트 + 커버리지 매트릭스 생성 (비차단).
 #   패키징 게이트: QA 산출물이 미커밋이면 중단(커밋 후 재push).
-# 활성화: git config core.hooksPath .githooks  (클론당 1회)
+# 활성화: git config core.hooksPath .githooks  (scripts/setup-githooks.mjs 가 자동 수행)
+# 설계는 harness/gate-pipeline/spec.md 참고.
 
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT" || exit 1
 BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 
-# ── 1층: 객관 게이트 (tsc + vitest) — LLM 비용 전에 결정적으로 막는다 ─────────
-#   대상 패키지는 아래 목록으로 고정한다. 존재하지 않는 경로는 건너뛴다 — 이 훅이 다른 구조의
-#   저장소(예: 하네스만 분리한 저장소)에서도 push 를 부당하게 막지 않게 하기 위함이다.
-TSC_DIRS="apps/web packages/ui"
-echo "[pre-push] 객관 게이트: tsc 검사..."
-FAIL=0
-for d in $TSC_DIRS; do
-  if [ ! -d "$d" ]; then
-    echo "[pre-push] ⚠ $d 없음 — tsc 건너뜀"
-    continue
-  fi
-  ( cd "$d" && npx tsc --noEmit ) || FAIL=1
-done
-if [ "$FAIL" = "1" ]; then
-  echo "[pre-push] ❌ 타입 에러 — push 중단"
-  exit 1
-fi
-# vitest: 전체 스위트가 아니라 "이 브랜치가 dev에서 분기한 이후 변경한 파일 + 그 의존
-#   그래프에 걸린 테스트"만 돈다(`--changed <merge-base>`). 이유: worktree가 dev보다 뒤처지면
-#   전체 스위트엔 이 브랜치가 안 건드린(=dev에서 이미 고쳐졌지만 여기엔 아직 없는) stale 테스트가
-#   섞여 push가 부당하게 막힌다. merge-base 기준이 핵심 — `dev`를 직접 diff하면(2-dot) dev가
-#   앞선 변경까지 "차이"로 잡혀 stale 테스트가 되돌아온다. 공통 조상만 diff하면 순수 브랜치 변경분만.
-#   변경분이 없으면 vitest가 "No test files"로 exit 1 → `--passWithNoTests`로 통과시킨다.
-TEST_DIR="packages/ui"
-BASE="$(git merge-base origin/dev HEAD 2>/dev/null || git merge-base dev HEAD 2>/dev/null)"
-if [ ! -d "$TEST_DIR" ]; then
-  echo "[pre-push] ⚠ $TEST_DIR 없음 — vitest 건너뜀"
-elif [ -n "$BASE" ]; then
-  echo "[pre-push] 객관 게이트: packages/ui vitest (변경분만, base=$BASE)..."
-  ( cd packages/ui && npx vitest run --changed "$BASE" --passWithNoTests ) \
-    || { echo "[pre-push] ❌ packages/ui 테스트 실패 — push 중단"; exit 1; }
+# ── 1층: 객관 게이트 ─────────────────────────────────────────────────────────
+# pre-commit 이 통과시킨 트리 해시를 마커에 남긴다. HEAD 의 트리가 그것과 같으면
+# 지금 push 되는 내용은 이미 검증된 것이므로 게이트를 다시 돌지 않는다.
+#
+# 그럼에도 이 게이트를 없애지 않는 이유: pre-commit 을 거치지 않고 만들어지는 트리가 있다.
+#   · git rebase / 자동 머지 — pre-commit 이 실행되지 않는다. 이 하네스는 dev 재분기를
+#     규약으로 요구하므로 흔하다. 각각은 통과하지만 합치면 깨지는 semantic conflict 는
+#     pre-commit 이 원리적으로 잡을 수 없다(그 조합은 커밋 시점에 존재하지 않았다).
+#   · git commit --no-verify, 다른 도구/클론에서 온 커밋.
+# 마커가 없거나 다르면 안전 기본값 = 게이트 실행.
+#
+# 한계: 게이트를 실행하는 경로에서 gate.mjs 는 워킹트리를 검사하지 HEAD 의 트리를
+# 체크아웃해 검사하지 않는다. 워킹트리가 dirty 하면 push 되는 내용과 검사 대상이 다를 수
+# 있다. (스킵 경로에는 이 문제가 없다 — 커밋 시점에 검증된 트리와 HEAD 트리가 같음을 확인한다.)
+GIT_DIR_PATH="$(git rev-parse --absolute-git-dir)"
+MARKER="$GIT_DIR_PATH/harness-gate-tree"
+HEAD_TREE="$(git rev-parse HEAD^{tree} 2>/dev/null)"
+GATE_TREE="$(cat "$MARKER" 2>/dev/null)"
+
+if [ -n "$HEAD_TREE" ] && [ "$HEAD_TREE" = "$GATE_TREE" ]; then
+  echo "[pre-push] 객관 게이트: pre-commit 에서 검증된 트리 — 생략"
 else
-  echo "[pre-push] ⚠ merge-base(dev) 산출 실패 — 전체 스위트로 폴백"
-  ( cd packages/ui && npx vitest run ) \
-    || { echo "[pre-push] ❌ packages/ui 테스트 실패 — push 중단"; exit 1; }
+  echo "[pre-push] 객관 게이트 실행..."
+  node scripts/gate.mjs || { echo "[pre-push] ❌ 객관 게이트 실패 — push 중단"; exit 1; }
 fi
 
 # ── 현재 브랜치의 태스크 spec/qa 경로 ─────────────────────────────────────────

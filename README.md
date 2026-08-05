@@ -23,16 +23,36 @@ Claude Code hooks + git pre-push 훅으로 **역할 기반(기획자 / 개발자
   hooks/qa-hash.mjs       # QA 입력 해시 (재생성 무한루프 차단)
   hooks/session-cost.mjs  # SessionEnd — 세션 토큰/비용 요약
   settings.json           # 훅 등록 + 권한 경계
-.githooks/pre-push        # 1층 객관 게이트(tsc+test) + 2층 headless QA
+.githooks/
+  pre-commit              # 1층 객관 게이트 — 실패하면 커밋 자체가 안 만들어진다
+  pre-push                # 게이트(조건부 재실행) + 2층 headless QA
 scripts/
+  gate.mjs                # 1층 객관 게이트의 유일한 실행 진입점
   setup-githooks.mjs      # core.hooksPath 자동 활성화 (npm install 시)
   worktree-add.mjs        # 브랜치별 worktree 생성 + 세션 자동 기동
   token-usage.mjs         # 토큰/비용 집계
 harness/
+  config.json             # 게이트 대상의 단일 출처 (+ baseBranch, testFilePatterns)
   index.json              # 브랜치 → spec 경로 매핑
   <task>/spec.md          # 기획자 산출물 — 기능 목록
   <task>/qa-checklist.md  # QA 산출물 — 커버리지 매트릭스
 ```
+
+## 게이트
+
+1층 객관 게이트는 **정의가 한 곳(`harness/config.json`), 실행이 한 곳(`scripts/gate.mjs`)** 이다. 훅도 세션도 그 스크립트를 부른다.
+
+```
+git commit ─[pre-commit]─ 부분 스테이징 거부 → gate.mjs → 통과한 트리 해시를 기록
+                          실패 → 커밋 중단 (워킹트리 보존, 히스토리 무손상)
+git push   ─[pre-push]──  HEAD 트리 == 기록된 트리?  같으면 게이트 생략
+                          다르면(rebase·머지·--no-verify) gate.mjs 재실행
+                          + QA 입력 해시 비교 → 재생성 → 미커밋 차단
+```
+
+게이트를 커밋 앞에 두는 이유: 없으면 `git commit` 은 무조건 성공하고 실패는 push 시점에야 드러난다. 그때는 이미 깨진 커밋이 히스토리에 남아 `--amend` 가 필요하고, 수정이 테스트/spec 에 닿으면 QA 입력 해시가 바뀌어 push 시도가 3회까지 늘어난다.
+
+pre-push 의 게이트를 없애지 않는 이유: `rebase`·자동 머지는 `pre-commit` 을 실행하지 않는다. 각각은 통과하지만 합치면 깨지는 조합(semantic conflict)은 커밋 시점에 존재하지 않아 `pre-commit` 이 원리적으로 잡을 수 없다.
 
 ## 도입
 
@@ -40,13 +60,32 @@ harness/
 npm install   # prepare 훅이 core.hooksPath 를 .githooks 로 설정한다
 ```
 
-외부 의존성은 없다(node 빌트인만 사용). `npm install`은 사실상 git 훅 활성화용이다.
+의존성은 `vitest` 하나뿐이다(하네스 자신의 테스트용). `npm install` 은 그 설치와 git 훅 활성화를 겸한다.
 
 도입 프로젝트가 채워야 하는 것:
 
-1. **`.claude/CLAUDE.md` 의 '검증 명령'** — 패키지별 타입 검사·테스트 명령. 이게 1층 객관 게이트다.
-2. **`.githooks/pre-push` 의 `TSC_DIRS`/`TEST_DIR`** — 위 1번과 **같은 대상**을 가리켜야 한다. 어긋나면 세션에서 통과한 코드가 push 에서 막힌다.
-3. **`.claude/rules/*.md`** — 프로젝트별 코딩 규약. `example.md.template` 을 복사해 쓴다.
+1. **`harness/config.json`** — 게이트 대상. 이게 1층 객관 게이트의 **유일한** 정의다.
+
+   ```json
+   {
+     "baseBranch": "dev",
+     "testFilePatterns": ["**/*.test.{ts,tsx}"],
+     "gate": {
+       "typecheck": [{ "dir": "apps/web", "cmd": "npx tsc --noEmit" }],
+       "test": [{
+         "dir": "packages/ui",
+         "cmd": "npx vitest run --changed {{BASE}} --passWithNoTests",
+         "fallbackCmd": "npx vitest run"
+       }]
+     }
+   }
+   ```
+
+   `{{BASE}}` 는 `merge-base(baseBranch, HEAD)` 로 치환된다(브랜치 변경분만 검사). 산출할 수 없으면 `fallbackCmd` 로 물러선다. 존재하지 않는 `dir` 은 경고 후 건너뛰고, 설정 파일 자체가 없으면 게이트 없이 통과한다 — 도입 초기에 push 가 부당하게 막히지 않게 하기 위함이다. 반대로 파일이 있는데 JSON 이 깨져 있으면 **중단**한다(오타가 '게이트 없음' 으로 둔갑하면 안 된다).
+
+2. **`.claude/rules/*.md`** — 프로젝트별 코딩 규약. `example.md.template` 을 복사해 쓴다.
+
+`.claude/CLAUDE.md` 나 훅에 게이트 대상을 다시 적지 않는다 — 사본은 강제력을 더하지 않으면서 원본과 어긋날 수 있고, **낡은 사본은 없는 것보다 나쁘다**(세션이 틀린 검사를 돌리고 통과했다고 확신한다).
 
 그 다음 기획자(`planner`)로 첫 태스크의 `harness/<task>/spec.md`를 쓰고, `harness/index.json`의 `tasks`에 `"<branch>": "harness/<task>/spec.md"`를 등록한다.
 
@@ -65,6 +104,7 @@ npm install   # prepare 훅이 core.hooksPath 를 .githooks 로 설정한다
 | `worktree-workflow` | 브랜치별 worktree 분리 규약 + `worktree-add.mjs` |
 | `worktree-enforce` | task 시작을 worktree 우선으로 강제 (`verify-branch.mjs`) |
 | `token-usage` | 세션 토큰/비용 사후 집계 (`token-usage.mjs`) |
+| `gate-pipeline` | 게이트 정의·실행 단일화 + `pre-commit` 도입 (`gate.mjs`, `config.json`) |
 
 ## 알려진 제약
 
@@ -72,10 +112,9 @@ npm install   # prepare 훅이 core.hooksPath 를 .githooks 로 설정한다
 
 | 위치 | 결합 내용 |
 |---|---|
-| `.githooks/pre-push` | 게이트 대상이 `apps/web`·`packages/ui` 로 하드코딩(`TSC_DIRS`/`TEST_DIR`). 없으면 건너뛰므로 push 는 막히지 않지만, 그만큼 **객관 게이트가 무력화**된다 |
-| `scripts/worktree-add.mjs` | base 브랜치가 `dev`, 패키지 매니저가 npm 으로 고정 |
-| `.claude/hooks/qa-hash.mjs` | 테스트 파일 패턴이 `*.test.ts(x)` 로 고정 |
+| `scripts/worktree-add.mjs` | base 브랜치가 `dev`, 패키지 매니저가 npm 으로 고정. `config.json` 의 `baseBranch` 를 아직 읽지 않는다 |
 | `.claude/agents/qa.md` | "테스트 러너가 없다"는 낡은 전제가 남아 QA 산출물을 오염시킬 수 있다 |
+| `.claude/hooks/verify-branch.mjs` | 면제 경로가 `harness/`·`.claude/` 뿐이라 `scripts/`·`.githooks/` 의 하네스 자기 코드가 '제품 소스' 로 취급된다 |
 | `.claude/hooks/index-sync.mjs` | `components` 매핑이 비어 있어 아무 동작도 하지 않는다 |
 
 각 항목의 원인·수정 방향·완료 조건은 [`BACKLOG.md`](./BACKLOG.md) 에 정리돼 있다.

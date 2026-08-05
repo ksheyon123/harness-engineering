@@ -1,0 +1,53 @@
+#!/bin/sh
+# 하네스 pre-commit 훅 — '게이트를 통과해야 커밋' 을 하드 게이트로 만든다.
+#
+# 이게 없으면 git commit 은 무조건 성공하고, 게이트 실패가 항상 *커밋이 만들어진 뒤*
+# push 시점에 드러난다. 그러면 깨진 커밋이 로컬 히스토리에 남아 --amend 나 fix 커밋이
+# 필요해지고, 수정이 테스트/spec 파일에 닿으면 QA 입력 해시가 바뀌어 push 시도가
+# 3회까지 늘어난다. 실패를 커밋 앞으로 옮기면 워킹트리만 dirty 한 상태로 끝난다.
+#
+# 활성화: git config core.hooksPath .githooks  (scripts/setup-githooks.mjs 가 자동 수행)
+# 설계는 harness/gate-pipeline/spec.md 참고.
+
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT" || exit 1
+
+# ── 0) 부분 스테이징 거부 ────────────────────────────────────────────────────
+# 훅은 워킹트리를 검사하는데 커밋되는 것은 인덱스다. 둘이 다르면 '통과했다고 판정한
+# 트리' 와 '실제 커밋되는 트리' 가 어긋나 거짓 통과가 난다.
+# 일반적 해법은 스테이징 안 된 변경을 stash 했다 복원하는 것이지만 stash 실패 시
+# 작업 손실이라는 비가역 위험이 있다. 하네스는 spec 당 코드+테스트+qa-checklist 를
+# 한 커밋에 담는 것이 규약이라 부분 스테이징을 쓸 일이 없으므로, 지원하지 않고 거부한다.
+if ! git diff --quiet; then
+  echo "[pre-commit] ❌ 스테이징되지 않은 변경이 있습니다."
+  echo "             훅은 워킹트리를 검사하므로, 이 상태로 커밋하면 검사한 내용과"
+  echo "             실제 커밋되는 내용이 달라집니다. 전부 스테이징한 뒤 커밋하세요:"
+  echo ""
+  git --no-pager diff --name-only | sed 's/^/               /'
+  echo ""
+  echo "               git add -A && git commit ..."
+  exit 1
+fi
+
+# ── 1) 객관 게이트 ───────────────────────────────────────────────────────────
+if ! node scripts/gate.mjs; then
+  echo "[pre-commit] ❌ 객관 게이트 실패 — 커밋을 중단합니다."
+  echo "             워킹트리의 수정 내용은 그대로 남아 있습니다. 고친 뒤 다시 커밋하세요."
+  exit 1
+fi
+
+# ── 2) 통과한 트리를 기록 ────────────────────────────────────────────────────
+# pre-push 가 '이 트리는 이미 검증됐다' 를 판단하는 근거. 커밋 해시가 아니라 트리 해시인
+# 이유: 이 시점엔 커밋이 아직 없고, 게이트가 검증하는 것은 히스토리가 아니라 내용이다
+# (메시지만 고친 amend 처럼 내용이 같은 재작성은 그대로 유효해야 한다).
+# git-dir 은 링크드 worktree 마다 다르므로 마커도 worktree 별로 분리된다. .git/ 안이라
+# 절대 추적되지 않는다.
+GIT_DIR_PATH="$(git rev-parse --absolute-git-dir)"
+if TREE="$(git write-tree 2>/dev/null)"; then
+  printf '%s' "$TREE" > "$GIT_DIR_PATH/harness-gate-tree"
+else
+  # 트리를 쓸 수 없으면(머지 중 등) 마커를 남기지 않는다 → pre-push 가 게이트를 다시 돈다.
+  rm -f "$GIT_DIR_PATH/harness-gate-tree"
+fi
+
+exit 0

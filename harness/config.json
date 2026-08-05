@@ -1,0 +1,8 @@
+{
+  "baseBranch": "main",
+  "testFilePatterns": ["**/*.test.{ts,tsx,js,mjs}"],
+  "gate": {
+    "typecheck": [],
+    "test": [{ "dir": ".", "cmd": "npx vitest run --passWithNoTests" }]
+  }
+}
