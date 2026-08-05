@@ -189,6 +189,42 @@ SyntaxError: Invalid or unexpected token
 
 ---
 
+## #9 · 게이트가 훅의 `GIT_*` 를 테스트에 물려준다 <sub>P0</sub>
+
+**증상** — 게이트가 git 훅 안에서 돌기 때문에, 테스트 프로세스가 **진짜 저장소를 가리키는 `GIT_*` 환경변수를 상속**한다. git 을 호출하는 테스트는 임시 저장소를 겨냥해도 실제로는 **이 저장소를 조작한다.**
+
+**가설이 아니다. 실제로 저장소를 망가뜨렸다.**
+
+```
+git commit
+ └ .githooks/pre-commit          ← git 이 GIT_DIR·GIT_INDEX_FILE 을 export
+    └ node scripts/gate.mjs         (진짜 저장소를 가리킴)
+       └ npx vitest run
+          └ verify-branch.test.mjs
+             └ git -C <임시경로> checkout -B feat/solo
+```
+
+핵심: **`GIT_DIR` 이 설정돼 있으면 `-C` 는 무시된다.** `-C` 는 작업 디렉터리만 바꾸고, 저장소 탐색은 `GIT_DIR` 이 있으면 아예 건너뛴다. `cwd` 를 정확히 줘도 막히지 않는다 — 환경변수가 그 위에 있다.
+
+| 테스트가 의도한 것 | 실제로 벌어진 일 |
+|---|---|
+| `git init <tmp>` | 진짜 저장소를 bare 로 재초기화 → `core.bare=true`, 워킹트리 소실 |
+| `git -C tmp commit -qm "init"` | 진짜 저장소에 `7d97f5c init` 커밋 |
+| `git -C tmp checkout -B feat/solo` | 진짜 `feat/solo` 생성 + `main` 을 픽스처 커밋으로 리셋 |
+| `git -C tmp worktree add -b feat/task …` | 진짜 저장소에 temp 를 가리키는 worktree 등록 |
+
+`main` 과 `fix/verify-branch-guard` 가 둘 다 픽스처 커밋으로 덮였다. 복구는 됐다(reflog + `branch -f` + `symbolic-ref`/mixed reset, 워킹트리 무손상). 원격은 오염되지 않았다.
+
+**왜 이게 테스트 하나의 실수가 아닌가** — 게이트가 훅 안에서 도는 한, **git 을 호출하는 모든 미래의 테스트가 같은 함정에 빠진다.** 그리고 이 하네스를 도입하는 모든 프로젝트가 그 함정을 그대로 물려받는다. 지금 방어는 `verify-branch.test.mjs` 한 파일 안에만 있고, 그 방어는 **테스트 작성자의 규율**에 의존한다 — 그 규율은 이미 한 번 실패했다.
+
+**바꿀 것** — `scripts/gate.mjs` 가 명령을 스폰할 때 `GIT_*` 를 씻어서 넘긴다. 단일 실행 진입점이 하나뿐이므로(`#1` 의 결과) 방어도 한 곳이면 된다.
+
+**완료 조건** — `pre-commit` 을 통해 실행된 테스트가 `GIT_DIR` 을 보지 못한다.
+
+**브랜치** `fix/gate-env-isolation`
+
+---
+
 ## 우선순위 요약
 
 | 순서 | 항목 | 상태 | 이유 |
@@ -197,9 +233,10 @@ SyntaxError: Invalid or unexpected token
 | ✔ | ~~#4 qa-hash glob~~ | **완료** | #1 에 흡수 |
 | ✔ | ~~#8 CRLF 체크아웃~~ | **완료** `f6a4f1f` | P0. 모든 worktree 에서 게이트가 깨져 있었다 |
 | ✔ | ~~#3 worktree 기준 브랜치·설치 명령~~ | **완료** `1ffebe1` | 파이프라인 의식의 선행 조건이었다 |
-| 1 | #7 verify-branch 면제 경로 | 대기 | 하네스 자기 코드(`scripts/`·`.githooks/`)를 고치는 항목에 선행 |
-| 2 | #2 Phase 1 서술 제거 | 대기 | 값싸고, QA 산출물을 실제로 오염시킨다 |
-| 3 | #5 index-sync 결정 | 대기 | 구현 전에 존폐 판단이 먼저 |
+| **0** | **#9 게이트 `GIT_*` 격리** | **대기 · P0** | **저장소를 실제로 망가뜨렸다. 고치기 전엔 git 을 부르는 테스트를 돌릴 수 없다** |
+| 1 | #7 verify-branch 면제 경로·교차 워킹트리 | 진행 중 | spec 작성·worktree 생성 완료. #9 이후 재개 |
+| 2 | #5 index-sync 제거 | 진행 중 | 판단=제거로 확정. 세션 진행 중 |
+| 3 | #2 Phase 1 서술 제거 | 대기 | #5 머지 후(`harness-engineering.md` §11 충돌) |
 | — | #6 doggy rules | 대기 | 별도 저장소, 독립적으로 가능 |
 
 > **#1 은 파이프라인 의식(dev 브랜치 → index 등록 → worktree → 새 세션 → QA 스폰)을 생략하고 `main` 에서 직접 진행했다.** 이유: 당시 이 저장소엔 검사할 코드도 테스트도 없어 1층 게이트가 신호를 못 냈고, 게이트를 고치는 작업이 그 게이트를 통과해야 하는 순환도 있었다. **#1 이 끝나 하네스가 자기 테스트를 갖게 됐으므로, 이 예외는 여기서 끝난다.**
