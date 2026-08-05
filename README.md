@@ -13,7 +13,8 @@ Claude Code hooks + git pre-push 훅으로 **역할 기반(기획자 / 개발자
 
 ```
 .claude/
-  CLAUDE.md               # 개발자(메인 세션) 행동 규약
+  CLAUDE.md               # 하네스 코어 규약 (역할·게이트·커밋/push·worktree)
+  rules/                  # 프로젝트별 코딩 규약 — paths: 로 조건부 로드
   agents/planner.md       # 기획자 — spec.md(기능 목록) 작성. src 편집 ❌
   agents/qa.md            # QA — 커버리지 매트릭스 작성. src 편집 ❌, 테스트 실행 ❌
   hooks/load-spec.mjs     # UserPromptSubmit — 현재 브랜치의 spec을 컨텍스트에 주입
@@ -41,7 +42,19 @@ npm install   # prepare 훅이 core.hooksPath 를 .githooks 로 설정한다
 
 외부 의존성은 없다(node 빌트인만 사용). `npm install`은 사실상 git 훅 활성화용이다.
 
-이후 기획자(`planner`)로 첫 태스크의 `harness/<task>/spec.md`를 쓰고, `harness/index.json`의 `tasks`에 `"<branch>": "harness/<task>/spec.md"`를 등록한다.
+도입 프로젝트가 채워야 하는 것:
+
+1. **`.claude/CLAUDE.md` 의 '검증 명령'** — 패키지별 타입 검사·테스트 명령. 이게 1층 객관 게이트다.
+2. **`.githooks/pre-push` 의 `TSC_DIRS`/`TEST_DIR`** — 위 1번과 **같은 대상**을 가리켜야 한다. 어긋나면 세션에서 통과한 코드가 push 에서 막힌다.
+3. **`.claude/rules/*.md`** — 프로젝트별 코딩 규약. `example.md.template` 을 복사해 쓴다.
+
+그 다음 기획자(`planner`)로 첫 태스크의 `harness/<task>/spec.md`를 쓰고, `harness/index.json`의 `tasks`에 `"<branch>": "harness/<task>/spec.md"`를 등록한다.
+
+### 프로젝트 규약을 CLAUDE.md 에 쓰지 않는 이유
+
+`.claude/CLAUDE.md` 와 `@import` 로 끌어온 파일은 **세션 시작 시 전부 컨텍스트에 로드**된다. 파일만 나누는 것은 사람 가독성에만 도움이 되고 AI 쪽 이득은 없다. 반면 `paths:` frontmatter 가 붙은 `.claude/rules/*.md` 는 **매칭되는 파일을 읽을 때만** 로드되므로, 프론트 작업 중에 백엔드 규약이 컨텍스트를 차지하지 않는다.
+
+주의: `paths:` 없는 rule 은 `.claude/CLAUDE.md` 와 동일하게 매 세션 로드된다. 또 rule 은 매칭 파일을 **읽을 때** 걸리므로, 파일을 읽기 전 계획 단계에서 지켜져야 하는 규약은 `CLAUDE.md` 에 둔다.
 
 ## 포함된 spec
 
@@ -62,6 +75,6 @@ npm install   # prepare 훅이 core.hooksPath 를 .githooks 로 설정한다
 | `.githooks/pre-push` | 게이트 대상이 `apps/web`·`packages/ui` 로 하드코딩(`TSC_DIRS`/`TEST_DIR`). 없으면 건너뛰므로 push 는 막히지 않지만, 그만큼 **객관 게이트가 무력화**된다 |
 | `scripts/worktree-add.mjs` | base 브랜치가 `dev` 로 고정 |
 | `.claude/hooks/qa-hash.mjs` | 테스트 파일 패턴이 `*.test.ts(x)` 로 고정 |
-| `.claude/CLAUDE.md` | 하네스 프로토콜과 프로젝트별 코딩 규약(FSD·API 표기·카피 상수화)이 한 파일에 혼재 |
+| `.claude/CLAUDE.md` | '검증 명령' 절이 비어 있다 — 도입 프로젝트가 채워야 하고, `pre-push` 의 게이트 대상과 일치시켜야 한다 |
 
 또한 `.claude/hooks/index-sync.mjs` 는 `harness/index.json` 의 `components` 매핑을 읽는데, 현재 매핑이 비어 있어 아무 동작도 하지 않는다.
