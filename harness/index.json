@@ -1,4 +1,6 @@
 {
-  "tasks": {},
+  "tasks": {
+    "refactor/worktree-config": "harness/worktree-config/spec.md"
+  },
   "components": {}
 }
