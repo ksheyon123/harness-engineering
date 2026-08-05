@@ -77,7 +77,9 @@ describe("문서", () => {
     expect(history).toMatch(/index-sync/);
   });
 
+  // 훅을 '있는 것처럼' 서술하는 것만 막는다. 제거 작업의 task 이름(index-sync-removal)은
+  // 이력이라 예외다 — harness-engineering.md 쪽에서 '설계 변경 이력' 을 예외로 두는 것과 같다.
   it("README 는 존재하지 않는 훅 파일을 서술하지 않는다", () => {
-    expect(read("README.md")).not.toMatch(/index-sync/);
+    expect(read("README.md")).not.toMatch(/index-sync(?!-removal)/);
   });
 });

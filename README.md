@@ -99,7 +99,7 @@ npm install   # prepare 훅이 core.hooksPath 를 .githooks 로 설정한다
 
 ## 포함된 spec
 
-`harness/`의 3개는 **하네스 자신을 만든 작업의 실제 spec**이다. 형식 예시이자 설계 근거로 남겨둔다.
+`harness/` 아래 spec 들은 **하네스 자신을 만든 작업의 실제 spec**이다. 형식 예시이자 설계 근거로 남겨둔다.
 
 | task | 내용 |
 |---|---|
@@ -108,14 +108,11 @@ npm install   # prepare 훅이 core.hooksPath 를 .githooks 로 설정한다
 | `token-usage` | 세션 토큰/비용 사후 집계 (`token-usage.mjs`) |
 | `gate-pipeline` | 게이트 정의·실행 단일화 + `pre-commit` 도입 (`gate.mjs`, `config.json`) |
 | `worktree-config` | `worktree-add.mjs` 의 분기 기준·설치 명령을 `config.json` 에서 읽기 |
+| `index-sync-removal` | 한 번도 동작한 적 없던 코드↔문서 드리프트 알림 훅 제거 |
+| `gate-env-isolation` | 게이트가 스폰하는 프로세스에서 `GIT_*` 를 씻어낸다 |
+| `verify-branch-guard` | 교차 워킹트리 편집 차단 + 면제 경로 루트 앵커링 (`harnessMetaPaths`) |
+| `drop-phase1` | "테스트 러너가 없다" 는 낡은 전제를 조건부 규칙으로 대체 |
 
 ## 알려진 제약
 
-이 저장소는 Turborepo 기반 프로젝트에서 하네스 부분만 분리한 것이라, 아직 그 프로젝트 구조에 결합된 지점이 남아 있다.
-
-| 위치 | 결합 내용 |
-|---|---|
-| `.claude/agents/qa.md` | "테스트 러너가 없다"는 낡은 전제가 남아 QA 산출물을 오염시킬 수 있다 |
-| `.claude/hooks/verify-branch.mjs` | 면제 경로가 `harness/`·`.claude/` 뿐이라 `scripts/`·`.githooks/` 의 하네스 자기 코드가 '제품 소스' 로 취급된다 |
-
-각 항목의 원인·수정 방향·완료 조건은 [`BACKLOG.md`](./BACKLOG.md) 에 정리돼 있다.
+이 저장소는 Turborepo 기반 프로젝트에서 하네스 부분만 분리한 것이다. 분리 과정에서 드러난 잔여 작업(원인·수정 방향·완료 조건)은 [`BACKLOG.md`](./BACKLOG.md) 에 정리돼 있다.

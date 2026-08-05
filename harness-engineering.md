@@ -155,16 +155,13 @@ spec: harness/<task>/spec.md
 
 테스트는 "이거 맞나?"의 객관적 부분을 LLM에서 떼어내 **공짜이고 반복가능한 신호**로 만든다. 그 덕에 QA는 *테스트를 실행할 필요 없이*(Bash 불필요) 정적으로 읽고 커버리지만 평가한다.
 
-### 단계적 도입 (Phasing) — 결정: B (tsc 우선)
+### 게이트 대상은 설정 하나에서 온다
 
-이 저장소엔 현재 테스트 러너가 없다(`test` 스크립트·vitest/jest 부재 확인). 그래서 **테스트 러너는 점진 도입**한다.
+1층 객관 게이트가 **무엇을 어디서 도는지는 `harness/config.json` 의 `gate` 가 유일한 출처**다. 실행 진입점도 하나(`node scripts/gate.mjs`)이고, 세션·`pre-commit`·`pre-push` 가 모두 그것을 호출한다. 이 문서에도, `CLAUDE.md` 에도 대상 목록을 옮겨 적지 않는다 — 사본은 강제력을 더하지 않으면서 원본과 어긋나고, **낡은 사본은 없는 것보다 나쁘다**(세션이 틀린 검사를 돌리고 '통과했다' 고 확신한다. 실제로 일어났던 일이다).
 
-| Phase | 1층 객관 게이트 | 개발자 테스트 | 2층 QA 커버리지 |
-|------|----------------|--------------|----------------|
-| **현재 (Phase 1)** | `tsc --noEmit` (+ `lint`) | 아직 없음 | 기능 체크리스트는 산출. 커버리지 열은 **전부 "테스트 없음"** 으로 기록 → 사람에게 테스트 부재가 가시화됨 |
-| **추후 (Phase 2)** | `tsc` + **`npm test`** (Vitest 도입) | 개발자가 자기 코드 테스트 작성·green | 매트릭스가 실제 커버리지로 채워짐 |
+QA 도 같은 파일을 Read 해서 러너 유무를 판단한다(QA 는 `Bash` 가 없어 게이트를 실행할 수 없다). 대상에 `test` 항목이 없으면 러너가 없는 것이고, 그때만 커버리지를 '테스트 러너 없음' 으로 기록한다 — **"테스트가 없을 것" 이라고 가정하지 않는다.**
 
-> Phase 1에서도 가치는 나온다: **QA의 독립 기능 체크리스트**(spec 해석을 독립적으로 열거)와 **타입 검사**가 최소 객관 신호를 준다. "개발자 테스트 green 수렴 → 무한루프 회피" 메커니즘과 `npm test` 1층 게이트는 Phase 2에서 활성화된다.
+> **이력**: 이 하네스는 테스트 러너 없이 `tsc --noEmit` 만으로 시작해(Phase 1), 나중에 vitest 를 도입하는 2단계 계획이었다. **그 도입은 끝났다** — 지금은 테스트가 1층 게이트에서 실제로 돈다. 왜 그렇게 시작했는지는 [설계 변경 이력](#설계-변경-이력) 참고.
 
 ---
 
@@ -223,50 +220,24 @@ pre-push는 *이미 커밋된 ref*를 보내기 직전에 돈다. 이때 생성�
 **함정 2 — 비결정성: LLM은 매번 결과가 달라 재push가 영원히 수렴 안 할 수 있다.**
 → **입력 해시 스킵.** `(spec + 테스트)`의 해시를 `qa-checklist.md`에 기록. push 시 해시가 같으면 QA를 스킵하고 통과. 1회차(입력 변경)엔 생성·차단 → 커밋, 2회차엔 입력 불변 → 해시 일치 → 스킵 → 통과. 루프가 끊긴다. (덤으로 WIP push마다 LLM 도는 비용도 차단.)
 
-```bash
-#!/bin/sh
-# .git/hooks/pre-push  (개념 스케치 — Windows는 git-bash로 실행됨)
+구현은 **`.githooks/pre-push`** 에 있다(활성화: `git config core.hooksPath .githooks` — `scripts/setup-githooks.mjs` 가 자동 수행). 아래는 그 구조다. 세부는 파일을 보고, **이 문서에 명령을 옮겨 적지 않는다.**
 
-# 1) 1층 객관 게이트: 깨지면 LLM 비용 없이 fail-fast
-#    Phase 1(현재): tsc만. Phase 2(Vitest 도입 후): npm test 주석 해제.
-npx tsc --noEmit || { echo "tsc 실패 — push 중단"; exit 1; }
-# npm test --silent || { echo "테스트 실패 — push 중단"; exit 1; }   # Phase 2
+1. **1층 객관 게이트** — `node scripts/gate.mjs` 를 호출한다(대상은 `harness/config.json`). 단 **`pre-commit` 이 이미 검증한 트리면 건너뛴다**: `pre-commit` 이 통과시킨 트리 해시를 git-dir 안 마커에 남기고, `HEAD^{tree}` 가 그것과 같으면 다시 돌지 않는다. 그럼에도 게이트를 없애지 않는 이유는 `pre-commit` 을 거치지 않고 만들어지는 트리가 있기 때문이다 — rebase·자동 머지(각각은 통과하지만 합치면 깨지는 semantic conflict 는 커밋 시점에 존재하지 않았다), `--no-verify`, 다른 클론에서 온 커밋. 마커가 없거나 다르면 **안전 기본값 = 실행**.
+2. **spec 조회** — `harness/index.json` 에서 현재 브랜치의 spec 을 찾는다. 없으면 QA 를 생략하고 push 를 허용한다.
+3. **입력 해시 스킵** — `node .claude/hooks/qa-hash.mjs <branch>` 의 값과 `qa-checklist.md` frontmatter 의 `input_hash` 가 같으면 QA 를 돌리지 않는다.
+4. **QA 생성(headless)** — `claude -p ... --model haiku --permission-mode acceptEdits --allowedTools "Read,Grep,Glob,Edit,Write" --disallowedTools "Bash" < /dev/null`. 역할 정의는 프롬프트에서 `.claude/agents/qa.md` 를 Read 하게 한다(단일 소스). **QA 실행 실패는 push 를 막지 않는다**(비차단) — `claude` CLI 가 없을 때도 마찬가지다.
+5. **패키징 게이트** — QA 산출물이 미커밋이면 중단하고 커밋 후 재push 를 안내한다. 이 차단은 *산출물 누락* 에 대한 것이지 커버리지 누락에 대한 것이 아니다.
 
-# 2) 입력 해시 비교 (변경 없으면 QA 스킵)
-BRANCH=$(git rev-parse --abbrev-ref HEAD)
-NEW_HASH=$(node .claude/hooks/qa-input-hash.mjs "$BRANCH")   # spec + tests 해시
-OLD_HASH=$(node .claude/hooks/qa-read-hash.mjs "$BRANCH")    # qa-checklist.md frontmatter
-if [ "$NEW_HASH" = "$OLD_HASH" ]; then exit 0; fi
+> **훅 자신의 출력이 훅을 죽이면 안 된다.** 진단 출력은 서브셸 헬퍼(`say()`)로 내보내, 파이프가 닫혀 출력이 실패해도 종료 코드가 그것에 좌우되지 않게 한다. 정보성 메시지도 같은 헬퍼를 쓴다 — 그것 때문에 훅이 죽으면 통과해야 할 push 가 막힌다(거짓 차단).
 
-# 3) QA 재생성 (headless Claude)
-#    --agent <name> 플래그는 존재하지 않는다. QA 경계는 --allowedTools/--disallowedTools로 직접 강제하고,
-#    역할 정의는 프롬프트에서 .claude/agents/qa.md를 읽게 한다(단일 소스).
-#    stdin 충돌 방지: pre-push는 ref를 stdin으로 넘기므로 < /dev/null 필수.
-claude -p "당신의 역할은 .claude/agents/qa.md에 정의돼 있다. 그 정의를 먼저 Read 하라.
-           현재 브랜치 spec.md의 기능 목록으로 기능 체크리스트를 독립 도출하고,
-           테스트 코드를 읽어 커버리지 매트릭스를 harness/<task>/qa-checklist.md에 작성.
-           frontmatter에 input_hash=$NEW_HASH 기록." \
-  --permission-mode acceptEdits \
-  --allowedTools "Read,Grep,Glob,Edit,Write" \
-  --disallowedTools "Bash" \
-  --output-format json \
-  < /dev/null
-[ $? -ne 0 ] && { echo "QA 실행 실패 — push 중단"; exit 1; }
-
-# 4) QA 산출물이 미커밋이면 차단 (패키징 게이트)
-if ! git diff --quiet -- docs; then
-  echo "QA 산출물이 갱신되었습니다. 커밋 후 다시 push하세요."
-  exit 1
-fi
-exit 0
-```
+> **한계(기록)**: 게이트를 *실행하는* 경로에서 `gate.mjs` 는 워킹트리를 검사하지 `HEAD` 의 트리를 체크아웃해 검사하지 않는다. 워킹트리가 dirty 하면 push 되는 내용과 검사 대상이 다를 수 있다. 스킵 경로에는 이 문제가 없다(커밋 시점에 검증된 트리와 `HEAD` 트리가 같음을 확인한다).
 
 **검증된 사항(공식 문서 기준):**
 - **`--agent <name>` 플래그는 없다.** 서브에이전트는 description 매칭으로 자동 위임되거나 `--agents '<json>'`로 인라인 전달한다. 훅에선 자동 위임의 비결정성을 피하려고 **직접 헤드리스 호출 + `--allowedTools`로 도구 경계 강제**가 가장 안정적이다.
 - **권한**: `--permission-mode acceptEdits`(편집 무프롬프트) + `--allowedTools "Read,Grep,Glob,Edit,Write"` + `--disallowedTools "Bash"` → QA의 "코드 못 고침/테스트 실행 안 함" 경계를 강제. (`tools` 화이트리스트는 실제로 다른 도구를 차단함이 확인됨.)
 - **stdin**: `< /dev/null` 없으면 Claude가 pre-push의 ref 입력을 삼켜 충돌한다 — **필수**.
 - **인증**: 훅 환경에 `CLAUDE_CODE_OAUTH_TOKEN`(= `claude setup-token` 발급) 또는 `ANTHROPIC_API_KEY` 필요. `--bare`는 OAuth를 읽지 않으므로(API key 전용) 로컬 구독 로그인 훅에선 **`--bare`를 쓰지 않는다**.
-- **종료코드**: 0 성공 / 비0 오류 → 셸에서 분기 가능. 구조화 출력은 `--output-format json`.
+- **종료코드**: 0 성공 / 비0 오류 → 셸에서 분기 가능. 출력 형식은 `--output-format`(현재 훅은 `text` 를 쓴다 — 훅이 출력을 파싱하지 않기 때문이다).
 
 ---
 
@@ -321,9 +292,10 @@ exit 0
 | stdin 충돌 | pre-push가 ref를 stdin으로 넘김 → **`< /dev/null` 필수** |
 | 인증 | `CLAUDE_CODE_OAUTH_TOKEN`(`claude setup-token`) 또는 `ANTHROPIC_API_KEY`. `--bare`는 OAuth 미사용 |
 
+- **테스트 러너** — **결정: 도입 완료.** vitest 가 1층 게이트에서 실제로 돈다. 무엇을 어디서 도는지는 `harness/config.json` 의 `gate` 가 정하고, 실행은 `node scripts/gate.mjs` 하나다. [§6](#게이트-대상은-설정-하나에서-온다) 참고.
+
 여전히 **이 저장소 고유**로 확인할 것:
 
-- **테스트 러너** — **결정: Phase 1은 `tsc --noEmit`만** (Vitest는 Phase 2에서 도입). [§6 단계적 도입](#단계적-도입-phasing--결정-b-tsc-우선) 참고.
 - Windows git 훅이 git-bash(sh)로 실행되는지(현재 `/usr/bin/bash` 존재 확인됨) + 개발자 셸에 인증 토큰 노출.
 
 ---
@@ -333,14 +305,15 @@ exit 0
 1. `harness/index.json` 초기화 (`{ "tasks": {} }`)
 2. `.claude/agents/planner.md`, `.claude/agents/qa.md` 작성 (도구 경계 포함)
 3. `.claude/hooks/load-spec.mjs` 작성 + `settings.json`에 hooks 병합
-4. 첫 태스크: 기획자로 `harness/<task>/spec.md` 작성 + `index.json`의 `tasks`에 브랜치 등록
-5. 개발자(메인)로 코드 작성, `tsc` green (Phase 1). *테스트 작성·`npm test`는 Phase 2(Vitest 도입 후)*
-6. **인증 토큰 발급**: `claude setup-token` → `CLAUDE_CODE_OAUTH_TOKEN`을 개발자 셸 환경에 설정 (헤드리스 훅 전제)
-7. `.git/hooks/pre-push`(또는 husky) 작성 — 객관 게이트 + headless QA(`< /dev/null`, `--permission-mode acceptEdits`, `--allowedTools`) + 해시 스킵 + 미커밋 차단
-8. push → QA 산출물 생성/커밋/재push 흐름 확인
-9. PR로 사람 리뷰·머지
+4. `harness/config.json` 작성 — 게이트 대상(`gate`)·`baseBranch`·`installCommand` 등. **이후 모든 검사 대상은 이 파일 하나에서 온다**
+5. 첫 태스크: 기획자로 `harness/<task>/spec.md` 작성 + `index.json`의 `tasks`에 브랜치 등록 → `node scripts/worktree-add.mjs <branch> --launch` 로 worktree + 세션
+6. 개발자(메인)로 **test-first** 구현: 실패 테스트(RED) → 구현 → 통과(GREEN). `node scripts/gate.mjs` green
+7. **인증 토큰 발급**: `claude setup-token` → `CLAUDE_CODE_OAUTH_TOKEN`을 개발자 셸 환경에 설정 (헤드리스 훅 전제)
+8. `.githooks/pre-commit`·`.githooks/pre-push` 작성 + `git config core.hooksPath .githooks`(`scripts/setup-githooks.mjs` 가 자동 수행) — pre-commit 은 객관 게이트를 하드로 막고 통과한 트리 해시를 남긴다. pre-push 는 그 마커로 게이트를 조건부 스킵하고 headless QA(`< /dev/null`, `--permission-mode acceptEdits`, `--allowedTools`) + 해시 스킵 + 산출물 미커밋 차단을 한다
+9. push → QA 산출물 생성/커밋/재push 흐름 확인
+10. PR로 사람 리뷰·머지
 
-> 점진 적용 권장: 먼저 1~5(로더 + 문서 + 개발 흐름)로 가치 확인 후, 6~8(pre-push QA)을 붙인다.
+> 점진 적용 권장: 먼저 1~6(로더 + 설정 + 문서 + 개발 흐름)으로 가치 확인 후, 7~9(git 훅 + QA)를 붙인다.
 
 ---
 
@@ -355,4 +328,5 @@ exit 0
 | QA = 검증·판정자 | QA = **독립 커버리지 분석가** | 개발자가 자기 테스트를 green으로 수렴(루프 회피). QA는 기능 체크리스트를 독립 도출해 테스트 커버리지만 대조, 누락은 사람이 판단 |
 | 완료표시 `[x]` 자동/수동 확정 | **없음** | AI 플로우엔 확정 단계가 없다. 산출물 push → 사람 머지가 완성도 판단 |
 | Telegram 원격 승인(차단 우회) | (불필요) | 차단이 없으므로 원격 승인 개념도 불필요. 필요 시 *알림*(push/누락 통지)으로만 선택 도입 |
+| 테스트 러너 **단계적 도입**(Phase 1 = `tsc --noEmit` 만, Phase 2 = vitest) | **완료 — 단계 구분 자체를 없앰** | 원 저장소에 테스트 러너가 없어, 러너 도입을 기다리지 않고 하네스를 먼저 굴리려는 판단이었다(Phase 1 에서도 QA 의 독립 기능 체크리스트와 타입 검사는 신호를 준다). vitest 가 들어와 그 단계는 끝났는데 **서술만 남아 QA 에게 "커버리지 열을 전부 ❌ 로 적으라" 고 지시하고 있었다** — 문서 오타가 아니라 동작하는 오지시였고, 실패 방향이 나쁘다(덮여 있는데 누락으로 기록되면 사람이 틀린 신호로 판단한다). 지금은 러너 유무를 **사실 주장이 아니라 조건부 규칙**으로 쓴다: `harness/config.json` 의 `gate.test` 를 보고 판단한다 |
 | Hook 3 = `index-sync`(PostToolUse, 코드↔문서 드리프트 알림) | **삭제** | `index.json` 의 `components` 매핑을 *누가·언제* 등록하는지가 프로토콜 어디에도 없어 80개 task 동안 0개였다 — 한 번도 동작한 적이 없다. 드리프트는 알림으로 따라잡는 대신 **중복 자체를 없애** 단일 출처로 모은다(게이트 대상 → `harness/config.json`). 서술형 설계 문서의 드리프트는 사람이 PR 에서 잡는다. 복원이 필요하면 제거 커밋에서 되살릴 수 있다 |
