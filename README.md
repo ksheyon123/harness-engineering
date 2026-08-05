@@ -19,7 +19,6 @@ Claude Code hooks + git pre-push 훅으로 **역할 기반(기획자 / 개발자
   agents/qa.md            # QA — 커버리지 매트릭스 작성. src 편집 ❌, 테스트 실행 ❌
   hooks/load-spec.mjs     # UserPromptSubmit — 현재 브랜치의 spec을 컨텍스트에 주입
   hooks/verify-branch.mjs # PreToolUse — 보호 브랜치 / worktree 게이트
-  hooks/index-sync.mjs    # PostToolUse — 코드↔문서 동기화 알림
   hooks/qa-hash.mjs       # QA 입력 해시 (재생성 무한루프 차단)
   hooks/session-cost.mjs  # SessionEnd — 세션 토큰/비용 요약
   settings.json           # 훅 등록 + 권한 경계
@@ -118,6 +117,5 @@ npm install   # prepare 훅이 core.hooksPath 를 .githooks 로 설정한다
 |---|---|
 | `.claude/agents/qa.md` | "테스트 러너가 없다"는 낡은 전제가 남아 QA 산출물을 오염시킬 수 있다 |
 | `.claude/hooks/verify-branch.mjs` | 면제 경로가 `harness/`·`.claude/` 뿐이라 `scripts/`·`.githooks/` 의 하네스 자기 코드가 '제품 소스' 로 취급된다 |
-| `.claude/hooks/index-sync.mjs` | `components` 매핑이 비어 있어 아무 동작도 하지 않는다 |
 
 각 항목의 원인·수정 방향·완료 조건은 [`BACKLOG.md`](./BACKLOG.md) 에 정리돼 있다.
