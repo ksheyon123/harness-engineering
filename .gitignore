@@ -1,0 +1,12 @@
+node_modules
+.DS_Store
+
+.git-broken
+.env
+
+# 로컬 권한 승인 기록 — 개인 환경에 종속되므로 추적하지 않는다.
+.claude/settings.local.json
+
+# git worktree 는 저장소 밖 형제 디렉터리에 두는 것이 원칙.
+# 내부(.claude/worktrees/)에 생기더라도 추적하지 않는다.
+.claude/worktrees/
