@@ -9,6 +9,21 @@
 # 활성화: git config core.hooksPath .githooks  (scripts/setup-githooks.mjs 가 자동 수행)
 # 설계는 harness/gate-pipeline/spec.md 참고.
 
+# 훅 자신의 진단 출력은 반드시 이 헬퍼로 낸다.
+#
+# 이유: 훅의 차단 여부가 '출력을 끝까지 쓰는 데 성공했는가' 에 의존하면 안 된다.
+# 호출자가 stdout 을 EOF 전에 닫는 소비자에게 넘기면(`git commit | head -6`, `| grep -q` 등)
+# 훅이 진단을 쓰다가 SIGPIPE 로 죽고, `exit 1` 에 도달하지 못해 **막아야 할 커밋이 조용히
+# 통과한다**(실제로 재현됨 — 훅이 어느 exit 문에도 도달하지 못했다).
+#
+# 서브셸은 별개 프로세스라 죽어도 부모(훅)는 비0 상태를 받을 뿐이고, 부모는 아무것도 쓰지
+# 않았으므로 exit 문까지 도달한다. `>&2` 는 관례이자 이중 보험(보통 파이프에 묶이는 건 stdout).
+# `trap '' PIPE` 로도 되지만 자식 프로세스의 SIGPIPE 처리까지 바꾸므로 쓰지 않는다.
+#
+# gate.mjs 의 stdio:inherit 은 그대로 둔다 — vitest/tsc 출력은 복사본이 아니라 원본 라이브
+# 스트림이고, 실패 원인은 그것으로 충분하다.
+say() { ( printf '%s\n' "$@" ) >&2 || true; }
+
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT" || exit 1
 
@@ -19,20 +34,23 @@ cd "$ROOT" || exit 1
 # 작업 손실이라는 비가역 위험이 있다. 하네스는 spec 당 코드+테스트+qa-checklist 를
 # 한 커밋에 담는 것이 규약이라 부분 스테이징을 쓸 일이 없으므로, 지원하지 않고 거부한다.
 if ! git diff --quiet; then
-  echo "[pre-commit] ❌ 스테이징되지 않은 변경이 있습니다."
-  echo "             훅은 워킹트리를 검사하므로, 이 상태로 커밋하면 검사한 내용과"
-  echo "             실제 커밋되는 내용이 달라집니다. 전부 스테이징한 뒤 커밋하세요:"
-  echo ""
-  git --no-pager diff --name-only | sed 's/^/               /'
-  echo ""
-  echo "               git add -A && git commit ..."
+  say "[pre-commit] ❌ 스테이징되지 않은 변경이 있습니다." \
+      "             훅은 워킹트리를 검사하므로, 이 상태로 커밋하면 검사한 내용과" \
+      "             실제 커밋되는 내용이 달라집니다. 전부 스테이징한 뒤 커밋하세요:" \
+      "" \
+      "$(git --no-pager diff --name-only | sed 's/^/               /')" \
+      "" \
+      "               git add -A && git commit ..."
   exit 1
 fi
 
 # ── 1) 객관 게이트 ───────────────────────────────────────────────────────────
+# gate.mjs 의 출력(vitest/tsc)은 라이브로 그대로 흐른다 — 실패 원인은 그것으로 본다.
+# 파이프가 닫혀 vitest 가 SIGPIPE 로 죽으면 게이트 실패로 판단되는데, 거짓 거부지만
+# 방향이 안전하므로(막는 쪽) 그대로 둔다.
 if ! node scripts/gate.mjs; then
-  echo "[pre-commit] ❌ 객관 게이트 실패 — 커밋을 중단합니다."
-  echo "             워킹트리의 수정 내용은 그대로 남아 있습니다. 고친 뒤 다시 커밋하세요."
+  say "[pre-commit] ❌ 객관 게이트 실패 — 커밋을 중단합니다." \
+      "             워킹트리의 수정 내용은 그대로 남아 있습니다. 고친 뒤 다시 커밋하세요."
   exit 1
 fi
 
