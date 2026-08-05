@@ -120,6 +120,32 @@ export function globToRegExp(glob) {
   return new RegExp(`^${re}$`);
 }
 
+// ── git 환경 격리 ────────────────────────────────────────────────────────────
+// 게이트는 git 훅 안에서 돈다 → git 이 GIT_DIR·GIT_INDEX_FILE 등을 export 한 상태다.
+// 그 env 를 물려받은 자식(테스트)이 git 을 부르면, `git -C <임시경로>` 로도 cwd 옵션으로도
+// 막을 수 없다: **GIT_DIR 이 있으면 저장소 탐색 자체를 건너뛴다.** 실제로 이 저장소가
+// bare 로 재초기화되고 브랜치가 픽스처 커밋으로 덮였다(BACKLOG #9).
+//
+// 스폰 지점이 여기 하나뿐이므로(gate-pipeline spec) 방어도 여기 한 곳이면 된다 —
+// 테스트 작성자의 규율에 맡기지 않는다. 그 규율은 이미 한 번 실패했고 대가가 저장소 손상이었다.
+export function scrubGitEnv(env) {
+  // 개별 지정(denylist)이 아니라 접두어 전체를 지운다. 위험한 변수는 GIT_DIR 하나가 아니고
+  // (GIT_WORK_TREE·GIT_INDEX_FILE·GIT_COMMON_DIR·GIT_OBJECT_DIRECTORY·
+  //  GIT_ALTERNATE_OBJECT_DIRECTORIES·GIT_NAMESPACE·GIT_CEILING_DIRECTORIES …),
+  // 목록 방식은 fail-open 이다 — 하나를 빠뜨리거나 git 이 새 변수를 더하면 조용히 구멍이 남는다.
+  //
+  // 함께 사라지는 것들에 대한 판단:
+  //   GIT_EXEC_PATH        — 없으면 git 이 컴파일 시 기본 경로를 쓴다. 제거해도 정상 동작한다.
+  //   GIT_AUTHOR_*/COMMITTER_* — 테스트가 커밋을 만든다면 자기 저장소에 user.name/email 을
+  //                          설정해야 한다. 훅 실행자의 신원이 픽스처에 새는 것이 오히려 문제다.
+  // GIT_ 가 아닌 것은 건드리지 않는다 — PATH·NODE_*·APPDATA 가 사라지면 Windows 에서 npx 가 안 뜬다.
+  const out = {};
+  for (const [k, v] of Object.entries(env)) {
+    if (!k.startsWith("GIT_")) out[k] = v;
+  }
+  return out;
+}
+
 // 경로를 정규화(역슬래시 → 슬래시, 선행 './' 제거)한 뒤 패턴 중 하나라도 맞으면 true.
 export function matchesAnyGlob(path, patterns) {
   const norm = String(path).split("\\").join("/").replace(/^\.\//, "");
@@ -163,10 +189,14 @@ export function planGate(config, { dirExists, base }) {
 
 // ── 실행부 ──────────────────────────────────────────────────────────────────
 
-function repoRoot() {
+// 읽기 전용이라 그 자체로 위험하진 않지만, 게이트 안의 git 해석은 한 가지여야 한다 —
+// GIT_DIR 이 있을 때와 없을 때 --show-toplevel 이 다른 값을 내면 게이트가 엉뚱한 트리를 돈다.
+// 스크럽된 env 에서는 저장소 탐색이 cwd 기준이 된다(훅에서 gate.mjs 는 항상 저장소 안에서 돈다).
+export function repoRoot(env = scrubGitEnv(process.env)) {
   // cwd 의존을 없앤다 — qa-hash.mjs 가 cwd 에 의존해 하위 디렉터리서 돌리면
   // 해시가 어긋나던 전례가 있다. 게이트는 어디서 불러도 같은 결과여야 한다.
   return execFileSync("git", ["rev-parse", "--show-toplevel"], {
+    env,
     stdio: ["ignore", "pipe", "ignore"],
   })
     .toString()
@@ -182,11 +212,12 @@ function assertInsideRepo(root, dir) {
 }
 
 // merge-base(baseBranch, HEAD). 산출 실패는 정상 상황이다(신규 저장소, 원격 없음 등) → null.
-export function mergeBase(baseBranch, cwd) {
+export function mergeBase(baseBranch, cwd, env = scrubGitEnv(process.env)) {
   for (const ref of [`origin/${baseBranch}`, baseBranch]) {
     try {
       return execFileSync("git", ["merge-base", ref, "HEAD"], {
         cwd,
+        env,
         stdio: ["ignore", "pipe", "ignore"],
       })
         .toString()
@@ -198,11 +229,12 @@ export function mergeBase(baseBranch, cwd) {
   return null;
 }
 
-function runOne({ dir, cmd }, root) {
+export function runOne({ dir, cmd }, root, env = scrubGitEnv(process.env)) {
   try {
     // 셸 경유가 필요하다 — Windows 에서 npx 는 npx.cmd 라 셸 없이는 스폰되지 않는다.
     // 출력은 그대로 흘려보낸다(stdio: inherit): 세션이 Bash tool result 로 원인을 봐야 고칠 수 있다.
-    execSync(cmd, { cwd: join(root, dir), stdio: "inherit" });
+    // env: 훅의 GIT_* 를 씻어 넘긴다 — 이것이 없으면 자식 테스트가 진짜 저장소를 조작한다.
+    execSync(cmd, { cwd: join(root, dir), env, stdio: "inherit" });
     return true;
   } catch {
     return false;
@@ -212,9 +244,12 @@ function runOne({ dir, cmd }, root) {
 function main(argv) {
   const listOnly = argv.includes("--list");
 
+  // 한 번만 계산해 모든 git 호출·스폰에 재사용한다(호출마다 process.env 를 복사하지 않는다).
+  const env = scrubGitEnv(process.env);
+
   let root;
   try {
-    root = repoRoot();
+    root = repoRoot(env);
   } catch {
     console.error("[gate] git 저장소가 아닙니다");
     process.exit(1);
@@ -242,7 +277,7 @@ function main(argv) {
     process.exit(1);
   }
 
-  const base = mergeBase(config.baseBranch, root);
+  const base = mergeBase(config.baseBranch, root, env);
   const plan = planGate(config, {
     dirExists: (dir) => existsSync(join(root, dir)),
     base,
@@ -264,7 +299,7 @@ function main(argv) {
     const items = plan.run.filter((r) => r.kind === kind);
     for (const item of items) {
       console.log(`[gate] ${item.kind}: ${item.dir} — ${item.cmd}`);
-      if (!runOne(item, root)) failed.push(item);
+      if (!runOne(item, root, env)) failed.push(item);
     }
     if (failed.length > 0) break;
   }

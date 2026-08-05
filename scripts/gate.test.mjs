@@ -5,6 +5,7 @@ import {
   planGate,
   globToRegExp,
   matchesAnyGlob,
+  scrubGitEnv,
   DEFAULTS,
 } from "./gate.mjs";
 
@@ -207,5 +208,56 @@ describe("matchesAnyGlob", () => {
 
   it("패턴이 하나도 안 맞으면 false", () => {
     expect(matchesAnyGlob("src/a.ts", patterns)).toBe(false);
+  });
+});
+
+// 게이트는 git 훅 안에서 돈다 → git 이 export 한 GIT_* 가 자식 프로세스로 흘러든다.
+// GIT_DIR 이 있으면 `git -C <tmp>` 도 cwd 옵션도 무시되고 진짜 저장소가 대상이 된다.
+// 실제로 이 저장소를 bare 로 재초기화하고 브랜치를 덮어썼다(BACKLOG #9).
+describe("scrubGitEnv", () => {
+  it("GIT_ 접두어 키를 전부 제거하고 나머지는 보존한다", () => {
+    const out = scrubGitEnv({ GIT_DIR: "x", GIT_INDEX_FILE: "y", PATH: "p" });
+    expect(out.GIT_DIR).toBeUndefined();
+    expect(out.GIT_INDEX_FILE).toBeUndefined();
+    expect(out.PATH).toBe("p");
+  });
+
+  // denylist 는 fail-open 이다 — 하나만 빠뜨려도 조용히 구멍이 남고, 그 대가가 저장소 손상이다.
+  it("대상 저장소를 바꾸는 GIT_* 를 빠짐없이 제거한다", () => {
+    const dangerous = {
+      GIT_DIR: "a",
+      GIT_WORK_TREE: "b",
+      GIT_INDEX_FILE: "c",
+      GIT_COMMON_DIR: "d",
+      GIT_OBJECT_DIRECTORY: "e",
+      GIT_ALTERNATE_OBJECT_DIRECTORIES: "f",
+      GIT_NAMESPACE: "g",
+      GIT_CEILING_DIRECTORIES: "h",
+      GIT_EXEC_PATH: "i",
+      GIT_AUTHOR_NAME: "j",
+      GIT_COMMITTER_EMAIL: "k",
+    };
+    expect(Object.keys(scrubGitEnv(dangerous))).toEqual([]);
+  });
+
+  // process.env 를 직접 씻으면 gate.mjs 자신의 이후 git 호출까지 바뀐다.
+  it("입력 객체를 변형하지 않는다", () => {
+    const input = { GIT_DIR: "x", PATH: "p" };
+    const out = scrubGitEnv(input);
+    expect(input.GIT_DIR).toBe("x");
+    expect(out).not.toBe(input);
+  });
+
+  // 접두어는 'GIT_' 다. GITHUB_TOKEN·GITSTATUS_* 는 git 의 저장소 탐색과 무관하다.
+  it("GIT 으로 시작하지만 GIT_ 가 아닌 키는 보존한다", () => {
+    const out = scrubGitEnv({ GITHUB_TOKEN: "t", GITHUB_ACTIONS: "true" });
+    expect(out.GITHUB_TOKEN).toBe("t");
+    expect(out.GITHUB_ACTIONS).toBe("true");
+  });
+
+  // PATH·NODE_*·APPDATA 가 사라지면 Windows 에서 npx 가 뜨지 않는다.
+  it("GIT_* 가 없으면 내용이 같은 새 객체를 돌려준다", () => {
+    const input = { PATH: "p", NODE_OPTIONS: "--x", APPDATA: "a" };
+    expect(scrubGitEnv(input)).toEqual(input);
   });
 });

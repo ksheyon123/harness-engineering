@@ -189,7 +189,13 @@ SyntaxError: Invalid or unexpected token
 
 ---
 
-## #9 · 게이트가 훅의 `GIT_*` 를 테스트에 물려준다 <sub>P0</sub>
+## ~~#9 · 게이트가 훅의 `GIT_*` 를 테스트에 물려준다~~ <sub>P0</sub> ▸ **완료** (`020beec`)
+
+> **[`harness/gate-env-isolation/spec.md`](./harness/gate-env-isolation/spec.md) 로 이관 후 구현 완료.** `scripts/gate.mjs` 에 `scrubGitEnv(env)` 를 두고 — **`GIT_` 접두어 전체 제거**(개별 지정은 fail-open 이라 쓰지 않는다) — `runOne` 의 `execSync` 와 `repoRoot`·`mergeBase` 의 git 호출에 넘긴다. 읽기 전용 조회까지 함께 씻는 이유는 게이트 안의 git 해석이 한 가지여야 하기 때문이다. env 는 `main` 에서 한 번 계산해 재사용한다.
+>
+> **방어 위치는 한 곳이다** — 스폰 지점이 `gate.mjs` 뿐이므로(#1 의 결과) 테스트 작성자의 규율에 맡기지 않는다. 그 규율은 이미 한 번 실패했고 대가가 저장소 손상이었다. 게이트 **밖**(직접 실행·CI·에디터 통합)을 위한 이중 방어는 `.claude/rules/test-git.md` 에 path-scoped 규약으로 남겼다.
+>
+> **회귀 테스트는 git 을 조작하지 않는다** — `scripts/gate-env.test.mjs` 는 오염된 env 로 자식을 스폰해 자식이 `GIT_DIR` 을 보지 못하는 것만 확인한다(대조군 포함 — 오염이 애초에 없어 통과하는 테스트가 되지 않게). 방어를 되돌리면 실제로 실패하는 것을 확인했다. `GIT_DIR`/`GIT_INDEX_FILE` 을 오염시킨 채 `node scripts/gate.mjs` 를 돌려도 통과하고, 이 커밋 자체가 링크드 worktree 의 `pre-commit` 에서 그 worktree 를 대상으로 게이트를 돌았다.
 
 **증상** — 게이트가 git 훅 안에서 돌기 때문에, 테스트 프로세스가 **진짜 저장소를 가리키는 `GIT_*` 환경변수를 상속**한다. git 을 호출하는 테스트는 임시 저장소를 겨냥해도 실제로는 **이 저장소를 조작한다.**
 
@@ -235,7 +241,8 @@ git commit
 | ✔ | ~~#3 worktree 기준 브랜치·설치 명령~~ | **완료** `1ffebe1` | 파이프라인 의식의 선행 조건이었다 |
 | **0** | **#9 게이트 `GIT_*` 격리** | **대기 · P0** | **저장소를 실제로 망가뜨렸다. 고치기 전엔 git 을 부르는 테스트를 돌릴 수 없다** |
 | ✔ | ~~#5 index-sync 결정~~ | **완료** `823a567` | 판단은 **제거**로 확정. 한 번도 동작한 적 없었고, 드리프트는 단일 출처화로 이미 다루고 있다 |
-| 1 | #7 verify-branch 면제 경로 | 대기 | 하네스 자기 코드(`scripts/`·`.githooks/`)를 고치는 항목에 선행 |
+| ✔ | ~~#9 게이트 `GIT_*` 격리~~ | **완료** `020beec` | P0. 저장소를 실제로 망가뜨렸다. 이제 git 을 부르는 테스트를 게이트로 돌릴 수 있다 |
+| 1 | #7 verify-branch 면제 경로·교차 워킹트리 | 진행 중 | spec 작성·worktree 생성 완료. **#9 이 머지되면 재개 가능** |
 | 2 | #2 Phase 1 서술 제거 | 대기 | 값싸고, QA 산출물을 실제로 오염시킨다. **#5 뒤에 한다** — 같은 `harness-engineering.md` §11 을 고친다 |
 | — | #6 doggy rules | 대기 | 별도 저장소, 독립적으로 가능 |
 
