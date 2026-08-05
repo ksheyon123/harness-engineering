@@ -44,7 +44,7 @@
               │  (Hook1 로더가 개발자 컨텍스트에 spec 주입)
               ▼
         개발자(메인): 코드 + 자기 코드의 테스트 작성, 테스트 green
-              │  (Hook3 PostToolUse: 변경 파일 ↔ 문서 동기화 알림)
+              │
               ▼ git push  ──────────────┐
         [pre-push 훅 / headless QA]      │
           1. (선택) tsc + 테스트 — red면 fail-fast    │
@@ -67,7 +67,7 @@
 
 ```
 harness/
-  index.json                ← 브랜치 → spec 경로 매핑 (Hook1 로더용) + 컴포넌트 인덱스
+  index.json                ← 브랜치 → spec 경로 매핑 (Hook1 로더용)
   <task>/
     spec.md                 ← 기획자: 기능 목록
     qa-checklist.md          ← QA: 기능 체크리스트 + 커버리지 매트릭스 (+ 입력 해시)
@@ -77,7 +77,6 @@ tests/ ...                   ← 개발자: 테스트
   agents/planner.md          ← 기획자 에이전트 정의
   agents/qa.md               ← QA 에이전트 정의
   hooks/load-spec.mjs        ← Hook1 로더 (Node)
-  hooks/index-sync.mjs       ← Hook3 동기화 (Node)
   settings.json              ← Claude 훅 등록
 .git/hooks/pre-push          ← QA 트리거 (또는 husky/lefthook)
 ```
@@ -175,7 +174,7 @@ spec: harness/<task>/spec.md
 
 | 위치 | 담당 |
 |------|------|
-| `.claude/settings.json` | Hook1 로더(기능 목록 주입), Hook3 인덱스 동기화 — *세션 중* |
+| `.claude/settings.json` | Hook1 로더(기능 목록 주입) — *세션 중* |
 | `.git/hooks/pre-push` (husky/lefthook) | 1층 객관 게이트 + QA 생성(headless Claude) — *push 시* |
 
 > Claude Code의 hook 이벤트(UserPromptSubmit/Stop/PostToolUse 등)에는 git 생명주기가 없다. 그래서 QA-at-push는 **git 훅**이고, 그 안에서 headless Claude를 호출한다. 이 분리 덕에 초기 설계에서 막혔던 "Stop hook 무한루프", "agent hook의 Write/Bash 가능 여부" 같은 불확실성이 **전부 사라진다** (QA는 hook의 `type: agent`가 아니라 일반 headless 호출이라 도구 제약이 없다).
@@ -212,26 +211,6 @@ if (ctx) {
 ```
 
 > 문서 없는 브랜치는 **하드 차단하지 않고 소프트 경고**만 한다(전제: 기획자가 사전 작성). 강제는 사람이 책임진다.
-
-### 7.2 Hook 3 — 인덱스 동기화 (PostToolUse: Edit|Write, command)
-
-수정된 파일이 `index.json`에 인덱싱돼 있으면, 관련 문서 갱신을 컨텍스트에 알린다.
-
-```js
-// .claude/hooks/index-sync.mjs  (개념 스케치)
-import { readFileSync } from "node:fs";
-const input = JSON.parse(readFileSync(0, "utf8"));
-const file = input.tool_input?.file_path;
-if (!file) process.exit(0);
-try {
-  const index = JSON.parse(readFileSync("harness/index.json", "utf8"));
-  const m = index.components?.[file];
-  if (m) process.stdout.write(JSON.stringify({
-    hookSpecificOutput: { hookEventName: "PostToolUse",
-      additionalContext: `[인덱스 동기화] ${file} 수정됨 → ${m.doc}의 '${m.section}' 섹션을 갱신하세요.` }
-  }));
-} catch {}
-```
 
 ### 7.3 pre-push — QA 트리거 (git 훅)
 
@@ -298,10 +277,6 @@ exit 0
   "hooks": {
     "UserPromptSubmit": [
       { "hooks": [ { "type": "command", "command": "node .claude/hooks/load-spec.mjs", "timeout": 10 } ] }
-    ],
-    "PostToolUse": [
-      { "matcher": "Edit|Write",
-        "hooks": [ { "type": "command", "command": "node .claude/hooks/index-sync.mjs", "timeout": 10 } ] }
     ]
   }
 }
@@ -355,9 +330,9 @@ exit 0
 
 ## 11. 적용 순서
 
-1. `harness/index.json` 초기화 (`{ "tasks": {}, "components": {} }`)
+1. `harness/index.json` 초기화 (`{ "tasks": {} }`)
 2. `.claude/agents/planner.md`, `.claude/agents/qa.md` 작성 (도구 경계 포함)
-3. `.claude/hooks/load-spec.mjs`, `index-sync.mjs` 작성 + `settings.json`에 hooks 병합
+3. `.claude/hooks/load-spec.mjs` 작성 + `settings.json`에 hooks 병합
 4. 첫 태스크: 기획자로 `harness/<task>/spec.md` 작성 + `index.json`의 `tasks`에 브랜치 등록
 5. 개발자(메인)로 코드 작성, `tsc` green (Phase 1). *테스트 작성·`npm test`는 Phase 2(Vitest 도입 후)*
 6. **인증 토큰 발급**: `claude setup-token` → `CLAUDE_CODE_OAUTH_TOKEN`을 개발자 셸 환경에 설정 (헤드리스 훅 전제)
@@ -380,3 +355,4 @@ exit 0
 | QA = 검증·판정자 | QA = **독립 커버리지 분석가** | 개발자가 자기 테스트를 green으로 수렴(루프 회피). QA는 기능 체크리스트를 독립 도출해 테스트 커버리지만 대조, 누락은 사람이 판단 |
 | 완료표시 `[x]` 자동/수동 확정 | **없음** | AI 플로우엔 확정 단계가 없다. 산출물 push → 사람 머지가 완성도 판단 |
 | Telegram 원격 승인(차단 우회) | (불필요) | 차단이 없으므로 원격 승인 개념도 불필요. 필요 시 *알림*(push/누락 통지)으로만 선택 도입 |
+| Hook 3 = `index-sync`(PostToolUse, 코드↔문서 드리프트 알림) | **삭제** | `index.json` 의 `components` 매핑을 *누가·언제* 등록하는지가 프로토콜 어디에도 없어 80개 task 동안 0개였다 — 한 번도 동작한 적이 없다. 드리프트는 알림으로 따라잡는 대신 **중복 자체를 없애** 단일 출처로 모은다(게이트 대상 → `harness/config.json`). 서술형 설계 문서의 드리프트는 사람이 PR 에서 잡는다. 복원이 필요하면 제거 커밋에서 되살릴 수 있다 |

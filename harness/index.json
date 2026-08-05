@@ -4,6 +4,5 @@
     "fix/verify-branch-guard": "harness/verify-branch-guard/spec.md",
     "chore/index-sync-removal": "harness/index-sync-removal/spec.md",
     "docs/drop-phase1": "harness/drop-phase1/spec.md"
-  },
-  "components": {}
+  }
 }
