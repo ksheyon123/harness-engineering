@@ -6,7 +6,7 @@
 
 > **파이프라인 의식을 적용한다(#1 완료).** 게이트가 신호를 못 내서 의식을 생략하던 전제는 해소됐다 — `node scripts/gate.mjs` 가 이 저장소의 vitest 스위트를 실제로 돌리고, 테스트 파일이 있으므로 QA 커버리지 매트릭스도 실질을 갖는다. 이후 항목은 spec 작성 → `harness/index.json` 등록 → worktree → 새 세션 → 게이트 → QA → 커밋/push 의 정규 흐름으로 진행한다.
 >
-> **worktree 생성의 선행 조건은 해소됐다(#3 완료).** `worktree-add.mjs` 가 `harness/config.json` 의 `baseBranch`(이 저장소는 `main`)에서 분기하므로 `node scripts/worktree-add.mjs <branch> --launch` 가 그대로 동작한다. 다만 등록된 task 브랜치에서 `scripts/`·`.githooks/` 를 메인 체크아웃에서 편집하면 `verify-branch` 가 막으므로(#7), 하네스 자기 코드를 고치는 항목은 worktree 에서 작업해야 한다.
+> **worktree 생성의 선행 조건은 해소됐다(#3 완료).** `worktree-add.mjs` 가 `harness/config.json` 의 `baseBranch`(이 저장소는 `main`)에서 분기하므로 `node scripts/worktree-add.mjs <branch> --launch` 가 그대로 동작한다. 다만 등록된 task 브랜치에서 `scripts/` 를 메인 체크아웃에서 편집하면 `verify-branch` 가 막으므로(**#7 완료 후에도 의도적으로 그렇다** — `.githooks/` 는 면제됐지만 `scripts/` 는 아니다), 하네스 자기 코드를 고치는 항목은 worktree 에서 작업한다.
 
 ---
 
@@ -128,9 +128,20 @@
 
 ---
 
-## #7 · `verify-branch` 의 면제 경로에 하네스 자기 코드가 빠져 있다 <sub>P2</sub>
+## ~~#7 · `verify-branch` 의 면제 경로에 하네스 자기 코드가 빠져 있다~~ <sub>P2</sub> ▸ **완료**
 
-**증상** — 하네스 메타작업 면제 목록이 `harness/` 와 `.claude/` 뿐이라, **`scripts/` 와 `.githooks/` 는 '제품 소스'로 취급**된다. 등록된 task 브랜치에서 `scripts/gate.mjs` 나 `.githooks/pre-commit` 을 메인 체크아웃에서 편집하면 `deny` 로 차단된다.
+> **[`harness/verify-branch-guard/spec.md`](./harness/verify-branch-guard/spec.md) 로 이관 후 구현 완료.** 훅을 실제로 실행해 재현한 결과 **결함이 3건**이었고, 아래 원안은 그중 하나만, 그것도 **틀린 방향으로** 짚고 있었다.
+>
+> **원안을 뒤집었다 — `scripts/` 는 면제하지 않는다.** 훅의 판정 순서를 실측하니 `deny` 는 *등록된 task 브랜치를 메인 체크아웃에 체크아웃해서 작업할 때만* 발동한다. **worktree 안에서는 `scripts/` 편집이 이미 자유롭다** — 규약대로 하면 애초에 부딪히지 않는다. 반대로 `scripts/` 를 면제하면 이 저장소는 제품 소스가 거의 전부 `scripts/` 라 worktree 강제가 사실상 사라진다. 그 강제 덕분에 `#3` 을 worktree 에서 진행했고 그래서 `#8`(P0)이 드러났다. 면제는 **넓히는 게 아니라 정확하게** 만든다.
+>
+> **실제로 고친 것 셋** —
+> ① **교차 워킹트리 편집 차단**: 훅이 세션(`cwd`)만 보고 대상 파일을 안 봐서, **메인 세션이 다른 worktree 안의 소스를 편집해도 `deny` 가 아니라 `ask`** 였다(이 하네스에서 실제로 일어났고 사람이 막았다). 대상 파일 쪽에서도 git 컨텍스트를 뽑아 비교한다 — common-dir 같음 + toplevel 다름 → `deny`, 다른 저장소 → `ask`(다중 저장소 작업은 정당할 수 있다). 이 판정이 **다른 모든 판정보다 앞**이다(보호 브랜치 `ask` 가 먼저 반환하면 교차 편집이 `ask` 로 샌다 — 그게 정확히 증상이었다).
+> ② **면제 판정 루트 앵커링**: `includes("/harness/")` 부분 문자열 매칭이라 `apps/web/harness/foo.ts`·`vendor/.claude/x.ts` 가 **면제돼 제품 코드가 뚫렸다**. 저장소 루트 상대경로 + 디렉터리 경계 매칭으로 바꿨고, 목록은 `harness/config.json` 의 `harnessMetaPaths` 로 뺐다(기본값 = 기존 동작). 이 저장소 설정에 `.githooks/`·`harness-engineering.md`·`BACKLOG.md` 를 추가해 **문서가 '면제' 라고 약속한 것을 실제로 성립**시켰다.
+> ③ **`deny` 메시지 일반화**: `apps/·packages/` 를 지목했는데 이 저장소엔 없는 디렉터리다(분리 이전 잔재). 이름을 부르지 않고 면제 목록의 출처를 안내한다. 교차 워킹트리 차단은 **다른 메시지**를 쓴다 — 원인이 다르면 안내도 달라야 한다.
+>
+> 판정 로직을 순수 함수로 분리해 `.claude/hooks/verify-branch.test.mjs`(37 테스트)로 덮었다. 순수 함수만으로는 **판정 순서**를 증명할 수 없어, 임시 저장소+worktree 를 만들어 훅을 프로세스로 돌리는 end-to-end 도 포함한다.
+
+**증상(당시)** — 하네스 메타작업 면제 목록이 `harness/` 와 `.claude/` 뿐이라, **`scripts/` 와 `.githooks/` 는 '제품 소스'로 취급**된다. 등록된 task 브랜치에서 `scripts/gate.mjs` 나 `.githooks/pre-commit` 을 메인 체크아웃에서 편집하면 `deny` 로 차단된다.
 
 원본 저장소에선 작업 대부분이 `apps/`·`packages/` 라 드러나지 않았지만, **이 저장소는 거의 모든 작업이 `scripts/`·`.githooks/`** 라 첫 task 부터 부딪힌다.
 
@@ -138,13 +149,13 @@
 - `.claude/hooks/verify-branch.mjs:79-83` — `isHarnessMeta` 판정이 `harness/`·`.claude/` 만 본다
 - `.claude/CLAUDE.md` — *"`harness/`·`.claude/` 하네스 메타작업(spec·qa-checklist·CLAUDE.md·**훅**)은 면제"* 라고 적혀 있으나, `.githooks/` 의 훅은 면제가 아니다. **문서 의도와 코드가 어긋나 있다.**
 
-**바꿀 것** — `isHarnessMeta` 에 `scripts/`·`.githooks/` 를 추가하거나, 면제 경로 목록을 `harness/config.json` 으로 뺀다(후자가 #1 의 결과와 일관된다).
+**바꿀 것(원안 · 일부 기각)** — ~~`isHarnessMeta` 에 `scripts/`·`.githooks/` 를 추가하거나~~, 면제 경로 목록을 `harness/config.json` 으로 뺀다(후자가 #1 의 결과와 일관된다). → **설정으로 빼는 쪽만 채택**했다. `scripts/` 추가는 기각(위 박스).
 
-**주의** — 면제를 넓히면 그만큼 worktree 강제가 느슨해진다. 하네스 코드와 제품 코드가 같은 저장소에 있는 도입 프로젝트에서는 `scripts/` 가 제품 스크립트일 수도 있다. 그래서 하드코딩보다 **설정으로 빼는 쪽**이 맞다.
+**주의** — 면제를 넓히면 그만큼 worktree 강제가 느슨해진다. 하네스 코드와 제품 코드가 같은 저장소에 있는 도입 프로젝트에서는 `scripts/` 가 제품 스크립트일 수도 있다. 그래서 하드코딩보다 **설정으로 빼는 쪽**이 맞다. → 이 주의가 결국 결론을 갈랐다.
 
-**완료 조건** — 등록된 task 브랜치의 메인 체크아웃에서 `.githooks/pre-push` 를 편집해도 차단되지 않고, 제품 소스는 여전히 차단된다.
+**완료 조건** — 등록된 task 브랜치의 메인 체크아웃에서 `.githooks/pre-push` 를 편집해도 차단되지 않고, 제품 소스는 여전히 차단된다. ✔
 
-**브랜치** `fix/verify-branch-exempt`
+**브랜치** `fix/verify-branch-guard` (원안의 `fix/verify-branch-exempt` 는 범위가 바뀌어 쓰지 않았다)
 
 ---
 
@@ -239,11 +250,10 @@ git commit
 | ✔ | ~~#4 qa-hash glob~~ | **완료** | #1 에 흡수 |
 | ✔ | ~~#8 CRLF 체크아웃~~ | **완료** `f6a4f1f` | P0. 모든 worktree 에서 게이트가 깨져 있었다 |
 | ✔ | ~~#3 worktree 기준 브랜치·설치 명령~~ | **완료** `1ffebe1` | 파이프라인 의식의 선행 조건이었다 |
-| **0** | **#9 게이트 `GIT_*` 격리** | **대기 · P0** | **저장소를 실제로 망가뜨렸다. 고치기 전엔 git 을 부르는 테스트를 돌릴 수 없다** |
 | ✔ | ~~#5 index-sync 결정~~ | **완료** `823a567` | 판단은 **제거**로 확정. 한 번도 동작한 적 없었고, 드리프트는 단일 출처화로 이미 다루고 있다 |
 | ✔ | ~~#9 게이트 `GIT_*` 격리~~ | **완료** `020beec` | P0. 저장소를 실제로 망가뜨렸다. 이제 git 을 부르는 테스트를 게이트로 돌릴 수 있다 |
-| 1 | #7 verify-branch 면제 경로·교차 워킹트리 | 진행 중 | spec 작성·worktree 생성 완료. **#9 이 머지되면 재개 가능** |
-| 2 | #2 Phase 1 서술 제거 | 대기 | 값싸고, QA 산출물을 실제로 오염시킨다. **#5 뒤에 한다** — 같은 `harness-engineering.md` §11 을 고친다 |
+| ✔ | ~~#7 verify-branch 면제 경로·교차 워킹트리~~ | **완료** | 결함 3건(교차 워킹트리 미차단·부분 문자열 오탐·틀린 메시지). 원안의 `scripts/` 면제는 **기각** |
+| **1** | **#2 Phase 1 서술 제거** | **대기** | 값싸고, QA 산출물을 실제로 오염시킨다. 선행 조건이던 #5·#7 이 끝나 바로 착수 가능 |
 | — | #6 doggy rules | 대기 | 별도 저장소, 독립적으로 가능 |
 
 > **#1 은 파이프라인 의식(dev 브랜치 → index 등록 → worktree → 새 세션 → QA 스폰)을 생략하고 `main` 에서 직접 진행했다.** 이유: 당시 이 저장소엔 검사할 코드도 테스트도 없어 1층 게이트가 신호를 못 냈고, 게이트를 고치는 작업이 그 게이트를 통과해야 하는 순환도 있었다. **#1 이 끝나 하네스가 자기 테스트를 갖게 됐으므로, 이 예외는 여기서 끝난다.**

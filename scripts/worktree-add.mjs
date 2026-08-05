@@ -43,7 +43,9 @@ export function assertOutsideRepo(repoRoot, target) {
 }
 
 // 경로 비교용 정규화: resolve + normalize 후 Windows 의 대소문자 차이를 흡수한다.
-function samePath(a, b) {
+// verify-branch 훅도 이 함수를 import 한다(세션/대상 워킹트리 비교) — 같은 비교 규칙을
+// 두 곳이 각자 구현하면 한쪽만 Windows 대소문자를 흡수하는 식으로 어긋난다.
+export function samePath(a, b) {
   const na = normalize(resolve(a));
   const nb = normalize(resolve(b));
   return process.platform === "win32" ? na.toLowerCase() === nb.toLowerCase() : na === nb;

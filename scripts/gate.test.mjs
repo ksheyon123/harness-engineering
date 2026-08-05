@@ -65,6 +65,31 @@ describe("loadConfig", () => {
     expect(() => loadConfig(JSON.stringify({ gate: { test: [{ cmd: "x" }] } }))).toThrow(/dir/);
     expect(() => loadConfig(JSON.stringify({ gate: { test: [{ dir: "." }] } }))).toThrow(/cmd/);
   });
+
+  // harnessMetaPaths: verify-branch 훅의 면제 목록(저장소 루트 기준 경로)의 단일 출처.
+  // 미설정 시 기본값은 훅의 기존 동작이어야 한다 — 기존 저장소의 판정이 바뀌면 안 된다.
+  it("harnessMetaPaths 가 없으면 기본값(harness/·.claude/)이다", () => {
+    expect(loadConfig("{}").harnessMetaPaths).toEqual(["harness/", ".claude/"]);
+    expect(DEFAULTS.harnessMetaPaths).toEqual(["harness/", ".claude/"]);
+  });
+
+  it("명시된 harnessMetaPaths 를 그대로 돌려준다", () => {
+    const cfg = loadConfig(JSON.stringify({ harnessMetaPaths: ["harness/", "BACKLOG.md"] }));
+    expect(cfg.harnessMetaPaths).toEqual(["harness/", "BACKLOG.md"]);
+  });
+
+  // 오타가 조용히 기본값으로 둔갑하면 worktree 강제가 엉뚱한 경로에서 켜지거나 꺼진다.
+  it("harnessMetaPaths 가 배열이 아니거나 원소가 문자열이 아니면 throw 한다", () => {
+    expect(() => loadConfig(JSON.stringify({ harnessMetaPaths: "harness/" }))).toThrow(
+      /harnessMetaPaths/,
+    );
+    expect(() => loadConfig(JSON.stringify({ harnessMetaPaths: [1] }))).toThrow(
+      /harnessMetaPaths\[0\]/,
+    );
+    expect(() => loadConfig(JSON.stringify({ harnessMetaPaths: [""] }))).toThrow(
+      /harnessMetaPaths\[0\]/,
+    );
+  });
 });
 
 describe("resolveCommand", () => {

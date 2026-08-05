@@ -22,6 +22,10 @@ export const DEFAULTS = {
   installCommand: "npm install",
   testFilePatterns: ["**/*.test.{ts,tsx}"],
   skipDirs: ["node_modules", ".git", ".next", "dist", ".turbo"],
+  // verify-branch 훅의 면제 목록 — 저장소 루트 기준 경로다.
+  // 기본값은 훅의 기존 동작과 같다(harness/·.claude/). 도입 프로젝트가 레이아웃을 바꾸면
+  // 이 값만 바꾼다 — 훅에 디렉터리 이름을 박지 않기 위해 설정으로 뺐다.
+  harnessMetaPaths: ["harness/", ".claude/"],
 };
 
 // typecheck 가 먼저다 — 타입이 깨졌으면 테스트를 돌릴 이유가 없다.
@@ -66,11 +70,25 @@ export function loadConfig(text) {
     }
   }
 
+  // harnessMetaPaths 는 verify-branch 훅이 쓴다. 오타가 조용히 기본값으로 둔갑하면
+  // worktree 강제가 엉뚱한 경로에서 켜지거나 꺼진다 — installCommand 와 같은 결로 throw 한다.
+  if (raw.harnessMetaPaths !== undefined) {
+    if (!Array.isArray(raw.harnessMetaPaths)) {
+      throw new Error(`harnessMetaPaths 는 배열이어야 합니다`);
+    }
+    for (const [i, p] of raw.harnessMetaPaths.entries()) {
+      if (typeof p !== "string" || !p) {
+        throw new Error(`harnessMetaPaths[${i}] 는 비어 있지 않은 문자열이어야 합니다`);
+      }
+    }
+  }
+
   return {
     baseBranch: raw.baseBranch ?? DEFAULTS.baseBranch,
     installCommand: raw.installCommand ?? DEFAULTS.installCommand,
     testFilePatterns: raw.testFilePatterns ?? DEFAULTS.testFilePatterns,
     skipDirs: raw.skipDirs ?? DEFAULTS.skipDirs,
+    harnessMetaPaths: raw.harnessMetaPaths ?? DEFAULTS.harnessMetaPaths,
     gate,
   };
 }
