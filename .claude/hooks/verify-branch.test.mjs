@@ -355,10 +355,15 @@ describe("이 저장소의 harness/config.json", () => {
       ".claude/CLAUDE.md",
       ".githooks/pre-push",
       "README.md",
-      "BACKLOG.md",
     ]) {
       expect(isHarnessMeta(p, meta)).toBe(true);
     }
+  });
+
+  // BACKLOG.md 는 7b4b47e 로 삭제됐고 harnessMetaPaths 에서도 뺐다. 존재하지 않는 파일의
+  // 면제 항목은 '낡은 사본' 이다 — 되살린다면 그 결정과 함께 다시 넣는다.
+  it("삭제된 BACKLOG.md 는 더 이상 면제 대상이 아니다", () => {
+    expect(isHarnessMeta("BACKLOG.md", resolveMetaPaths(configText))).toBe(false);
   });
 
   // scripts/ 는 의도적으로 면제하지 않는다 — 이 저장소의 제품 소스가 거의 전부 scripts/ 라

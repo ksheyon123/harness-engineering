@@ -15,12 +15,21 @@ import { loadConfig, DEFAULTS, CONFIG_PATH } from "./gate.mjs";
 
 const BRANCH_RE = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/;
 
-// 브랜치명 → 마지막 세그먼트(task). 빈 값/형식 위반은 에러.
-export function taskFromBranch(branch) {
-  if (!branch || !branch.trim()) throw new Error("브랜치명이 필요합니다");
+// 브랜치명 형식 검사. 경로 탈출·인젝션 방지라 경로 조립보다 먼저 돈다.
+// taskFromBranch 와 --from 검증이 같은 규칙을 쓰도록 한 곳에 둔다.
+export function assertBranchName(branch, label = "브랜치명") {
+  if (!branch || !branch.trim()) throw new Error(`${label}이 필요합니다`);
   if (!BRANCH_RE.test(branch) || branch.includes("..")) {
-    throw new Error(`브랜치명 형식이 올바르지 않습니다: ${branch}`);
+    throw new Error(`${label} 형식이 올바르지 않습니다: ${branch}`);
   }
+}
+
+// 브랜치명 → 마지막 세그먼트(task). 빈 값/형식 위반은 에러.
+// 리비전 접미사(`-<숫자>`)는 **떼지 않는다** — worktree 경로는 브랜치 전체를 써야
+// `...-a` 와 `...-a-1` 이 충돌하지 않는다. `-<숫자>` 를 떼는 것은 spec 디렉터리
+// (planner 의 <task> 유도)뿐이다. 두 용도가 갈리므로 이 함수를 겸용하지 않는다.
+export function taskFromBranch(branch) {
+  assertBranchName(branch);
   const segs = branch.split("/").filter(Boolean);
   return segs[segs.length - 1];
 }
@@ -158,18 +167,49 @@ function ensureWorktree(branch, path, baseBranch) {
 
 // --- 세션 기동 헬퍼 (순수 함수: import 시 부수효과 없음 → 단위 테스트 가능) ---
 
-// 브랜치 → 새 세션에 줄 개발 지시 seed. 새 세션의 load-spec 로더가 브랜치로 spec 을
-// 자동 주입하므로 seed 는 "개발을 시작하라"는 트리거면 충분하다(spec 경로를 박지 않는다).
-export function seedPromptFor(branch) {
-  const task = taskFromBranch(branch);
-  return `${task} 개발 진행 — 등록된 spec 대로 test-first 로 구현`;
+// 새 브랜치를 만들 때 분기 기준으로 쓸 브랜치명. --from 이 있으면 그것, 없으면 설정의
+// baseBranch. resolveBaseRef/ensureWorktree 의 계약은 그대로 두고 넘기는 문자열만 고른다.
+export function baseForNewBranch({ from, configBaseBranch }) {
+  return from || configBaseBranch;
 }
 
-// argv(스크립트 인자 배열) → { branch, seed }. --seed <값> / --seed=<값> 지원.
-// --seed 의 값 토큰은 브랜치명으로 오인하지 않는다. 순수 함수(부수효과 없음 → 테스트 가능).
+// index.json 텍스트 → 그 브랜치가 등록돼 있는가. 파일을 읽지 않고 텍스트를 받는다
+// (gate.mjs 의 loadConfig, resolveBaseRef 의 refExists 와 같은 관례 — fs 는 main() 의 몫).
+//
+// 부재·파싱 실패는 **미등록**으로 기운다. 두 오판의 위험이 비대칭이기 때문이다:
+// 미등록으로 잘못 보면 세션이 spec 을 다시 쓰려 하는데, 그건 planner 의 리비전 모드가
+// 흡수하거나 최악의 경우 pre-commit 의 소유권 검사가 막는다(대가 = 유한한 재작업).
+// 등록됨으로 잘못 보면 "spec 대로 이어서 구현하라"는 지시를 spec 없이 받아 doc-before-code
+// 를 건너뛴 채 코드부터 짜게 되고, 그걸 사후에 잡는 장치는 없다.
+export function isTaskRegistered(indexJsonText, branch) {
+  try {
+    return Boolean(JSON.parse(String(indexJsonText)).tasks?.[branch]);
+  } catch {
+    return false;
+  }
+}
+
+// 브랜치 + 등록 여부 → 새 세션에 줄 seed. 새 세션의 load-spec 로더가 브랜치로 spec 을
+// 자동 주입하므로 seed 는 트리거면 충분하다(spec 경로를 박지 않는다).
+//
+// 2분기가 존재하는 이유는 '중단 재개' 하나다(pipeline-review §4-4-1). 신규 task 도
+// 리비전(--from)도 그 worktree 의 index.json 엔 아직 자기 브랜치가 없어 미등록이고,
+// 같은 브랜치를 attach 하는 재개만 등록됨으로 나온다. 재개에 '기획부터' 를 주면
+// 규칙 2 로 재작성이 막힌 spec 을 다시 쓰라고 지시하게 된다.
+export function seedPromptFor(branch, { registered } = {}) {
+  const task = taskFromBranch(branch);
+  return registered
+    ? `${task} 개발 진행 — 등록된 spec 의 진행 상태를 확인하고 test-first 로 이어서 구현`
+    : `${task} 기획부터 진행 — planner 를 스폰해 기능 목록을 확정하고 등록한 뒤 test-first 로 구현`;
+}
+
+// argv(스크립트 인자 배열) → { branch, seed, from }.
+// --seed/--from 은 <값> 과 =<값> 을 모두 받고, 그 값 토큰은 브랜치명으로 오인하지 않는다.
+// 순수 함수(부수효과 없음 → 테스트 가능).
 export function parseArgs(args) {
   let branch;
   let seed;
+  let from;
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (a === "--seed") {
@@ -177,11 +217,16 @@ export function parseArgs(args) {
       i++; // 다음 토큰(값)을 소비
     } else if (a.startsWith("--seed=")) {
       seed = a.slice("--seed=".length);
+    } else if (a === "--from") {
+      from = args[i + 1];
+      i++;
+    } else if (a.startsWith("--from=")) {
+      from = a.slice("--from=".length);
     } else if (!a.startsWith("--") && branch === undefined) {
       branch = a;
     }
   }
-  return { branch, seed };
+  return { branch, seed, from };
 }
 
 // POSIX 안전 단일인용: 내부 ' 를 '\'' 로 이스케이프해 공백/특수문자를 무력화한다.
@@ -258,34 +303,30 @@ function tryLaunchTerminal(path, seed) {
   return false;
 }
 
-// 등록/spec 존재를 점검해 경고만 한다(차단하지 않음). 새 세션의 spec 주입 가능성을 알린다.
-function warnLaunchContext(root, branch) {
-  let specPath;
+// 확보된 worktree 의 harness/index.json 을 읽어 등록 여부를 판정한다.
+//
+// **root(메인 체크아웃)가 아니라 worktree 를 본다.** 새 흐름에서 등록은 언제나 작업 브랜치
+// 위에서 일어나므로 root 의 index.json 엔 머지 전까지 그 항목이 없다 — root 기준으로 보면
+// 살아 있는 모든 task 가 항상 '미등록' 이 되어 판정이 무의미해진다(pipeline-review §4-4-1).
+// 반드시 ensureWorktree 이후에 부른다(그 전엔 디렉터리가 없다).
+function registeredInWorktree(worktreePath, branch) {
+  let text;
   try {
-    const index = JSON.parse(readFileSync(`${root}/harness/index.json`, "utf8"));
-    specPath = index?.tasks?.[branch];
+    text = readFileSync(join(worktreePath, "harness", "index.json"), "utf8");
   } catch {
-    // index 없음/파싱 실패 → 아래 미등록 경고로 처리
+    // 파일 부재 → isTaskRegistered 가 미등록으로 판정한다(안전한 방향).
   }
-  if (!specPath) {
-    console.warn(
-      `[worktree-add] ⚠ '${branch}' 는 harness/index.json 에 등록돼 있지 않습니다 — 새 세션에 spec 이 자동 주입되지 않을 수 있습니다.`,
-    );
-    return;
-  }
-  if (!existsSync(`${root}/${specPath}`)) {
-    console.warn(
-      `[worktree-add] ⚠ spec 파일이 없습니다: ${specPath} — 새 세션의 설계 검증이 생략될 수 있습니다.`,
-    );
-  }
+  return isTaskRegistered(text, branch);
 }
 
 function usage() {
   process.stdout.write(
     [
-      "사용법: node scripts/worktree-add.mjs <branch> [--install] [--launch] [--seed \"<문구>\"]",
+      '사용법: node scripts/worktree-add.mjs <branch> [--from <branch>] [--install] [--launch] [--seed "<문구>"]',
       "  예) node scripts/worktree-add.mjs feat/monthly-view --launch",
+      '  예) node scripts/worktree-add.mjs feat/monthly-view-1 --from feat/monthly-view --launch --seed "spec 개정 — <요청 내용>"',
       `  저장소 밖 형제 디렉터리에 worktree 를 만들고 ${CONFIG_PATH} 의 baseBranch 에서 분기합니다.`,
+      "  --from <branch> : baseBranch 대신 이 브랜치에서 분기합니다(spec 개정용 리비전 브랜치). 브랜치가 이미 있으면 attach 라 쓰이지 않습니다.",
       `  --install : 생성 후 그 worktree 에서 설치 명령(${CONFIG_PATH} 의 installCommand)까지 실행합니다.`,
       "  --launch  : (--install 포함) 생성·설치 후 그 worktree 에서 개발 세션을 새 터미널 창에서 자동 실행합니다(macOS=Terminal.app, Windows=PowerShell). 실패/미지원 플랫폼이면 기동 명령을 출력합니다.",
       '  --seed "…" : --launch 시 새 세션의 초기 프롬프트(seed)를 지정합니다(생략 시 브랜치에서 도출).',
@@ -297,13 +338,24 @@ function usage() {
 
 function main(argv) {
   const args = argv.slice(2);
-  const { branch, seed: seedArg } = parseArgs(args);
+  const { branch, seed: seedArg, from } = parseArgs(args);
   const doLaunch = args.includes("--launch");
   const doInstall = doLaunch || args.includes("--install"); // --launch 는 install 을 함의
 
   if (!branch) {
     usage();
     process.exit(1);
+  }
+
+  // --from 형식 검증은 worktree 를 만들기 전에 한다 — 중간 상태(디렉터리만 생기고 실패)를
+  // 남기지 않기 위함이다. 검증 규칙은 브랜치명과 동일하다(같은 정규식 한 곳).
+  if (from !== undefined) {
+    try {
+      assertBranchName(from, "--from 의 브랜치명");
+    } catch (e) {
+      console.error(`[worktree-add] ❌ ${e.message}`);
+      process.exit(1);
+    }
   }
 
   // .git 이 없으면 조용히 종료 (setup-githooks 와 동일한 방어).
@@ -346,7 +398,11 @@ function main(argv) {
   let created;
   let baseRef;
   try {
-    ({ created, baseRef } = ensureWorktree(branch, path, config.baseBranch));
+    ({ created, baseRef } = ensureWorktree(
+      branch,
+      path,
+      baseForNewBranch({ from, configBaseBranch: config.baseBranch }),
+    ));
   } catch (e) {
     console.error(`[worktree-add] ❌ worktree 확보 실패 — ${e.message}`);
     process.exit(1);
@@ -359,6 +415,15 @@ function main(argv) {
     console.log("[worktree-add] core.hooksPath 는 공유 config 라 worktree 에 자동 적용됩니다.");
   } else {
     console.log(`[worktree-add] ↩ 기존 worktree 재사용: ${path}  (브랜치 ${branch})`);
+  }
+
+  // attach 경로(중단 재개)에서는 기준 ref 를 아예 쓰지 않는다. --from 을 준 사용자가
+  // '무시된 것' 과 '적용된 것' 을 구분할 수 있어야 하므로 알린다. 경고가 아니라 정보다 —
+  // attach 는 정상 경로다.
+  if (from !== undefined && baseRef === null) {
+    console.log(
+      `[worktree-add] ℹ '${branch}' 가 이미 존재해 --from '${from}' 은 쓰이지 않고 기존 브랜치를 attach 합니다.`,
+    );
   }
 
   // 재사용 worktree 에 node_modules 가 이미 있으면 install 은 불필요(시간 낭비)하니 건너뛴다.
@@ -396,8 +461,9 @@ function main(argv) {
 
   // --launch: 그 worktree 에서 개발 세션을 새 터미널 창에서 기동한다(실패/미지원 시 기동 명령 출력 폴백).
   if (doLaunch) {
-    warnLaunchContext(root, branch);
-    const seed = seedArg ?? seedPromptFor(branch);
+    // 등록 판정은 ensureWorktree 이후 + worktree 기준이어야 한다(§4-4-1).
+    // --seed 를 직접 준 경우엔 그 값이 항상 이긴다(기존 우선순위 유지).
+    const seed = seedArg ?? seedPromptFor(branch, { registered: registeredInWorktree(path, branch) });
     if (tryLaunchTerminal(path, seed)) {
       console.log("[worktree-add] ✅ 새 터미널 창에서 개발 세션을 기동했습니다.");
     } else {

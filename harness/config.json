@@ -5,8 +5,7 @@
     "harness/",
     ".claude/",
     ".githooks/",
-    "README.md",
-    "BACKLOG.md"
+    "README.md"
   ],
   "gate": {
     "typecheck": [],
