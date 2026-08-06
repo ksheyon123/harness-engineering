@@ -616,7 +616,7 @@ merge-base 도 커밋 범위도 필요 없다(`feat/a-1` 이 `feat/a` 의 커밋
 | 파일 | 내용 |
 |---|---|
 | `.githooks/pre-commit` | 위 소유권 검사로 **spec 재수정 차단** |
-| `scripts/worktree-add.mjs` | **`--from <branch>`** 추가(없으면 현행대로 `baseBranch`). `seedPromptFor` 2분기(미등록=기획부터 / 등록=상태 확인 후 이어서). `warnLaunchContext` 의 미등록 경고 제거 — 그 상태가 정상 경로가 된다 |
+| `scripts/worktree-add.mjs` | **`--from <branch>`** 추가(없으면 현행대로 `baseBranch`). `seedPromptFor` 2분기(미등록=기획부터 / 등록=상태 확인 후 이어서). **`warnLaunchContext` 는 함수째 제거** — 아래 4-4-1 |
 | `.claude/agents/planner.md` | frontmatter 에 `branch:` 기록. 브랜치 끝의 **`-<숫자>` 는 리비전 번호이므로 `<task>` 에서 제외**(`feat/a-1` → `harness/a/`). **리비전 모드**(기존 spec 개정) 추가 |
 | `.claude/CLAUDE.md` | main=디스패처 / spec 개정은 새 브랜치(`--from`) / **커밋 입도 문구 삭제** / doc-before-code 를 인수기준 변경 여부로 조건화 / 계보 정리 규약 |
 | `README.md` §2 | 플로우 갱신 + 끊긴 `./BACKLOG.md` 링크 정리(관찰 ⑧) |
@@ -625,6 +625,33 @@ merge-base 도 커밋 범위도 필요 없다(`feat/a-1` 이 `feat/a` 의 커밋
 
 `worktree-add` 의 worktree **경로**는 브랜치 전체를 쓰고(`...-a` vs `...-a-1` → 충돌 없음),
 **spec 디렉터리**만 `-<숫자>` 를 뗀다. 두 용도가 갈리므로 `taskFromBranch` 를 그대로 겸용하지 않는다.
+
+#### 4-4-1. 등록 판정의 기준은 root 가 아니라 생성된 worktree 다
+
+`warnLaunchContext` 는 경고만 빼는 게 아니라 **함수째 제거한다.** 메인 체크아웃의
+`index.json` 을 읽기 때문이다(`worktree-add.mjs:265`):
+
+```js
+readFileSync(`${root}/harness/index.json`)   // ← main 브랜치의 등록 상태
+```
+
+새 흐름에서 **등록은 언제나 작업 브랜치 위에서 일어나므로**, 그 정보는 머지 전까지 main 에 없다.
+머지된 task 는 이미 끝난 task다 → 이 검사는 **살아 있는 모든 task 에 대해 항상 '미등록' 을 반환한다.**
+정보량이 0 이다. "등록됐는데 spec 파일 부재" 분기도 함께 뺀다 — planner 가 spec 과 index 를 한
+커밋에 쓰므로 그 상태는 발생하지 않는다.
+
+같은 이유로 **`seedPromptFor` 2분기의 등록 판정도 root 기준이면 안 된다.** 생성된 worktree 경로의
+`harness/index.json` 을 봐야 세 경우가 갈린다:
+
+| 시나리오 | worktree 의 index.json | seed |
+|---|---|---|
+| 신규 task (`feat/a`, `baseBranch` 분기) | main 것 → `feat/a` 없음 | 기획부터 |
+| 리비전 (`feat/a-1`, `--from feat/a`) | `feat/a` 것 → `feat/a-1` 없음 | 기획부터(planner 리비전 모드) |
+| **중단 재개** (`feat/a` attach) | `feat/a` 것 → `feat/a` **있음** | **이어서 작업** |
+
+세 번째가 2분기가 존재하는 유일한 이유다. root 기준이면 그것마저 '기획부터' 로 나가
+이미 확정된 spec 을 다시 쓰라고 지시한다. 이 판정은 **순수 함수로 분리해 단위 테스트 대상**으로 삼는다
+(`resolveBaseRef`·`planGate` 가 의존성을 주입받아 테스트되는 것과 같은 관례).
 
 ### 4-5. 폐기된 안 — 왜 채택하지 않았나
 
