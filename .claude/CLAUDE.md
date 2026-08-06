@@ -30,7 +30,7 @@ UserPromptSubmit 로더가 현재 브랜치의 기능 목록(spec)을 컨텍스�
 ### 자동 커밋 + push (게이트 통과 시)
 - **커밋 조건**: `node scripts/gate.mjs`가 통과할 때만 커밋한다. 실패하면 커밋하지 않고 멈춰 보고한다. 이 규약은 **조기 피드백용**이다 — `pre-commit` 훅이 커밋 시점에 같은 게이트를 하드로 막으므로, 규약을 어겨도 깨진 커밋은 만들어지지 않는다. 다만 훅에 부딪히기 전에 스스로 돌려야 원인을 컨텍스트가 살아 있을 때 고칠 수 있다.
 - **부분 스테이징 금지**: 커밋 시 워킹트리 전체를 스테이징한다(`git add -A`). `pre-commit`은 워킹트리를 검사하므로 스테이징 안 된 변경이 남아 있으면 **커밋을 거부한다** — 검사한 내용과 실제 커밋되는 내용이 어긋나는 것을 막기 위함이다.
-- **커밋 단위**: spec 1개당 1커밋(끝에서 한 번) — **코드 + 테스트 + `qa-checklist.md`를 한 커밋에 담는다**. 여러 spec을 한 세션에서 진행하면 spec마다 커밋한다.
+- **커밋 단위**: spec 1개당 1커밋(끝에서 한 번) — **코드 + 테스트 + `qa-checklist.md`를 한 커밋에 담는다**. `harness/index.json` 의 `tasks` 는 브랜치당 spec 하나이므로, 한 세션이 여러 spec을 진행하는 경우는 없다.
 - **브랜치 안전**: `main`/`dev`에는 **직접 커밋하지 않는다**. 현재 브랜치가 `main`/`dev`면 멈추고 사용자에게 작업 브랜치 생성을 요청한다(`harness/index.json`에 매핑된 작업 브랜치에서만 커밋).
 - **분기 기준**: 작업 브랜치는 **`harness/config.json` 의 `baseBranch` 에서 분기한다**(항상 최신 기준). 분기 기준을 바꾸려면 그 파일을 고친다 — 여기에 값을 적지 않는다(사본은 강제력을 더하지 않으면서 원본과 어긋난다). **task 시작은 worktree 우선**: 메인 체크아웃에서 `git checkout -b` 하지 말고 `node scripts/worktree-add.mjs feat/<task> --launch` 로 worktree를 만들어 **그 디렉터리에서 새 세션을 연다**(`--launch` 가 install + 새 터미널 창에서 세션 자동 기동(macOS=Terminal.app, Windows=PowerShell), 실패/미지원 시 기동 명령 출력으로 폴백 — 아래 'worktree 동시작업 규약'). 새 세션은 `load-spec` 로더가 브랜치 기준으로 spec 을 자동 주입하므로 그 세션이 개발자로서 자율 구현한다. spec이 등록된 task의 소스를 메인 체크아웃에서 편집하면 `verify-branch` 훅이 **`deny`로 차단**한다 — 메인에서는 진행 불가, **반드시 worktree에서** 한다(단일 작업이어도 예외 없음). 등록 전 ad-hoc 수정·하네스 메타작업(면제 경로는 `harness/config.json` 의 `harnessMetaPaths`)은 메인에서 가능.
 - **자동 push**: 커밋 후 **현재 작업 브랜치로 push 한다**(`git push -u origin <현재-브랜치>`). pre-push는 `pre-commit`이 검증한 트리면 객관 게이트를 건너뛰고(rebase·자동 머지·`--no-verify`로 트리가 바뀐 경우에만 다시 돈다), 위에서 주입한 `input_hash`가 일치하면 QA를 스킵한다.
