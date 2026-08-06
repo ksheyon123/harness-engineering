@@ -7,7 +7,7 @@
 //   0. 대상이 다른 저장소                        → ask   — 다중 저장소 작업은 정당할 수 있다
 //      대상이 git 밖(스크래치패드 등)            → worktree 강제 대상이 아니다(간섭 안 함)
 //   1. git 아님 / harness/index.json 없음        → 통과
-//   2. main/dev/master                          → ask
+//   2. 보호 브랜치(config.baseBranch + protectedBranches) → ask
 //   3. 미등록 브랜치                             → ask
 //   4. 루트 기준 harnessMetaPaths 접두어          → 통과
 //   5. 링크드 worktree 아님                      → deny  — spec 있는 task 는 worktree 에서만
@@ -26,8 +26,6 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadConfig, DEFAULTS, CONFIG_PATH } from "../../scripts/gate.mjs";
 import { samePath } from "../../scripts/worktree-add.mjs";
-
-const PROTECTED = new Set(["main", "dev", "master"]);
 
 // ── 순수 함수 ────────────────────────────────────────────────────────────────
 
@@ -81,6 +79,27 @@ export function resolveMetaPaths(configText) {
     /* 깨진 설정 → 기본값 */
   }
   return DEFAULTS.harnessMetaPaths;
+}
+
+// 설정 텍스트 → 보호 브랜치 Set. `baseBranch` 를 **자동으로 포함**하고 `protectedBranches` 를
+// 합집합으로 더한다. resolveMetaPaths 와 같은 방침으로 설정이 없거나 깨지면 DEFAULTS 로 물러선다.
+//
+// 목록을 훅에 박지 않는 이유: 분기 기준은 이미 config.baseBranch 한 곳에 있는데 훅이 이름을
+// 따로 알고 있으면 이중 출처가 된다 — `baseBranch: "develop"` 인 프로젝트에서 develop 은
+// 보호되지 않고, 이 저장소는 쓰지도 않는 dev·master 를 보호했다(harness/pipeline-review.md 논점 H).
+export function resolveProtectedBranches(configText) {
+  let baseBranch = DEFAULTS.baseBranch;
+  let extra = DEFAULTS.protectedBranches;
+  try {
+    if (typeof configText === "string") {
+      const cfg = loadConfig(configText);
+      baseBranch = cfg.baseBranch;
+      extra = cfg.protectedBranches;
+    }
+  } catch {
+    /* 깨진 설정 → 기본값 */
+  }
+  return new Set([baseBranch, ...extra]);
 }
 
 // ── 실행부 ──────────────────────────────────────────────────────────────────
@@ -195,8 +214,20 @@ function main() {
 
   const registered = Boolean(index?.tasks?.[branch]);
 
-  // 2. 보호 브랜치: 등록 여부와 무관하게 확인을 요구
-  if (PROTECTED.has(branch)) {
+  // 설정 텍스트는 판정 2(보호 브랜치)와 판정 4(면제 경로)가 함께 쓴다. 여기서 한 번만 읽는다.
+  // **읽는 위치를 앞으로 당겼을 뿐 판정 순서는 그대로다** — 이 읽기는 file·location 에
+  // 의존하지 않는 순수한 파일 읽기라 다른 판정에 부작용이 없다. 보호 브랜치 검사를 설정
+  // 읽기 뒤로 미루면 3(미등록)보다 나중이 되어, 보호 브랜치인데 미등록 안내가 나간다.
+  let configText = null;
+  try {
+    configText = readFileSync(join(session.top, CONFIG_PATH), "utf8");
+  } catch {
+    /* 설정 없음 → 기본값 */
+  }
+
+  // 2. 보호 브랜치: 등록 여부와 무관하게 확인을 요구.
+  //    목록은 config 의 baseBranch(+ protectedBranches) 가 유일한 출처다.
+  if (resolveProtectedBranches(configText).has(branch)) {
     ask(
       `[하네스] 현재 '${branch}'는 보호 브랜치입니다. 코드 수정 전 작업 브랜치로 전환하세요(worktree 권장: node scripts/worktree-add.mjs feat/<task> --launch). 임시 수정을 그대로 진행하려면 승인하세요.`,
     );
@@ -212,13 +243,7 @@ function main() {
   // 대상이 git 밖이면(스크래치패드 등) 워킹트리 강제의 대상이 아니다.
   if (!file || location === "outside") process.exit(0);
 
-  // 4. 면제 경로 — 저장소 루트 상대경로로 앵커링해서 판정한다.
-  let configText = null;
-  try {
-    configText = readFileSync(join(session.top, CONFIG_PATH), "utf8");
-  } catch {
-    /* 설정 없음 → 기본값 */
-  }
+  // 4. 면제 경로 — 저장소 루트 상대경로로 앵커링해서 판정한다(configText 는 판정 2 앞에서 읽었다).
   const metaPaths = resolveMetaPaths(configText);
   const rel = relative(session.top, resolve(file));
   if (isHarnessMeta(rel, metaPaths)) process.exit(0);

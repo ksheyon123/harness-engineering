@@ -173,6 +173,31 @@ export function baseForNewBranch({ from, configBaseBranch }) {
   return from || configBaseBranch;
 }
 
+// 분기 기준이 사용자의 기대와 어긋날 수 있는 상황이면 경고 문자열, 아니면 null.
+//
+// 증상: `--from` 없이 실행했는데 현재 체크아웃된 브랜치가 baseBranch 가 아니면, 새 worktree 는
+// **현재 브랜치가 아니라 baseBranch 에서** 잘린다. baseBranch 가 실재하면 성공하므로 조용하다 —
+// 리비전 worktree 안에서 실행했거나 디스패처가 다른 브랜치를 체크아웃해 둔 경우, 지금까지 한
+// 작업이 새 worktree 에 없다는 사실이 머지할 때에야 드러난다(README '열린 구멍' #7).
+//
+// **차단하지 않는다.** baseBranch 에서 분기하는 것은 정상 동작이고, 다른 브랜치를 체크아웃한
+// 채로 새 task 를 여는 것도 정당하다. 드러내기만 한다.
+//
+// 경고하지 않는 경우:
+//   from 지정      — 사용자가 기준을 명시했다. 불일치가 아니라 의도다.
+//   baseRef=null   — 브랜치가 이미 있어 attach 한다(ensureWorktree). 분기 기준을 아예 안 쓴다.
+//   currentBranch 없음 — 판별 실패·detached HEAD. 스크립트가 자기 오류로 흐름을 깨지 않는다.
+export function baseMismatchWarning({ from, baseRef, currentBranch, configBaseBranch }) {
+  if (from !== undefined) return null;
+  if (!baseRef) return null;
+  if (!currentBranch) return null;
+  if (currentBranch === configBaseBranch) return null;
+  return (
+    `현재 브랜치는 '${currentBranch}' 인데 새 worktree 는 '${configBaseBranch}'(${CONFIG_PATH} 의 baseBranch)에서 분기했습니다.\n` +
+    `             '${currentBranch}' 의 작업을 이어가려면 --from ${currentBranch} 로 다시 만드세요.`
+  );
+}
+
 // index.json 텍스트 → 그 브랜치가 등록돼 있는가. 파일을 읽지 않고 텍스트를 받는다
 // (gate.mjs 의 loadConfig, resolveBaseRef 의 refExists 와 같은 관례 — fs 는 main() 의 몫).
 //
@@ -319,6 +344,21 @@ function registeredInWorktree(worktreePath, branch) {
   return isTaskRegistered(text, branch);
 }
 
+// 이 스크립트를 실행한 워킹트리의 현재 브랜치. 판별 실패나 detached HEAD 는 null 이다
+// (detached 면 git 이 브랜치명이 아니라 문자열 "HEAD" 를 돌려준다).
+function currentBranchName() {
+  try {
+    const out = execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
+      stdio: ["ignore", "pipe", "ignore"],
+    })
+      .toString()
+      .trim();
+    return out && out !== "HEAD" ? out : null;
+  } catch {
+    return null;
+  }
+}
+
 function usage() {
   process.stdout.write(
     [
@@ -424,6 +464,18 @@ function main(argv) {
     console.log(
       `[worktree-add] ℹ '${branch}' 가 이미 존재해 --from '${from}' 은 쓰이지 않고 기존 브랜치를 attach 합니다.`,
     );
+  }
+
+  // 분기 기준이 현재 브랜치와 어긋나면 알린다(차단 아님 — worktree 는 이미 정상 생성됐다).
+  // 현재 브랜치 조회는 경고 대상일 때만 한다(--from 을 준 경우엔 판정 결과가 항상 null 이다).
+  if (from === undefined) {
+    const warning = baseMismatchWarning({
+      from,
+      baseRef,
+      currentBranch: currentBranchName(),
+      configBaseBranch: config.baseBranch,
+    });
+    if (warning) console.warn(`[worktree-add] ⚠ ${warning}`);
   }
 
   // 재사용 worktree 에 node_modules 가 이미 있으면 install 은 불필요(시간 낭비)하니 건너뛴다.

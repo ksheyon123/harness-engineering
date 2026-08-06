@@ -200,7 +200,11 @@ node scripts/gate.mjs --list    # 대상만 확인 (테스트를 어디에 쓸�
 harness/config.json
   │
   ├─ baseBranch ─────────────┬─▶ scripts/gate.mjs         merge-base(base, HEAD) → {{BASE}}
-  │                          └─▶ scripts/worktree-add.mjs 새 브랜치 분기 기준 (--from 이 이김)
+  │                          ├─▶ scripts/worktree-add.mjs 새 브랜치 분기 기준 (--from 이 이김)
+  │                          └─▶ .claude/hooks/verify-branch.mjs  보호 브랜치 (자동 포함)
+  │
+  ├─ protectedBranches ────────▶ .claude/hooks/verify-branch.mjs  baseBranch 외에 더 보호할 목록
+  │                                (선택 · 기본 [] — baseBranch 는 이미 자동 포함된다)
   │
   ├─ installCommand ───────────▶ scripts/worktree-add.mjs --install / --launch 시 실행
   │
@@ -232,13 +236,18 @@ QA도 같은 파일을 Read해서 러너 유무를 판단한다(QA는 Bash가 �
 파일 없음      → DEFAULTS 로 진행       (도입 초기에 push 가 부당하게 막히지 않게)
 JSON 깨짐      → gate.mjs · worktree-add.mjs 는 중단
                  qa-hash.mjs 는 경고 후 DEFAULTS  (해시 산출까지 멈추면 훅이 조용히 깨진다)
-필드 타입 오타 → installCommand · harnessMetaPaths · gate.* 는 throw
-                 baseBranch 만 조용히 DEFAULTS 로 물러선다      ← 결이 다르다 (열린 구멍 #1)
+필드 타입 오타 → baseBranch · protectedBranches · installCommand · harnessMetaPaths · gate.*
+                 전부 throw                                    ← 예외 없다
+필드 부재      → 그 필드의 DEFAULTS 로 진행 (오타와 다르게 다룬다)
 존재하지 않는 dir → 경고 후 건너뜀
 {{BASE}} 산출 실패 → fallbackCmd, 그것도 없으면 그 항목을 건너뜀
 ```
 
 "오타가 '게이트 없음' 으로 둔갑하면 안 된다"가 원칙이고, 파일 부재는 그와 다르게 다룬다.
+
+`baseBranch` 의 타입 검증이 늦게 붙은 이유가 이 원칙을 잘 보여준다. 오타 난 `baseBranch` 는 `mergeBase` 를 실패시켜 `null` 을 만들고, `planGate` 는 `{{BASE}}` 를 쓰는 항목을 `fallbackCmd` 없이 건너뛴다 — **검사가 사라지는데 게이트는 `exit 0` 으로 통과한다**(⚠ 한 줄만 남는다). 오타가 조용히 '검사 없음' 이 되는 정확히 그 실패 모드다.
+
+**필드 부재는 여전히 `DEFAULTS` 다.** `DEFAULTS.baseBranch` 는 `"dev"` 라 이 저장소(`"main"`)와 다르지만, 도입 프로젝트마다 관례(`main`/`master`/`develop`)가 갈려 "옳은 기본값"이 없다. 부재를 오류로 올리면 도입 초기 저장소의 커밋이 부당하게 막힌다 — 그래서 축은 **필드마다가 아니라 사유마다**(오타 = throw / 부재 = DEFAULTS) 갈린다.
 
 ---
 
@@ -386,7 +395,7 @@ Edit / Write 호출
    │     아니오
    ├─ git 저장소 아님 / index.json 없음? ───────── 예 ─▶ 통과   하네스 미설정 → 간섭 안 함
    │     아니오
-   ├─ 브랜치 ∈ {main, dev, master}? ────────────── 예 ─▶ ask    ※ 하드코딩 (열린 구멍 #2)
+   ├─ 브랜치 ∈ 보호 브랜치? ────────────────────── 예 ─▶ ask    baseBranch + protectedBranches
    │     아니오
    ├─ index.json 에 미등록 브랜치? ─────────────── 예 ─▶ ask    애드혹 수정이면 승인
    │     아니오
@@ -402,6 +411,8 @@ Edit / Write 호출
 - 면제 판정은 **저장소 루트 상대경로 + 디렉터리 경계 매칭**이다. 부분 문자열 매칭이던 시절엔 `apps/web/harness/foo.ts` 가 면제돼 제품 코드가 뚫렸다(구 BACKLOG #7). `harness/` 는 `harness/x` 를 면제하지만 `apps/web/harness/x` 는 면제하지 않는다.
 - 링크드 worktree 판별은 git-dir 경로에 `/worktrees/` 가 있는지로 한다(메인 체크아웃엔 없다).
 - **판별 실패는 전부 '간섭 안 함' 쪽으로 기운다** — 오탐 `deny` 가 작업을 막는 것이 더 나쁘다.
+- **보호 브랜치 목록은 `config.json` 이 유일한 출처**다: `baseBranch` 를 자동으로 포함하고 `protectedBranches` 를 합집합으로 더한다(`resolveProtectedBranches`). 훅에 이름을 박으면 `baseBranch: "develop"` 인 프로젝트에서 `develop` 이 보호되지 않는다. 설정이 없거나 깨졌으면 `DEFAULTS` 로 물러선다 — 설정 오류를 **알리는** 것은 `gate.mjs` 의 몫이고, 훅은 그 때문에 죽지 않는다(`resolveMetaPaths` 와 같은 방침).
+  > 설정 텍스트는 판정 2 **앞에서** 한 번 읽어 판정 2·4 가 함께 쓴다. 읽는 위치만 앞으로 당겼을 뿐 **판정 순서는 그대로다** — 보호 브랜치 검사를 설정 읽기 뒤로 미루면 미등록(3)보다 나중이 되어, 보호 브랜치인데 미등록 안내가 나간다.
 
 ### 8.3 `session-cost.mjs` — 세션 종료 요약 (SessionEnd)
 
@@ -430,11 +441,30 @@ node scripts/worktree-add.mjs feat/<task>-1 --from feat/<task> --launch --seed "
 - **분기 기준**: 기본은 최신 `baseBranch`(`harness/config.json`). 로컬 `<base>` → `origin/<base>` 순으로 찾고, 둘 다 없으면 **에러로 멈춘다** — `HEAD` 로 조용히 물러서면 의도치 않은 커밋에서 분기되고, 그 사실은 머지할 때에야 드러난다.
   > 탐색 순서가 `gate.mjs` 의 merge-base 와 **반대**(저쪽은 `origin/` 우선)인 것은 의도적이다. 분기는 '사람이 방금 로컬에 만든 기준 브랜치'를 존중해야 하고, merge-base 는 '원격 기준선과의 공통 조상'이라 원격이 먼저다.
 - **멱등**: 같은 브랜치의 worktree 가 그 경로에 이미 있으면 재사용(attach)한다. attach 경로에서는 `--from` 이 쓰이지 않으며, 그 사실을 알린다.
+- **분기 기준 불일치 경고**: `--from` 없이 실행했는데 **현재 체크아웃된 브랜치가 `baseBranch` 가 아니면** 경고한다. `baseBranch` 가 실재하면 명령은 성공하므로, 그러지 않으면 조용하다 — 리비전 worktree 안에서 실행했거나 디스패처가 다른 브랜치를 체크아웃해 둔 경우 "지금까지의 작업이 새 worktree 에 없다"는 사실이 머지할 때에야 드러난다. **차단하지는 않는다**(`baseBranch` 분기는 정상 동작이고, 다른 브랜치에 서서 새 task 를 여는 것도 정당하다). attach 경로·`--from` 지정·브랜치 판별 실패(detached 포함)에서는 경고하지 않는다 — 거짓 경고는 진짜 경고를 무디게 만든다.
 - **의존성**: 새 worktree 에는 `node_modules` 가 따라오지 않는다. `pre-push` 가 그 트리에서 게이트를 돌리므로 설치가 없으면 게이트가 실패한다. Windows 에서는 install 을 PowerShell 로 돌린다(`npm.cmd` 문제 + MSYS 하위 native postinstall 깨짐 회피).
 - **자동 기동**: macOS=Terminal.app(osascript), Windows=새 PowerShell 창(`-EncodedCommand`). 미지원/실패 시 붙여넣기용 기동 명령 출력으로 폴백.
 - **seed 2분기**: 그 worktree 의 `index.json` 기준 미등록이면 "기획부터", 등록이면 "이어서 구현". 신규 task 도 리비전도 아직 미등록이고, **같은 브랜치를 attach 하는 재개만** 등록으로 나온다 — 재개에 '기획부터'를 주면 규칙 2 로 막힌 spec 을 다시 쓰라고 지시하게 된다.
 - **push**: 각 세션은 자기 작업 브랜치만 push한다. `main`/`dev` 로는 절대 push하지 않는다.
 - **정리**: `git worktree remove <path>`. 디렉터리 삭제는 비가역이므로 자동화하지 않고 사람이 한다. spec 개정마다 새 브랜치가 생기므로(`feat/a` → `feat/a-1` → `feat/a-1-2`) 오래된 worktree 가 쌓인다.
+
+### `--from` 은 분기 기준만 바꾼다 — 게이트 기준선은 `baseBranch` 그대로다
+
+리비전 브랜치를 `--from feat/a` 로 열어도 **게이트의 merge-base 기준선은 바뀌지 않는다.** `gate.mjs` 는 언제나 `config.json` 의 `baseBranch` 로 `merge-base(base, HEAD)` 를 구한다. 두 값이 갈리는 것이 이상해 보이지만 **의도된 비대칭**이다.
+
+```
+main ──●──────────────────────────────────  ← merge-base 는 항상 여기로 수렴한다
+        \
+         ●───●  feat/a          (--from 없이 = main 에서 분기)
+              \
+               ●───●  feat/a-1  (--from feat/a 로 분기)
+```
+
+`git merge-base` 는 **공통 조상까지 거슬러 올라간다.** `feat/a-1` 이 `feat/a` 에서 잘렸어도 `merge-base(main, HEAD)` 는 `feat/a` 의 분기점을 되짚어 `main` 위의 한 점을 준다. 그래서 `{{BASE}}` 를 쓰는 게이트 항목의 검사 범위가 **PR 이 실제로 `main` 에 얹을 diff** 와 일치한다 — 리비전 체인이 아무리 길어져도 그렇다.
+
+따라서 **`baseBranch` 를 브랜치마다 갱신할 필요가 없다.** 갱신하면 오히려 나쁘다: `config.json` 은 커밋된 공유 설정이라 그 값이 PR 에 섞여 들어가고, 같은 저장소의 다른 worktree 세션까지 그 값을 본다. `--from` 은 "이 worktree 를 어디서 자를 것인가" 하나만 정하고, 기준선은 건드리지 않는다.
+
+> `worktree-add` 와 `gate.mjs` 의 ref 탐색 **순서**가 서로 반대인 것도 같은 이유다(위 '분기 기준' 참고) — 분기는 로컬을, 기준선은 원격을 먼저 본다.
 
 ### 두 개의 하드 금지
 
@@ -632,6 +662,7 @@ npm install   # prepare 훅이 core.hooksPath 를 .githooks 로 설정한다
 | `verify-branch-guard` | 교차 워킹트리 편집 차단 + 면제 경로 루트 앵커링 (`harnessMetaPaths`) |
 | `drop-phase1` | "테스트 러너가 없다" 는 낡은 전제를 조건부 규칙으로 대체 |
 | `spec-in-worktree` | 기획을 worktree 로 옮기고 spec 소유권을 훅으로 강제 (`spec-lock.mjs`, `--from`) |
+| `base-branch-single-source` | `baseBranch` 타입 검증 + 보호 브랜치를 `config.json` 으로 단일화 + 분기 기준 불일치 경고 |
 
 ---
 
@@ -641,13 +672,13 @@ npm install   # prepare 훅이 core.hooksPath 를 .githooks 로 설정한다
 
 | # | 구멍 | 결과 |
 |:--:|------|------|
-| 1 | `gate.mjs` 의 `DEFAULTS.baseBranch = "dev"` | 필드를 빼면 조용히 `dev` 로 물러선다. `installCommand`·`harnessMetaPaths` 는 오타에 throw 하는데 이것만 침묵한다 |
-| 2 | `verify-branch.mjs` 의 `PROTECTED = {main, dev, master}` 하드코딩 | `config.baseBranch` 와 **이중 출처**. `baseBranch: "develop"` 인 프로젝트에서 `develop` 은 보호되지 않고, 이 저장소는 쓰지도 않는 `dev`·`master` 를 보호한다 (논점 H, 미결) |
+| ~~1~~ | ~~`loadConfig` 가 `baseBranch` 만 타입 검증하지 않는다~~ | **닫힘** (`base-branch-single-source`) — 오타는 이제 `installCommand`·`harnessMetaPaths` 와 함께 throw 한다. 필드 **부재**는 의도적으로 `DEFAULTS` 로 물러선다(§6) |
+| ~~2~~ | ~~`verify-branch.mjs` 의 `PROTECTED = {main, dev, master}` 하드코딩~~ | **닫힘** (`base-branch-single-source`) — 보호 목록은 `config.baseBranch` + `protectedBranches` 단일 출처가 됐다. 이 저장소는 이제 `main` 만 보호하고 `dev`·`master` 는 보호하지 않는다 (논점 H 의 보호 브랜치 부분) |
 | 3 | git 훅에 브랜치 보호 검사가 **없다** | "`main`/`dev` 에 커밋·push 금지"는 `CLAUDE.md` 문장 + `verify-branch` 의 `ask` 뿐이다. 가장 강하게 말하는 규칙이 가장 약하게 강제돼 있다 |
-| 4 | `CLAUDE.md` 가 `main`/`dev` 를 리터럴로 3곳에 적는다 | 같은 파일이 `baseBranch`·`harnessMetaPaths` 에 대해선 "값 사본을 적지 마라"고 못 박고 있다 — 자기 원칙과 어긋난다 |
-| 5 | QA 모델이 두 곳 (`agents/qa.md` 의 `model: haiku` / `pre-push` 의 `--model haiku`) | 한쪽만 바꾸면 두 QA 경로가 다른 모델로 돈다 (논점 H) |
+| 4 | `CLAUDE.md` 가 `main`/`dev` 를 리터럴로 3곳에 적는다 | 같은 파일이 `baseBranch`·`harnessMetaPaths` 에 대해선 "값 사본을 적지 마라"고 못 박고 있다 — 자기 원칙과 어긋난다. #2 가 닫히면서 **차이가 실제로 생겼다**: 훅은 `main` 만 보호하는데 문서는 `dev` 도 금지라고 적는다 |
+| 5 | QA 모델이 두 곳 (`agents/qa.md` 의 `model: haiku` / `pre-push` 의 `--model haiku`) | 한쪽만 바꾸면 두 QA 경로가 다른 모델로 돈다 (논점 H, **미결**) |
 | 6 | pre-push 의 게이트 **실행** 경로는 워킹트리를 검사한다 | 워킹트리가 dirty 하면 검사 대상 ≠ push 내용. 스킵 경로엔 없는 한계다 (§7.1 주석) |
-| 7 | 기존 `dev`·`develop` 브랜치에서 작업하며 `baseBranch` 를 안 바꾸면 | `worktree-add` 가 **`baseBranch` 에서** 잘라 그 브랜치의 작업이 새 worktree 에 없다. `baseBranch` 가 실재하면 경고 없이 성공하므로 **조용하다** |
+| ~~7~~ | ~~다른 브랜치에 선 채 `worktree-add` 를 실행하면 조용히 `baseBranch` 에서 잘린다~~ | **닫힘** (`base-branch-single-source`) — `--from` 없이 현재 브랜치 ≠ `baseBranch` 면 경고한다. 차단은 아니다(정당한 경우가 있다) |
 
 > 이 저장소는 Turborepo 기반 프로젝트에서 하네스 부분만 분리한 것이다. 분리 과정의 잔여 작업은 `BACKLOG.md` 에 있었으나 항목 대부분이 spec 으로 승격돼 구현·머지된 뒤 그 파일은 삭제됐다(근거는 코드 주석과 커밋에 남아 있다).
 

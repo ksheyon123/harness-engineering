@@ -574,6 +574,30 @@ worktree 1개 = 세션 1개 = 브랜치 1개 규약과 정면으로 어긋난다
 **결정할 것**: 보호 브랜치를 `config.json` 으로 뺄 것인가(`baseBranch` 를 자동 포함 + 추가 목록).
 QA 모델을 어느 한 곳으로 모을 것인가.
 
+#### 결정 (2026-08-06) — 보호 브랜치는 `config.json` 으로 뺀다 (적용 완료). QA 모델은 **미결**
+
+보호 브랜치 목록을 `config.json` 단일 출처로 옮겼다(`harness/base-branch-single-source/spec.md`).
+
+- `verify-branch.mjs:30` 의 `PROTECTED = new Set(["main","dev","master"])` 를 **제거**하고,
+  `resolveProtectedBranches(configText)` 가 `baseBranch` 를 **자동 포함**한 뒤 선택 필드
+  `protectedBranches` 를 합집합으로 더한다. `resolveMetaPaths` 와 같은 관례다 — 설정이 없거나
+  깨졌으면 `DEFAULTS` 로 물러선다(설정 오류를 *알리는* 것은 `gate.mjs` 의 몫).
+- `baseBranch` 자동 포함을 택한 이유: 분기 기준이 곧 "머지 대상 브랜치"이고, 그것을 보호하지
+  않을 이유가 없다. 목록을 통째로 손으로 적게 하면(`protectedBranches` 만 두면) `baseBranch` 를
+  바꾼 프로젝트가 한쪽만 고치는 **같은 이중 출처**가 그대로 재현된다.
+- `protectedBranches` 를 남긴 이유: `main` 과 `release/*` 를 함께 보호하려는 저장소가 있을 수
+  있다. 기본값은 `[]` 이고, 검증은 `harnessMetaPaths` 와 같은 결(오타 → throw)이다.
+- **이 저장소에서의 실제 변화**: `main` 은 계속 보호되고, 쓰지도 않던 `dev`·`master` 는 더 이상
+  보호되지 않는다. 이것이 의도다 — 위 문단이 지적한 문제 그 자체다.
+- 판정 **순서**는 바꾸지 않았다. 설정 텍스트를 읽는 위치만 판정 2 앞으로 당겨 판정 2·4 가
+  같은 텍스트를 쓴다. 보호 브랜치 검사를 설정 읽기 뒤로 미뤘다면 미등록(3)보다 나중이 되어
+  보호 브랜치인데 미등록 안내가 나갔을 것이다(회귀 테스트로 고정했다).
+
+**QA 모델 이중 출처(`agents/qa.md` 의 `model: haiku` vs `pre-push` 의 `--model haiku`)는 이번에
+다루지 않았고 미결로 남는다.** 두 값을 어디로 모을지가 자명하지 않기 때문이다 — 서브에이전트
+정의의 frontmatter 는 `config.json` 을 읽지 못하고, 반대로 `pre-push` 가 `agents/qa.md` 의
+frontmatter 를 파싱하게 하면 훅이 마크다운 파서를 갖게 된다. README '열린 구멍' #5 에 남아 있다.
+
 ---
 
 > **논점 I·J 는 폐기해 삭제했다(2026-08-06).** I(QA 모델이 haiku 로 고정)와 J(잔여 작업 목록의
@@ -586,7 +610,8 @@ QA 모델을 어느 한 곳으로 모을 것인가.
 ## 4. 결정 기록 (2026-08-06)
 
 논점 **B·C·D·E·F·G** 를 논의해 확정했다(E·F·G 의 결정은 §3 의 각 절 안에 있다).
-**미결은 A·H** 이고 §3 에 남는다. **I·J 는 폐기·삭제**했다.
+**H 는 절반 확정**이다 — 보호 브랜치는 `config.json` 단일 출처로 옮겼고(결정은 §3 논점 H 안에),
+**QA 모델 이중 출처는 미결로 남는다**. **A 는 미결**이고 §3 에 남는다. **I·J 는 폐기·삭제**했다.
 
 ### 4-1. 확정된 파이프라인
 

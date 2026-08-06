@@ -90,6 +90,54 @@ describe("loadConfig", () => {
       /harnessMetaPaths\[0\]/,
     );
   });
+
+  // baseBranch: 분기 기준 · merge-base 기준선 · 보호 브랜치의 단일 출처.
+  // 여기만 타입 검증이 없어서, 오타가 나면 mergeBase 가 null 을 돌려주고 {{BASE}} 를 쓰는
+  // 게이트 항목이 통째로 건너뛰어진다 — 검사가 사라지는데 게이트는 exit 0 으로 통과한다.
+  it("baseBranch 가 문자열이 아니거나 빈 문자열이면 throw 한다", () => {
+    expect(() => loadConfig(JSON.stringify({ baseBranch: 42 }))).toThrow(/baseBranch/);
+    expect(() => loadConfig(JSON.stringify({ baseBranch: "" }))).toThrow(/baseBranch/);
+    expect(() => loadConfig(JSON.stringify({ baseBranch: ["main"] }))).toThrow(/baseBranch/);
+    // 명시적 null 은 오타에 가깝다 — typeof null === "object" 라 같은 분기로 걸린다.
+    expect(() => loadConfig(JSON.stringify({ baseBranch: null }))).toThrow(/baseBranch/);
+  });
+
+  // 필드 부재는 오타와 다르게 다룬다(README §6 '부재·오류를 다루는 방향이 소비자마다 다르다').
+  // 이 회귀가 깨지면 도입 초기 저장소에서 게이트가 부당하게 멈춘다.
+  it("baseBranch 필드가 없으면 기존대로 DEFAULTS 로 물러선다", () => {
+    expect(loadConfig("{}").baseBranch).toBe(DEFAULTS.baseBranch);
+    expect(DEFAULTS.baseBranch).toBe("dev");
+  });
+
+  it("정상 baseBranch 값은 그대로 보존한다", () => {
+    expect(loadConfig(JSON.stringify({ baseBranch: "develop" })).baseBranch).toBe("develop");
+  });
+
+  // protectedBranches: verify-branch 훅의 보호 브랜치 목록에서 baseBranch 외에 **더** 보호할
+  // 브랜치. 기본값이 [] 인 이유는 baseBranch 가 이미 자동 포함되기 때문이다.
+  it("protectedBranches 가 없으면 기본값 [] 이다", () => {
+    expect(loadConfig("{}").protectedBranches).toEqual([]);
+    expect(DEFAULTS.protectedBranches).toEqual([]);
+  });
+
+  it("명시된 protectedBranches 를 그대로 돌려준다", () => {
+    expect(loadConfig(JSON.stringify({ protectedBranches: ["a", "b"] })).protectedBranches).toEqual([
+      "a",
+      "b",
+    ]);
+  });
+
+  it("protectedBranches 가 배열이 아니거나 원소가 문자열이 아니면 throw 한다", () => {
+    expect(() => loadConfig(JSON.stringify({ protectedBranches: "main" }))).toThrow(
+      /protectedBranches/,
+    );
+    expect(() => loadConfig(JSON.stringify({ protectedBranches: [1, 2] }))).toThrow(
+      /protectedBranches\[0\]/,
+    );
+    expect(() => loadConfig(JSON.stringify({ protectedBranches: [""] }))).toThrow(
+      /protectedBranches\[0\]/,
+    );
+  });
 });
 
 describe("resolveCommand", () => {

@@ -18,6 +18,7 @@ import {
   worktreeAddArgs,
   installCommandFor,
   baseForNewBranch,
+  baseMismatchWarning,
   isTaskRegistered,
 } from "./worktree-add.mjs";
 
@@ -34,6 +35,52 @@ describe("baseForNewBranch", () => {
 
   it("--from 이 없으면 설정의 baseBranch 를 쓴다 (기존 동작)", () => {
     expect(baseForNewBranch({ from: undefined, configBaseBranch: "main" })).toBe("main");
+  });
+});
+
+// ── base-branch-single-source 에서 추가되는 함수 (test-first) ───────────────
+
+describe("baseMismatchWarning", () => {
+  const BASE = { from: undefined, baseRef: "origin/main", configBaseBranch: "main" };
+
+  // 이것이 열린 구멍 #7 그 자체: 다른 브랜치를 체크아웃해 둔 채 실행하면 조용히 baseBranch 에서 잘린다.
+  it("--from 없이 현재 브랜치가 baseBranch 와 다르면 경고 문자열을 낸다", () => {
+    const msg = baseMismatchWarning({ ...BASE, currentBranch: "feat/other" });
+    expect(typeof msg).toBe("string");
+    expect(msg).toContain("feat/other");
+    expect(msg).toContain("main");
+  });
+
+  it("현재 브랜치가 baseBranch 와 같으면 경고하지 않는다", () => {
+    expect(baseMismatchWarning({ ...BASE, currentBranch: "main" })).toBeNull();
+  });
+
+  // 사용자가 기준을 명시했으면 불일치가 아니라 의도다.
+  it("--from 을 지정했으면 경고하지 않는다", () => {
+    expect(baseMismatchWarning({ ...BASE, from: "feat/a", currentBranch: "feat/other" })).toBeNull();
+  });
+
+  // attach 경로(ensureWorktree 가 baseRef=null 을 반환)는 분기 기준을 아예 쓰지 않는다 → 거짓 경고 방지.
+  it("브랜치가 이미 있어 attach 하는 경로(baseRef=null)에서는 경고하지 않는다", () => {
+    expect(baseMismatchWarning({ ...BASE, baseRef: null, currentBranch: "feat/other" })).toBeNull();
+  });
+
+  // 판별 실패·detached HEAD 는 '간섭 안 함' 쪽으로 기운다 — 스크립트가 자기 오류로 흐름을 깨지 않는다.
+  it("현재 브랜치를 판별하지 못했으면 경고하지 않는다", () => {
+    for (const currentBranch of [null, undefined, ""]) {
+      expect(baseMismatchWarning({ ...BASE, currentBranch })).toBeNull();
+    }
+  });
+
+  it("어떤 입력 조합에서도 throw 하지 않고 문자열 또는 null 을 낸다", () => {
+    const values = [undefined, null, "", "x"];
+    for (const from of values)
+      for (const baseRef of values)
+        for (const currentBranch of values)
+          for (const configBaseBranch of values) {
+            const out = baseMismatchWarning({ from, baseRef, currentBranch, configBaseBranch });
+            expect(out === null || typeof out === "string").toBe(true);
+          }
   });
 });
 

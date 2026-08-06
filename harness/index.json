@@ -5,6 +5,7 @@
     "chore/index-sync-removal": "harness/index-sync-removal/spec.md",
     "docs/drop-phase1": "harness/drop-phase1/spec.md",
     "fix/gate-env-isolation": "harness/gate-env-isolation/spec.md",
-    "refactor/spec-in-worktree": "harness/spec-in-worktree/spec.md"
+    "refactor/spec-in-worktree": "harness/spec-in-worktree/spec.md",
+    "feat/base-branch-single-source": "harness/base-branch-single-source/spec.md"
   }
 }

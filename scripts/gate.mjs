@@ -26,6 +26,11 @@ export const DEFAULTS = {
   // 기본값은 훅의 기존 동작과 같다(harness/·.claude/). 도입 프로젝트가 레이아웃을 바꾸면
   // 이 값만 바꾼다 — 훅에 디렉터리 이름을 박지 않기 위해 설정으로 뺐다.
   harnessMetaPaths: ["harness/", ".claude/"],
+  // verify-branch 훅이 보호하는 브랜치 중 **baseBranch 외에 더** 보호할 것들.
+  // 기본값이 빈 배열인 이유: baseBranch 는 훅이 자동으로 포함하므로 여기 적을 필요가 없다.
+  // 대부분의 저장소는 이 값을 쓰지 않는다(과거 하드코딩의 dev·master 는 이 저장소가 쓰지 않는
+  // 이름이었고, 그것이 이중 출처였다 — harness/pipeline-review.md 논점 H).
+  protectedBranches: [],
 };
 
 // typecheck 가 먼저다 — 타입이 깨졌으면 테스트를 돌릴 이유가 없다.
@@ -61,6 +66,33 @@ export function loadConfig(text) {
     gate[kind] = list;
   }
 
+  // baseBranch 는 세 곳이 쓴다: worktree 분기 기준(worktree-add.mjs), 게이트의 merge-base
+  // 기준선(mergeBase), 보호 브랜치(verify-branch.mjs). 오타에 침묵하면 안 되는 이유가
+  // 다른 필드보다 더 나쁘다 — 잘못된 이름은 merge-base 산출을 실패시키고, 그러면 planGate 가
+  // `{{BASE}}` 를 쓰는 항목을 통째로 건너뛴다. **검사가 사라지는데 게이트는 통과한다**
+  // (⚠ 한 줄만 남는다). installCommand·harnessMetaPaths 와 같은 결로 throw 한다.
+  //
+  // 필드 부재(undefined)는 여전히 DEFAULTS 로 물러선다 — '파일/필드 부재' 와 '오타' 를
+  // 다르게 다루는 것이 이 저장소의 축이다(README §6). 여기서만 뒤집지 않는다.
+  if (raw.baseBranch !== undefined) {
+    if (typeof raw.baseBranch !== "string" || !raw.baseBranch) {
+      throw new Error(`baseBranch 는 비어 있지 않은 문자열이어야 합니다`);
+    }
+  }
+
+  // protectedBranches 는 verify-branch 훅이 baseBranch 와 합쳐 보호 목록으로 쓴다.
+  // 검증은 harnessMetaPaths 와 같은 결 — 오타가 조용히 '보호 안 함' 으로 둔갑하면 안 된다.
+  if (raw.protectedBranches !== undefined) {
+    if (!Array.isArray(raw.protectedBranches)) {
+      throw new Error(`protectedBranches 는 배열이어야 합니다`);
+    }
+    for (const [i, b] of raw.protectedBranches.entries()) {
+      if (typeof b !== "string" || !b) {
+        throw new Error(`protectedBranches[${i}] 는 비어 있지 않은 문자열이어야 합니다`);
+      }
+    }
+  }
+
   // installCommand 는 worktree-add.mjs 가 쓴다. 값이 있는데 문자열이 아니거나 비어 있으면
   // throw 한다 — gate 항목의 dir/cmd 와 같은 결이다. 오타가 조용히 기본값(npm)으로 둔갑하면
   // pnpm 저장소에서 설치가 헛돌고, 그 사실은 그 worktree 의 게이트가 깨질 때까지 드러나지 않는다.
@@ -89,6 +121,7 @@ export function loadConfig(text) {
     testFilePatterns: raw.testFilePatterns ?? DEFAULTS.testFilePatterns,
     skipDirs: raw.skipDirs ?? DEFAULTS.skipDirs,
     harnessMetaPaths: raw.harnessMetaPaths ?? DEFAULTS.harnessMetaPaths,
+    protectedBranches: raw.protectedBranches ?? DEFAULTS.protectedBranches,
     gate,
   };
 }

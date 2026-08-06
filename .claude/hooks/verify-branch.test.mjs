@@ -9,6 +9,7 @@ import {
   classifyLocation,
   stripWorktreeSuffix,
   resolveMetaPaths,
+  resolveProtectedBranches,
   nearestExistingDir,
 } from "./verify-branch.mjs";
 import { DEFAULTS } from "../../scripts/gate.mjs";
@@ -153,6 +154,49 @@ describe("resolveMetaPaths", () => {
     expect(resolveMetaPaths(JSON.stringify({ harnessMetaPaths: "harness/" }))).toEqual(
       DEFAULTS.harnessMetaPaths,
     );
+  });
+});
+
+describe("resolveProtectedBranches", () => {
+  // 보호 브랜치는 config.baseBranch 가 유일한 출처다 — 훅이 이름을 따로 알고 있으면
+  // baseBranch: "develop" 인 프로젝트에서 develop 이 보호되지 않는다(논점 H).
+  it("baseBranch 를 자동으로 포함한다", () => {
+    const set = resolveProtectedBranches(JSON.stringify({ baseBranch: "develop" }));
+    expect(set.has("develop")).toBe(true);
+  });
+
+  // 이 저장소는 dev·master 를 쓰지 않는다. 하드코딩이 남아 있으면 이 단언이 깨진다.
+  it("baseBranch 가 아닌 브랜치는 자동으로 보호하지 않는다", () => {
+    const set = resolveProtectedBranches(JSON.stringify({ baseBranch: "main" }));
+    expect(set.has("main")).toBe(true);
+    expect(set.has("dev")).toBe(false);
+    expect(set.has("master")).toBe(false);
+    expect(set.has("feat/x")).toBe(false);
+  });
+
+  it("protectedBranches 를 baseBranch 와 합집합으로 더한다", () => {
+    const set = resolveProtectedBranches(
+      JSON.stringify({ baseBranch: "develop", protectedBranches: ["main", "master"] }),
+    );
+    for (const b of ["develop", "main", "master"]) expect(set.has(b)).toBe(true);
+  });
+
+  // resolveMetaPaths 와 같은 방침: 훅은 설정 오류로 죽지 않는다(알리는 것은 gate.mjs 의 몫).
+  it("설정이 없거나 JSON 이 깨지거나 타입이 틀리면 DEFAULTS 로 물러선다", () => {
+    for (const text of [null, "{ not json ", JSON.stringify({ baseBranch: 42 })]) {
+      const set = resolveProtectedBranches(text);
+      expect(set.has(DEFAULTS.baseBranch)).toBe(true);
+    }
+  });
+});
+
+// 인수기준: 하드코딩 리터럴이 소스에서 사라졌는지를 직접 확인한다. 동작 테스트만으로는
+// '설정도 보고 하드코딩도 남아 있는' 절반 상태를 잡지 못한다.
+describe("verify-branch.mjs 소스", () => {
+  it("보호 브랜치 목록을 하드코딩하지 않는다", () => {
+    const src = readFileSync(fileURLToPath(new URL("./verify-branch.mjs", import.meta.url)), "utf8");
+    expect(src).not.toMatch(/PROTECTED\s*=\s*new Set\(/);
+    expect(src).not.toMatch(/"master"/);
   });
 });
 
@@ -325,6 +369,62 @@ describe("훅 실행(end-to-end)", () => {
     expect(cross).not.toBe(mainCheckout);
     expect(cross).toMatch(/worktree 에서 세션을 열어/);
     expect(mainCheckout).toMatch(/worktree-add/);
+  });
+
+  // ── 보호 브랜치가 config.baseBranch 에서 온다 ────────────────────────────
+  // 임시로 설정과 체크아웃 브랜치를 바꿔 훅을 돌리고 반드시 되돌린다.
+  function withConfigOn(configObj, branch, fn) {
+    const configFile = join(mainRepo, "harness/config.json");
+    const backup = readFileSync(configFile, "utf8");
+    writeFileSync(configFile, JSON.stringify(configObj));
+    git(mainRepo, "checkout", "-q", "-B", branch);
+    try {
+      return fn();
+    } finally {
+      git(mainRepo, "checkout", "-q", "-f", "feat/solo");
+      writeFileSync(configFile, backup);
+    }
+  }
+
+  const META = ["harness/", ".claude/"];
+
+  it("baseBranch 로 지정한 브랜치가 보호된다(하드코딩 목록이 아니다)", () => {
+    const res = withConfigOn({ baseBranch: "develop", harnessMetaPaths: META }, "develop", () =>
+      runHook(mainRepo, join(mainRepo, "scripts/gate.mjs")),
+    );
+    expect(res.permissionDecision).toBe("ask");
+    expect(res.permissionDecisionReason).toMatch(/보호 브랜치/);
+  });
+
+  // 판정 순서 회귀: 보호 브랜치(2)는 미등록(3)보다 **먼저** 판정돼야 한다.
+  // config 를 읽는 위치를 옮기면서 이 순서가 뒤집히면 메시지가 미등록 안내로 바뀐다.
+  it("보호 브랜치이면서 미등록이면 미등록이 아니라 보호 브랜치로 안내한다", () => {
+    const res = withConfigOn({ baseBranch: "develop", harnessMetaPaths: META }, "develop", () =>
+      runHook(mainRepo, join(mainRepo, "scripts/gate.mjs")),
+    );
+    expect(res.permissionDecisionReason).toMatch(/보호 브랜치/);
+    expect(res.permissionDecisionReason).not.toMatch(/등록된 작업 브랜치가 아닙니다/);
+  });
+
+  // 이 저장소는 dev·master 를 쓰지 않는다 — 더 이상 보호하지 않는 것이 의도다(논점 H).
+  it("baseBranch 가 아닌 dev·master 는 더 이상 보호 브랜치가 아니다", () => {
+    for (const branch of ["dev", "master"]) {
+      const res = withConfigOn({ baseBranch: "main", harnessMetaPaths: META }, branch, () =>
+        runHook(mainRepo, join(mainRepo, "scripts/gate.mjs")),
+      );
+      expect(res.permissionDecisionReason).not.toMatch(/보호 브랜치/);
+      expect(res.permissionDecisionReason).toMatch(/등록된 작업 브랜치가 아닙니다/);
+    }
+  });
+
+  it("protectedBranches 로 baseBranch 외의 브랜치를 더 보호할 수 있다", () => {
+    const res = withConfigOn(
+      { baseBranch: "main", protectedBranches: ["dev"], harnessMetaPaths: META },
+      "dev",
+      () => runHook(mainRepo, join(mainRepo, "scripts/gate.mjs")),
+    );
+    expect(res.permissionDecision).toBe("ask");
+    expect(res.permissionDecisionReason).toMatch(/보호 브랜치/);
   });
 
   it("설정 파일이 깨져도 훅은 기본값으로 계속 판정한다", () => {
