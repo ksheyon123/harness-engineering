@@ -12,6 +12,29 @@ import {
 // 게이트 대상의 단일 출처(harness/config.json)를 해석하는 순수 함수들.
 // 실행(프로세스 스폰)은 main() 에만 있고 여기서는 다루지 않는다.
 
+// isolation 서브에이전트는 `.claude/worktrees/agent-<id>/` 에 저장소 **사본**을 만든다.
+// 그 사본은 저장소 안에 있으므로 부모의 글로빙에 다시 걸린다 — 실측으로 게이트가
+// 172 → 344 로 정확히 두 배가 됐고, qa-hash 도 같은 트리를 순회해 해시가 흔들렸다
+// (해시가 흔들리면 push 마다 QA 가 재생성된다).
+//
+// 방향이 한쪽뿐이라는 점이 중요하다: 사본 안에서 돌린 게이트는 부모를 보지 못한다.
+// 오염되는 것은 **오케스트레이터 자신의 실행**이다.
+describe("중첩 worktree 오염 차단", () => {
+  it("skipDirs 기본값이 worktrees 를 포함한다", () => {
+    // qa-hash 는 디렉터리 '이름' 으로 건너뛴다(경로가 아니다). `.claude` 를 통째로
+    // 건너뛸 수는 없다 — `.claude/hooks/*.test.mjs` 는 진짜 테스트이기 때문이다.
+    expect(DEFAULTS.skipDirs).toContain("worktrees");
+  });
+
+  it("vitest 설정이 중첩 worktree 를 제외하면서 기본 제외를 잃지 않는다", async () => {
+    const { default: config } = await import("../vitest.config.mjs");
+    const exclude = config.test.exclude;
+    expect(exclude.some((p) => p.includes(".claude/worktrees"))).toBe(true);
+    // defaultExclude 를 펼치지 않고 덮어쓰면 node_modules 가 다시 테스트 대상이 된다.
+    expect(exclude).toContain("**/node_modules/**");
+  });
+});
+
 describe("loadConfig", () => {
   it("gate 가 없으면 typecheck/test 를 빈 배열로 정규화한다", () => {
     const cfg = loadConfig("{}");

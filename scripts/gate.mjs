@@ -21,7 +21,12 @@ export const DEFAULTS = {
   baseBranch: "dev",
   installCommand: "npm install",
   testFilePatterns: ["**/*.test.{ts,tsx}"],
-  skipDirs: ["node_modules", ".git", ".next", "dist", ".turbo"],
+  // qa-hash 가 테스트 파일을 수집할 때 건너뛸 디렉터리. 경로가 아니라 **이름** 기준이다.
+  // `worktrees` 가 들어 있는 이유: isolation 서브에이전트가 `.claude/worktrees/agent-<id>/`
+  // 에 저장소 사본을 만드는데, 그 사본의 테스트까지 해시에 들어가면 worktree 가 생겼다
+  // 사라질 때마다 해시가 흔들리고 push 마다 QA 가 재생성된다. `.claude` 를 통째로
+  // 건너뛸 수는 없다 — `.claude/hooks/*.test.mjs` 는 진짜 테스트다.
+  skipDirs: ["node_modules", ".git", ".next", "dist", ".turbo", "worktrees"],
   // verify-branch 훅의 면제 목록 — 저장소 루트 기준 경로다.
   // 기본값은 훅의 기존 동작과 같다(harness/·.claude/). 도입 프로젝트가 레이아웃을 바꾸면
   // 이 값만 바꾼다 — 훅에 디렉터리 이름을 박지 않기 위해 설정으로 뺐다.
