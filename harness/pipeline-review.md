@@ -333,6 +333,9 @@ push 출력을 봐야만 안다.
 
 ## 3. 열린 논점 (결정 필요)
 
+> **B·C·D 는 2026-08-06 에 결정됐다 — [§4 결정 기록](#4-결정-기록-2026-08-06) 참고.**
+> 아래 세 절은 결정에 이르는 근거로 남긴다. 나머지(A·E·F·G·H·I·J)는 미결이다.
+
 ### 논점 A — `load-spec` 의 매 턴 주입
 
 **현상**: `UserPromptSubmit` 은 매 프롬프트마다 돌고, 그때마다 spec **전문**을 주입한다.
@@ -553,7 +556,95 @@ README 의 끊긴 링크(관찰 ⑧)도 함께 해소된다.
 
 ---
 
-## 4. 부록 — 파일별 책임
+## 4. 결정 기록 (2026-08-06)
+
+논점 **B·C·D** 를 논의해 아래로 확정했다. **A·E·F·G·H·I·J 는 미결**로 §3 에 남는다.
+
+### 4-1. 확정된 파이프라인
+
+```
+[사람+AI]  요구사항 논의 → 브랜치명 확정                    (main = 디스패처)
+[사람]     node scripts/worktree-add.mjs <branch> --launch
+                ↓   미등록 → 기획 seed
+[세션]     planner 스폰 → spec.md(+ frontmatter branch:) + index.json 등록
+           → spec 커밋 → 이어서 test-first 구현 → gate → QA → push → PR
+                ↓
+[사람]     PR 리뷰 → 머지                                   ← 유일한 권위 게이트
+                ↓   거부 / 중단 / 변동
+[사람]     node scripts/worktree-add.mjs <branch>-1 --from <branch> --launch \
+             --seed "spec 개정 — <요청 내용>"
+                ↓
+[세션]     spec 개정 커밋 → 이어서 구현 → push
+```
+
+### 4-2. 규칙 1 — 기획도 worktree 에서 한다
+
+`main` 체크아웃 세션은 **디스패처**다(요구사항 논의 + worktree 기동). 개발자는 worktree 세션이다.
+`verify-branch` 판정 0 이 이미 `deny` 로 강제하고 있다 — 메인 세션은 다른 워킹트리의 파일을 못 쓴다.
+따라서 planner 도 worktree 세션이 스폰해야 한다.
+
+이로써 **관찰 ①②③ 이 동시에 소멸한다**: `main` 직접 커밋이 사라지고, spec·index·코드·테스트·qa 가
+같은 브랜치에 쌓이며, `planner.md:12` 의 "브랜치에서 task 유도" 규칙이 처음으로 참이 된다.
+
+### 4-3. 규칙 2 — spec 은 브랜치당 한 번만 확정된다 (훅 강제)
+
+> **한 브랜치는 spec 을 정확히 한 번 확정한다. 고치려면 브랜치를 갈아탄다.**
+
+`spec.md` frontmatter 에 소유 브랜치를 기록하고, `pre-commit` 이 그것만 본다:
+
+```sh
+if [ -n "$SPEC" ] && git diff --cached --name-only | grep -qx "$SPEC"; then
+  OWNER="$(git show "HEAD:$SPEC" 2>/dev/null | sed -n 's/^branch:[[:space:]]*//p' | head -1)"
+  [ "$OWNER" = "$BRANCH" ] && { say "... 개정은 새 브랜치에서"; exit 1; }
+fi
+```
+
+| 상황 | `HEAD:spec` 의 `branch:` | 결과 |
+|---|---|---|
+| `feat/a` 최초 작성 | 파일 없음 | 통과 |
+| `feat/a` 에서 재수정 | `feat/a` = 현재 | **차단** |
+| `feat/a-1`(a 에서 분기) 첫 개정 | `feat/a` ≠ 현재 | 통과 |
+| `feat/a-1` 에서 재수정 | `feat/a-1` = 현재 | **차단** |
+
+merge-base 도 커밋 범위도 필요 없다(`feat/a-1` 이 `feat/a` 의 커밋을 상속해도 오판하지 않는다).
+
+**부수 효과** — 논점 A 의 위험한 비용(버전 혼재)이 구조적으로 소멸한다(한 세션 안에서 spec 이 절대
+안 바뀐다). `qa-hash` 의 "해시 계산 후 spec 변경 금지" 규약도 자동으로 지켜진다.
+
+### 4-4. 요구되는 변경
+
+| 파일 | 내용 |
+|---|---|
+| `.githooks/pre-commit` | 위 소유권 검사로 **spec 재수정 차단** |
+| `scripts/worktree-add.mjs` | **`--from <branch>`** 추가(없으면 현행대로 `baseBranch`). `seedPromptFor` 2분기(미등록=기획부터 / 등록=상태 확인 후 이어서). `warnLaunchContext` 의 미등록 경고 제거 — 그 상태가 정상 경로가 된다 |
+| `.claude/agents/planner.md` | frontmatter 에 `branch:` 기록. 브랜치 끝의 **`-<숫자>` 는 리비전 번호이므로 `<task>` 에서 제외**(`feat/a-1` → `harness/a/`). **리비전 모드**(기존 spec 개정) 추가 |
+| `.claude/CLAUDE.md` | main=디스패처 / spec 개정은 새 브랜치(`--from`) / **커밋 입도 문구 삭제** / doc-before-code 를 인수기준 변경 여부로 조건화 / 계보 정리 규약 |
+| `README.md` §2 | 플로우 갱신 + 끊긴 `./BACKLOG.md` 링크 정리(관찰 ⑧) |
+
+**무수정**: `load-spec.mjs` · `verify-branch.mjs` · `qa-hash.mjs` · `gate.mjs` · `pre-push` · `qa.md`.
+
+`worktree-add` 의 worktree **경로**는 브랜치 전체를 쓰고(`...-a` vs `...-a-1` → 충돌 없음),
+**spec 디렉터리**만 `-<숫자>` 를 뗀다. 두 용도가 갈리므로 `taskFromBranch` 를 그대로 겸용하지 않는다.
+
+### 4-5. 폐기된 안 — 왜 채택하지 않았나
+
+| 안 | 폐기 사유 |
+|---|---|
+| **논점 C 전체(C1~C4)** | 검토 = 멈춤이라 자동 연결과 양립하지 않는다. 검토를 **출구(최종 PR) 하나로** 몰면 파이프라인 내부의 사람 게이트가 0 이 되고, 그것이 "사람의 머지 결정이 유일한 권위 게이트" 라는 현행 선언과 처음으로 일치한다. 대가는 spec 검토가 구현 뒤로 밀리는 것 — 감수하기로 했다 |
+| `spec/<task>` 전용 브랜치(C4) | `worktreePathFor` 가 브랜치 마지막 세그먼트만 써 `spec/a` 와 `feat/a` 의 worktree 경로가 **충돌**한다(수동 `remove` 가 필수 경로에 들어온다). 또 `index.json` 키가 spec 브랜치로 박혀 개발 브랜치에 spec 이 주입되지 않는다 |
+| `review.md` + `gh` PR 코멘트 회수 | 지적 전달은 **`worktree-add --seed`** 로 충분하고(이미 있는 기능), planner 가 반영하는 순간 **spec 자체가 영속 기록**이 된다. `gh` 는 이 저장소에 설치돼 있지 않아 필수 경로에 두면 지금부터 안 돈다 |
+| 커밋 입도 규약(기능당 1커밋) | 무엇이 "한 기능" 인지는 spec 의미를 읽어야 알아 **훅으로 검증 불가**하고, 하네스의 **어떤 장치도 커밋 입도를 소비하지 않는다**. 강제도 소비도 없으면 규약이 아니라 취향이다 → 현행 "spec 1개당 1커밋(끝에서 한 번)" 문구는 규칙 2 와 사실관계가 안 맞으므로 **새로 쓰지 않고 지운다** |
+| `pre-push` 의 기능수 대 커밋수 보고 | 무시할 수 있는 경고는 관측이 아니라 노이즈다 |
+
+### 4-6. 판정 기준 — CLAUDE.md 에 무엇을 넣는가
+
+셋 중 하나도 아니면 넣지 않는다: **① 훅이 강제하는가 ② 하네스 장치가 소비하는가 ③ 실제 hazard 를
+막는가.** 기존의 커밋 메시지·따옴표·파일경유 규약이 남아 있는 이유는 ③ 이고(PowerShell 인용이
+실제로 깨진다), 커밋 입도가 빠지는 이유는 셋 다 아니기 때문이다.
+
+---
+
+## 5. 부록 — 파일별 책임
 
 | 파일 | 트리거 | 읽는 것 | 차단 |
 |---|---|---|:-:|
