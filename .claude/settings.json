@@ -52,5 +52,8 @@
   },
   "sandbox": {
     "enabled": false
+  },
+  "worktree": {
+    "baseRef": "head"
   }
 }
