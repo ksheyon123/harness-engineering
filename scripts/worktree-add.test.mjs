@@ -1,4 +1,6 @@
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { basename, dirname, join, resolve } from "node:path";
 import {
   taskFromBranch,
@@ -15,12 +17,55 @@ import {
   resolveBaseRef,
   worktreeAddArgs,
   installCommandFor,
+  baseForNewBranch,
+  isTaskRegistered,
 } from "./worktree-add.mjs";
 
 // worktree-add.mjs 의 순수 함수들. main()·git·설치 명령처럼 부수효과가 있는 부분은
 // 여기서 다루지 않는다 — 부수효과는 주입(resolveBaseRef 의 refExists)으로 갈라 둔다.
 
-// ── 이번 작업에서 추가되는 함수 (test-first) ────────────────────────────────
+// ── spec-in-worktree 에서 추가되는 함수 (test-first) ────────────────────────
+
+describe("baseForNewBranch", () => {
+  // 리비전 흐름: worktree-add.mjs feat/a-1 --from feat/a --launch
+  it("--from 이 있으면 그 브랜치에서 분기한다", () => {
+    expect(baseForNewBranch({ from: "feat/a", configBaseBranch: "main" })).toBe("feat/a");
+  });
+
+  it("--from 이 없으면 설정의 baseBranch 를 쓴다 (기존 동작)", () => {
+    expect(baseForNewBranch({ from: undefined, configBaseBranch: "main" })).toBe("main");
+  });
+});
+
+describe("isTaskRegistered", () => {
+  it("tasks 에 브랜치 키가 있으면 등록됨이다", () => {
+    expect(isTaskRegistered('{"tasks":{"feat/a":"harness/a/spec.md"}}', "feat/a")).toBe(true);
+  });
+
+  it("tasks 가 비어 있으면 미등록이다", () => {
+    expect(isTaskRegistered('{"tasks":{}}', "feat/a")).toBe(false);
+  });
+
+  it("다른 브랜치만 등록돼 있으면 미등록이다", () => {
+    expect(isTaskRegistered('{"tasks":{"feat/a":"harness/a/spec.md"}}', "feat/a-1")).toBe(false);
+  });
+
+  // 두 오판은 비대칭이다. '미등록' 오판의 최악은 재작업(그리고 pre-commit 이 막는다)이지만,
+  // '등록됨' 오판은 spec 없이 코드부터 짜게 만들고 그걸 잡는 장치가 없다 → 미등록으로 기운다.
+  it("JSON 이 깨졌으면 미등록으로 기운다", () => {
+    expect(isTaskRegistered("not json", "feat/a")).toBe(false);
+  });
+
+  it("입력이 없으면(파일 부재) 미등록으로 기운다", () => {
+    expect(isTaskRegistered(undefined, "feat/a")).toBe(false);
+  });
+
+  it("tasks 키 자체가 없어도 미등록이다", () => {
+    expect(isTaskRegistered("{}", "feat/a")).toBe(false);
+  });
+});
+
+// ── worktree-config 에서 추가된 함수 ───────────────────────────────────────
 
 describe("resolveBaseRef", () => {
   const only = (...names) => (ref) => names.includes(ref);
@@ -180,17 +225,53 @@ describe("parseWorktreeList", () => {
 
 describe("parseArgs", () => {
   it("첫 비플래그 토큰을 브랜치로 본다", () => {
-    expect(parseArgs(["feat/x", "--launch"])).toEqual({ branch: "feat/x", seed: undefined });
+    expect(parseArgs(["feat/x", "--launch"])).toEqual({
+      branch: "feat/x",
+      seed: undefined,
+      from: undefined,
+    });
   });
 
   it("--seed <값> 과 --seed=<값> 을 모두 받는다", () => {
-    expect(parseArgs(["feat/x", "--seed", "go"])).toEqual({ branch: "feat/x", seed: "go" });
-    expect(parseArgs(["feat/x", "--seed=go"])).toEqual({ branch: "feat/x", seed: "go" });
+    expect(parseArgs(["feat/x", "--seed", "go"])).toMatchObject({ branch: "feat/x", seed: "go" });
+    expect(parseArgs(["feat/x", "--seed=go"])).toMatchObject({ branch: "feat/x", seed: "go" });
   });
 
   // --seed 의 값 토큰이 브랜치로 오인되면 엉뚱한 worktree 가 만들어진다.
   it("--seed 의 값 토큰을 브랜치로 오인하지 않는다", () => {
-    expect(parseArgs(["--seed", "feat/y", "feat/x"])).toEqual({ branch: "feat/x", seed: "feat/y" });
+    expect(parseArgs(["--seed", "feat/y", "feat/x"])).toMatchObject({
+      branch: "feat/x",
+      seed: "feat/y",
+    });
+  });
+
+  it("--from <값> 과 --from=<값> 을 모두 받는다", () => {
+    expect(parseArgs(["feat/a-1", "--from", "feat/a"])).toEqual({
+      branch: "feat/a-1",
+      seed: undefined,
+      from: "feat/a",
+    });
+    expect(parseArgs(["--from=feat/a", "feat/a-1"])).toEqual({
+      branch: "feat/a-1",
+      seed: undefined,
+      from: "feat/a",
+    });
+  });
+
+  // --seed 와 같은 함정: 값 토큰이 브랜치로 새면 엉뚱한 worktree 가 만들어진다.
+  it("--from 의 값 토큰을 브랜치로 오인하지 않는다", () => {
+    expect(parseArgs(["--from", "feat/a", "feat/a-1"])).toMatchObject({
+      branch: "feat/a-1",
+      from: "feat/a",
+    });
+  });
+
+  it("--from 과 --seed 를 함께 줘도 서로 값을 침범하지 않는다", () => {
+    expect(parseArgs(["feat/a-1", "--from", "feat/a", "--seed", "go"])).toEqual({
+      branch: "feat/a-1",
+      from: "feat/a",
+      seed: "go",
+    });
   });
 
   it("브랜치가 없으면 undefined 다", () => {
@@ -200,10 +281,44 @@ describe("parseArgs", () => {
 
 describe("seedPromptFor", () => {
   // spec 경로를 박지 않는다 — 새 세션의 load-spec 로더가 브랜치로 주입한다.
-  it("task 로 시작하는 개발 트리거 문구를 만든다", () => {
-    const seed = seedPromptFor("feat/monthly-view");
-    expect(seed.startsWith("monthly-view ")).toBe(true);
-    expect(seed).not.toMatch(/spec\.md/);
+  it("두 분기 모두 task 로 시작하고 spec 경로를 박지 않는다", () => {
+    for (const registered of [true, false]) {
+      const seed = seedPromptFor("feat/monthly-view", { registered });
+      expect(seed.startsWith("monthly-view ")).toBe(true);
+      expect(seed).not.toMatch(/spec\.md/);
+    }
+  });
+
+  // 2분기가 존재하는 유일한 이유는 '중단 재개'(등록됨)를 갈라내는 것이다 —
+  // 그 경우에 '기획부터' 를 주면 규칙 2 로 재작성이 막힌 spec 을 다시 쓰라고 지시하게 된다.
+  it("등록 여부에 따라 다른 문구를 만든다", () => {
+    const planning = seedPromptFor("feat/a", { registered: false });
+    const resuming = seedPromptFor("feat/a", { registered: true });
+    expect(planning).not.toBe(resuming);
+  });
+
+  it("미등록이면 기획(planner)부터 시작하라고 지시한다", () => {
+    expect(seedPromptFor("feat/a", { registered: false })).toMatch(/기획|planner/);
+  });
+
+  it("등록됐으면 기획이 아니라 구현을 이어가라고 지시한다", () => {
+    const seed = seedPromptFor("feat/a", { registered: true });
+    expect(seed).toMatch(/구현/);
+    expect(seed).not.toMatch(/planner/);
+  });
+});
+
+// warnLaunchContext 는 메인 체크아웃의 index.json 을 읽었다. 새 흐름에서 등록은 언제나
+// 작업 브랜치 위에서 일어나므로 그 정보는 머지 전까지 main 에 없다 — 살아 있는 모든 task 에
+// 대해 항상 '미등록' 을 반환하는, 정보량 0 의 경고였다(pipeline-review §4-4-1).
+describe("warnLaunchContext 제거", () => {
+  const source = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "worktree-add.mjs"),
+    "utf8",
+  );
+
+  it("식별자가 정의도 호출도 남아 있지 않다", () => {
+    expect(source).not.toMatch(/warnLaunchContext/);
   });
 });
 

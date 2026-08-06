@@ -11,7 +11,7 @@ Claude Code hooks + git 훅으로 **역할 기반(기획자 / 개발자 / QA) �
 
 이 모델은 "런타임에 무엇을 막는가"가 아니라 **"브랜치마다 리뷰 가능한 산출물을 남기는가"** 에 초점을 둔다.
 
-> 이 문서는 설계와 사용법을 함께 담는다(구 `harness-engineering.md` 통합). 결정의 배경은 맨 아래 [설계 변경 이력](#설계-변경-이력), 잔여 작업은 [`BACKLOG.md`](./BACKLOG.md) 참고.
+> 이 문서는 설계와 사용법을 함께 담는다(구 `harness-engineering.md` 통합). 결정의 배경은 맨 아래 [설계 변경 이력](#설계-변경-이력), 파이프라인 전 구간의 추적과 남은 논점은 [`harness/pipeline-review.md`](./harness/pipeline-review.md) 참고.
 
 ---
 
@@ -38,30 +38,42 @@ Claude Code hooks + git 훅으로 **역할 기반(기획자 / 개발자 / QA) �
 ## 2. 전체 플로우
 
 ```
-사람 ──▶ 기획자(planner): 기능 목록 작성 → harness/<task>/spec.md
-              │              + harness/index.json 에 브랜치 등록
+사람+AI ─▶ main 체크아웃 = 디스패처: 요구사항 논의 → 브랜치명 확정
+              │   여기서는 기획도 구현도 하지 않는다
               ▼
         node scripts/worktree-add.mjs <branch> --launch
               │   형제 디렉터리에 worktree 생성 + 설치 + 새 창에서 세션 기동
+              │   seed 는 그 worktree 의 등록 여부로 갈린다(미등록=기획부터 / 등록=이어서)
               ▼
-        개발자(그 worktree의 메인 세션)
-              │   load-spec 훅이 브랜치의 spec을 컨텍스트에 주입
+        개발자(그 worktree의 메인 세션) ── 여기서부터 전부 한 브랜치 위에서 일어난다
+              │
+              ├─▶ 기획자(planner) 스폰: 기능 목록 작성 → harness/<task>/spec.md
+              │        + harness/index.json 에 브랜치 등록  → spec 커밋
+              │        ※ 한 브랜치는 spec 을 한 번만 확정한다(pre-commit 이 강제)
+              ▼
+        이어서 구현 — load-spec 훅이 브랜치의 spec을 컨텍스트에 주입
               │   test-first: 실패 테스트(RED) → 구현 → 통과(GREEN)
               ▼
         node scripts/gate.mjs        ← 1층 객관 게이트 (자기 점검)
               ▼
         QA 서브에이전트 스폰 → qa-checklist.md   ← 2층 주관(비차단)
               ▼
-        git commit ─[pre-commit]─ 부분 스테이징 거부 → 게이트 → 통과 트리 기록
+        git commit ─[pre-commit]─ 부분 스테이징 거부 → spec 소유권 검사 → 게이트 → 통과 트리 기록
               ▼
         git push  ─[pre-push]── 게이트(조건부) + QA 해시 검사 + 산출물 미커밋 차단
               ▼
         작업 브랜치에 push — 산출물 4종(spec / 코드 / 테스트 / qa-checklist) 포함
               ▼
-        사람: PR 리뷰 → 누락 있으면 추가개발 요청 / 충분하면 머지
+        사람: PR 리뷰 → 충분하면 머지            ← 유일한 권위 게이트
+              │
+              └─ 거부/변동 시: node scripts/worktree-add.mjs <branch>-1 --from <branch> --launch \
+                                 --seed "spec 개정 — <요청 내용>"
+                               → 새 세션이 spec 을 개정하고 이어서 구현한다
 ```
 
 **`[x]` 확정·차단·에스컬레이션 큐는 AI 플로우에 없다.** 완성도 판단은 전적으로 사람의 머지 시점에 일어난다.
+
+**파이프라인 안에 사람이 멈춰 서는 지점은 없다.** spec 검토를 별도 게이트로 두지 않고 최종 PR 하나로 몰았다 — 그래야 "사람의 머지 결정이 유일한 권위 게이트"라는 선언과 실제가 일치한다. 대가는 spec 검토가 구현 뒤로 밀리는 것이고, 그것은 `--from` 리비전 경로로 회수한다.
 
 ---
 
@@ -78,10 +90,11 @@ Claude Code hooks + git 훅으로 **역할 기반(기획자 / 개발자 / QA) �
   hooks/load-spec.mjs       # UserPromptSubmit — 현재 브랜치의 spec 을 컨텍스트에 주입
   hooks/verify-branch.mjs   # PreToolUse(Edit|Write) — 보호 브랜치 / worktree 게이트
   hooks/qa-hash.mjs         # QA 입력 해시 (재생성 무한루프 차단)
+  hooks/spec-lock.mjs       # spec 소유권 판정 — 한 브랜치는 spec 을 한 번만 확정한다
   hooks/session-cost.mjs    # SessionEnd — 세션 토큰/비용 요약
   settings.json             # 훅 등록 + 권한 경계
 .githooks/
-  pre-commit                # 1층 객관 게이트 — 실패하면 커밋 자체가 안 만들어진다
+  pre-commit                # spec 소유권 검사 + 1층 객관 게이트 — 실패하면 커밋 자체가 안 만들어진다
   pre-push                  # 게이트(조건부 재실행) + 2층 headless QA
 scripts/
   gate.mjs                  # 1층 객관 게이트의 유일한 실행 진입점
@@ -114,7 +127,7 @@ harness/
 
 ### 게이트 대상은 설정 하나에서 온다
 
-1층 객관 게이트가 **무엇을 어디서 도는지는 `harness/config.json` 의 `gate` 가 유일한 출처**다. 실행 진입점도 하나(`node scripts/gate.mjs`)이고, 세션·`pre-commit`·`pre-push` 가 모두 그것을 호출한다. `CLAUDE.md` 에도 이 README 에도 대상 목록을 옮겨 적지 않는다 — 사본은 강제력을 더하지 않으면서 원본과 어긋나고, **낡은 사본은 없는 것보다 나쁘다**(세션이 틀린 검사를 돌리고 '통과했다'고 확신한다. 실제로 일어났던 일이다 → [BACKLOG #1](./BACKLOG.md)).
+1층 객관 게이트가 **무엇을 어디서 도는지는 `harness/config.json` 의 `gate` 가 유일한 출처**다. 실행 진입점도 하나(`node scripts/gate.mjs`)이고, 세션·`pre-commit`·`pre-push` 가 모두 그것을 호출한다. `CLAUDE.md` 에도 이 README 에도 대상 목록을 옮겨 적지 않는다 — 사본은 강제력을 더하지 않으면서 원본과 어긋나고, **낡은 사본은 없는 것보다 나쁘다**(세션이 틀린 검사를 돌리고 '통과했다'고 확신한다. 실제로 일어났던 일이다 → 구 BACKLOG #1).
 
 QA도 같은 파일을 Read해서 러너 유무를 판단한다(QA는 Bash가 없어 게이트를 실행할 수 없다). `gate.test` 항목이 없으면 러너가 없는 것이고, **그때만** 커버리지를 '테스트 러너 없음'으로 기록한다 — "테스트가 없을 것"이라고 가정하지 않는다.
 
@@ -130,7 +143,7 @@ node scripts/gate.mjs --list    # 대상만 확인 (테스트를 어디에 쓸�
 ## 5. 게이트 파이프라인 — pre-commit / pre-push
 
 ```
-git commit ─[pre-commit]─ 부분 스테이징 거부 → gate.mjs → 통과한 트리 해시를 기록
+git commit ─[pre-commit]─ 부분 스테이징 거부 → spec 소유권 검사 → gate.mjs → 통과한 트리 해시를 기록
                           실패 → 커밋 중단 (워킹트리 보존, 히스토리 무손상)
 git push   ─[pre-push]──  HEAD 트리 == 기록된 트리?  같으면 게이트 생략
                           다르면(rebase·머지·--no-verify) gate.mjs 재실행
@@ -168,7 +181,7 @@ pre-push는 *이미 커밋된 ref* 를 보내기 직전에 돈다. 이때 생성
 
 > **한계(기록)**: 게이트를 *실행하는* 경로에서 `gate.mjs` 는 워킹트리를 검사하지 `HEAD` 의 트리를 체크아웃해 검사하지 않는다. 워킹트리가 dirty 하면 push 되는 내용과 검사 대상이 다를 수 있다. 스킵 경로에는 이 문제가 없다(커밋 시점에 검증된 트리와 `HEAD` 트리가 같음을 확인한다).
 
-> **게이트는 `GIT_*` 를 씻고 명령을 스폰한다.** 게이트가 git 훅 안에서 돌면 자식 프로세스가 진짜 저장소를 가리키는 `GIT_DIR`·`GIT_INDEX_FILE` 을 상속한다. **`GIT_DIR` 이 있으면 `git -C` 는 무시되므로**, 임시 저장소를 겨냥한 테스트가 실제로는 이 저장소를 조작한다(가설이 아니라 실제로 브랜치를 덮어썼다 → [BACKLOG #9](./BACKLOG.md)). 방어는 스폰 지점 한 곳(`gate.mjs`)에 있고, 게이트 밖(직접 실행·CI)을 위한 이중 방어는 `.claude/rules/test-git.md` 에 있다.
+> **게이트는 `GIT_*` 를 씻고 명령을 스폰한다.** 게이트가 git 훅 안에서 돌면 자식 프로세스가 진짜 저장소를 가리키는 `GIT_DIR`·`GIT_INDEX_FILE` 을 상속한다. **`GIT_DIR` 이 있으면 `git -C` 는 무시되므로**, 임시 저장소를 겨냥한 테스트가 실제로는 이 저장소를 조작한다(가설이 아니라 실제로 브랜치를 덮어썼다 → 구 BACKLOG #9). 방어는 스폰 지점 한 곳(`gate.mjs`)에 있고, 게이트 밖(직접 실행·CI)을 위한 이중 방어는 `.claude/rules/test-git.md` 에 있다.
 
 ---
 
@@ -208,7 +221,7 @@ pre-push는 *이미 커밋된 ref* 를 보내기 직전에 돈다. 이때 생성
 | 4 | 등록된 task 브랜치 + **메인 체크아웃** | **`deny`** — worktree 에서만 |
 | 5 | 등록된 task 브랜치 + worktree | 통과 |
 
-면제 판정은 **저장소 루트 상대경로 + 디렉터리 경계 매칭**이다. 부분 문자열 매칭이던 시절엔 `apps/web/harness/foo.ts` 가 면제돼 제품 코드가 뚫렸다([BACKLOG #7](./BACKLOG.md)).
+면제 판정은 **저장소 루트 상대경로 + 디렉터리 경계 매칭**이다. 부분 문자열 매칭이던 시절엔 `apps/web/harness/foo.ts` 가 면제돼 제품 코드가 뚫렸다(구 BACKLOG #7).
 
 ---
 
@@ -407,7 +420,7 @@ npm install   # prepare 훅이 core.hooksPath 를 .githooks 로 설정한다
 
 ## 알려진 제약
 
-이 저장소는 Turborepo 기반 프로젝트에서 하네스 부분만 분리한 것이다. 분리 과정에서 드러난 잔여 작업(원인·수정 방향·완료 조건)은 [`BACKLOG.md`](./BACKLOG.md) 에 정리돼 있다.
+이 저장소는 Turborepo 기반 프로젝트에서 하네스 부분만 분리한 것이다. 분리 과정에서 드러난 잔여 작업은 `BACKLOG.md` 에 있었으나 그 파일은 삭제됐다(항목 대부분이 spec 으로 승격돼 구현·머지됐고, 근거는 코드 주석과 커밋에 남아 있다). **남은 논점은 [`harness/pipeline-review.md`](./harness/pipeline-review.md) §3 에 있다** — 파이프라인 전 구간을 사용법 기준으로 추적한 문서이고, §4 에 확정된 결정이 기록된다.
 
 ---
 

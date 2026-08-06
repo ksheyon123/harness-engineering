@@ -79,3 +79,26 @@ describe("문서", () => {
     expect(history).toMatch(/index-sync/);
   });
 });
+
+// BACKLOG.md 는 7b4b47e 로 삭제됐다. 존재하지 않는 파일을 가리키는 링크·면제 항목은
+// 이 저장소가 반복해서 경고해 온 '낡은 사본' 그 자체다(pipeline-review 관찰 ⑧).
+// 부재 단언이라 문구를 다시 써도 깨지지 않는다.
+describe("삭제된 BACKLOG.md 의 잔재", () => {
+  it("README 에 ./BACKLOG.md 링크가 없다", () => {
+    expect(read("README.md")).not.toMatch(/\]\(\.\/BACKLOG\.md\)/);
+  });
+
+  it("harnessMetaPaths 에 BACKLOG.md 가 없다", () => {
+    expect(readJson("harness/config.json").harnessMetaPaths).not.toContain("BACKLOG.md");
+  });
+});
+
+// 커밋 입도는 어떤 하네스 장치도 소비하지 않고 훅으로 검증할 수도 없다 —
+// 강제도 소비도 없으면 규약이 아니라 취향이다(pipeline-review §4-5·§4-6).
+// 규칙 2 로 '한 브랜치 = spec 하나' 가 강제되므로 '여러 spec 을 한 세션에서' 라는
+// 전제 자체도 성립하지 않는다.
+describe("CLAUDE.md 의 커밋 입도 문구", () => {
+  it("삭제돼 있다", () => {
+    expect(read(".claude/CLAUDE.md")).not.toMatch(/spec 1개당 1커밋/);
+  });
+});

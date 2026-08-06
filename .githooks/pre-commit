@@ -44,7 +44,37 @@ if ! git diff --quiet; then
   exit 1
 fi
 
-# ── 1) 객관 게이트 ───────────────────────────────────────────────────────────
+# ── 1) spec 소유권 검사 (규칙 2) ─────────────────────────────────────────────
+# "한 브랜치는 spec 을 정확히 한 번 확정한다. 고치려면 브랜치를 갈아탄다."
+# 이게 없으면 규칙 2 는 CLAUDE.md 의 문장일 뿐이고, 세션이 같은 브랜치에서 spec 을 계속
+# 고쳐 써도 아무것도 막지 않는다(설계는 harness/pipeline-review.md §4-3).
+#
+# 판정 근거는 **HEAD 시점의** spec frontmatter 다. 워킹트리는 이미 새 브랜치 이름으로
+# 바뀌어 있으므로 그것을 보면 리비전 브랜치의 첫 개정까지 막힌다.
+#   feat/a 최초 작성        → HEAD 에 파일 없음      → 통과
+#   feat/a 에서 재수정      → HEAD 소유자 = feat/a   → 차단
+#   feat/a-1 첫 개정        → HEAD 소유자 = feat/a   → 통과
+#   feat/a-1 에서 재수정    → HEAD 소유자 = feat/a-1 → 차단
+#
+# 게이트보다 **앞에** 둔다 — O(1) 검사라 실패를 값싸게 알린다. 뒤에 두면 무거운
+# typecheck/test 가 다 돈 뒤에야 '브랜치를 잘못 골랐다' 는 사실이 드러난다.
+BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+SPEC="$(node -e "try{const i=require('./harness/index.json');process.stdout.write(i.tasks['$BRANCH']||'')}catch(e){}")"
+# -F 필수: spec 경로의 '.' 이 정규식으로 해석되면 다른 경로와 오매칭할 수 있다.
+if [ -n "$SPEC" ] && git diff --cached --name-only | grep -qxF "$SPEC"; then
+  if ! git show "HEAD:$SPEC" 2>/dev/null | node .claude/hooks/spec-lock.mjs "$BRANCH"; then
+    say "[pre-commit] ❌ '$SPEC' 은 이미 이 브랜치('$BRANCH')에서 확정된 spec 입니다." \
+        "             한 브랜치는 spec 을 한 번만 확정합니다 — 개정은 새 브랜치에서 하세요:" \
+        "" \
+        "               node scripts/worktree-add.mjs <새 브랜치> --from $BRANCH --launch \\" \
+        "                 --seed \"spec 개정 — <요청 내용>\"" \
+        "" \
+        "             워킹트리의 수정 내용은 그대로 남아 있습니다."
+    exit 1
+  fi
+fi
+
+# ── 2) 객관 게이트 ───────────────────────────────────────────────────────────
 # gate.mjs 의 출력(vitest/tsc)은 라이브로 그대로 흐른다 — 실패 원인은 그것으로 본다.
 # 파이프가 닫혀 vitest 가 SIGPIPE 로 죽으면 게이트 실패로 판단되는데, 거짓 거부지만
 # 방향이 안전하므로(막는 쪽) 그대로 둔다.
@@ -54,7 +84,7 @@ if ! node scripts/gate.mjs; then
   exit 1
 fi
 
-# ── 2) 통과한 트리를 기록 ────────────────────────────────────────────────────
+# ── 3) 통과한 트리를 기록 ────────────────────────────────────────────────────
 # pre-push 가 '이 트리는 이미 검증됐다' 를 판단하는 근거. 커밋 해시가 아니라 트리 해시인
 # 이유: 이 시점엔 커밋이 아직 없고, 게이트가 검증하는 것은 히스토리가 아니라 내용이다
 # (메시지만 고친 amend 처럼 내용이 같은 재작성은 그대로 유효해야 한다).
