@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // spec 소유권 판정 — 규칙 2("한 브랜치는 spec 을 정확히 한 번 확정한다. 고치려면 브랜치를
 // 갈아탄다")를 pre-commit 이 강제하기 위한 순수 함수 + CLI.
-// 설계는 harness/spec-in-worktree/spec.md, 근거는 harness/pipeline-review.md §4-3 참고.
+// 설계는 harness/spec-in-worktree/spec.md 참고.
 //
 // 판정 로직을 셸이 아니라 여기에 두는 이유: frontmatter 파싱은 sed 한 줄로는 안전하지 않다.
 // `sed -n 's/^branch:.*//p'` 는 파일 전체를 훑으므로 spec 본문에 줄 시작이 `branch:` 인

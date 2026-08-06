@@ -450,12 +450,7 @@ describe("이 저장소의 harness/config.json", () => {
 
   it("문서가 '면제' 라고 약속한 하네스 메타 경로를 실제로 면제한다", () => {
     const meta = resolveMetaPaths(configText);
-    for (const p of [
-      "harness/index.json",
-      ".claude/CLAUDE.md",
-      ".githooks/pre-push",
-      "README.md",
-    ]) {
+    for (const p of ["harness/index.json", ".claude/CLAUDE.md", ".githooks/pre-push"]) {
       expect(isHarnessMeta(p, meta)).toBe(true);
     }
   });

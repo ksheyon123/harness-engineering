@@ -62,39 +62,19 @@ describe("harness/index.json", () => {
   });
 });
 
-// 설계 문서는 README.md 하나다(구 harness-engineering.md 통합 — README '설계 변경 이력' 참고).
-// 두 문서가 같은 사실을 각각 서술하면 드리프트가 나므로 검사 대상도 하나다.
-describe("문서", () => {
-  // 설계 문서가 존재하지 않는 훅을 서술하면 다음 도입 프로젝트가 그대로 복제한다.
-  // 단 '설계 변경 이력' 은 제거 사실을 남기는 자리라 예외이고, 제거 작업의 task 이름
-  // (index-sync-removal)도 훅을 '있는 것처럼' 서술하는 게 아니라 이력이라 예외다.
-  it("README 는 변경 이력 밖에서 index-sync 를 언급하지 않는다", () => {
-    const [body, history] = read("README.md").split("## 설계 변경 이력");
-    expect(history, "'## 설계 변경 이력' 절을 찾지 못했다").toBeTruthy();
-    expect(body).not.toMatch(/index-sync(?!-removal)|Hook ?3/);
-  });
-
-  it("제거 사실이 설계 변경 이력에 남아 있다", () => {
-    const history = read("README.md").split("## 설계 변경 이력")[1] ?? "";
-    expect(history).toMatch(/index-sync/);
-  });
-});
-
-// BACKLOG.md 는 7b4b47e 로 삭제됐다. 존재하지 않는 파일을 가리키는 링크·면제 항목은
-// 이 저장소가 반복해서 경고해 온 '낡은 사본' 그 자체다(pipeline-review 관찰 ⑧).
+// BACKLOG.md·README.md 는 삭제됐다. 존재하지 않는 파일을 가리키는 면제 항목은
+// 이 저장소가 반복해서 경고해 온 '낡은 사본' 그 자체다.
 // 부재 단언이라 문구를 다시 써도 깨지지 않는다.
-describe("삭제된 BACKLOG.md 의 잔재", () => {
-  it("README 에 ./BACKLOG.md 링크가 없다", () => {
-    expect(read("README.md")).not.toMatch(/\]\(\.\/BACKLOG\.md\)/);
-  });
-
-  it("harnessMetaPaths 에 BACKLOG.md 가 없다", () => {
-    expect(readJson("harness/config.json").harnessMetaPaths).not.toContain("BACKLOG.md");
+describe("삭제된 문서의 잔재", () => {
+  it("harnessMetaPaths 에 삭제된 문서가 남아 있지 않다", () => {
+    const meta = readJson("harness/config.json").harnessMetaPaths;
+    expect(meta).not.toContain("BACKLOG.md");
+    expect(meta).not.toContain("README.md");
   });
 });
 
 // 커밋 입도는 어떤 하네스 장치도 소비하지 않고 훅으로 검증할 수도 없다 —
-// 강제도 소비도 없으면 규약이 아니라 취향이다(pipeline-review §4-5·§4-6).
+// 강제도 소비도 없으면 규약이 아니라 취향이다.
 // 규칙 2 로 '한 브랜치 = spec 하나' 가 강제되므로 '여러 spec 을 한 세션에서' 라는
 // 전제 자체도 성립하지 않는다.
 describe("CLAUDE.md 의 커밋 입도 문구", () => {

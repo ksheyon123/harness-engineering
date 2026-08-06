@@ -178,7 +178,7 @@ export function baseForNewBranch({ from, configBaseBranch }) {
 // 증상: `--from` 없이 실행했는데 현재 체크아웃된 브랜치가 baseBranch 가 아니면, 새 worktree 는
 // **현재 브랜치가 아니라 baseBranch 에서** 잘린다. baseBranch 가 실재하면 성공하므로 조용하다 —
 // 리비전 worktree 안에서 실행했거나 디스패처가 다른 브랜치를 체크아웃해 둔 경우, 지금까지 한
-// 작업이 새 worktree 에 없다는 사실이 머지할 때에야 드러난다(README '열린 구멍' #7).
+// 작업이 새 worktree 에 없다는 사실이 머지할 때에야 드러난다.
 //
 // **차단하지 않는다.** baseBranch 에서 분기하는 것은 정상 동작이고, 다른 브랜치를 체크아웃한
 // 채로 새 task 를 여는 것도 정당하다. 드러내기만 한다.
@@ -217,7 +217,7 @@ export function isTaskRegistered(indexJsonText, branch) {
 // 브랜치 + 등록 여부 → 새 세션에 줄 seed. 새 세션의 load-spec 로더가 브랜치로 spec 을
 // 자동 주입하므로 seed 는 트리거면 충분하다(spec 경로를 박지 않는다).
 //
-// 2분기가 존재하는 이유는 '중단 재개' 하나다(pipeline-review §4-4-1). 신규 task 도
+// 2분기가 존재하는 이유는 '중단 재개' 하나다. 신규 task 도
 // 리비전(--from)도 그 worktree 의 index.json 엔 아직 자기 브랜치가 없어 미등록이고,
 // 같은 브랜치를 attach 하는 재개만 등록됨으로 나온다. 재개에 '기획부터' 를 주면
 // 규칙 2 로 재작성이 막힌 spec 을 다시 쓰라고 지시하게 된다.
@@ -332,7 +332,7 @@ function tryLaunchTerminal(path, seed) {
 //
 // **root(메인 체크아웃)가 아니라 worktree 를 본다.** 새 흐름에서 등록은 언제나 작업 브랜치
 // 위에서 일어나므로 root 의 index.json 엔 머지 전까지 그 항목이 없다 — root 기준으로 보면
-// 살아 있는 모든 task 가 항상 '미등록' 이 되어 판정이 무의미해진다(pipeline-review §4-4-1).
+// 살아 있는 모든 task 가 항상 '미등록' 이 되어 판정이 무의미해진다.
 // 반드시 ensureWorktree 이후에 부른다(그 전엔 디렉터리가 없다).
 function registeredInWorktree(worktreePath, branch) {
   let text;

@@ -102,7 +102,7 @@ describe("loadConfig", () => {
     expect(() => loadConfig(JSON.stringify({ baseBranch: null }))).toThrow(/baseBranch/);
   });
 
-  // 필드 부재는 오타와 다르게 다룬다(README §6 '부재·오류를 다루는 방향이 소비자마다 다르다').
+  // 필드 부재는 오타와 다르게 다룬다.
   // 이 회귀가 깨지면 도입 초기 저장소에서 게이트가 부당하게 멈춘다.
   it("baseBranch 필드가 없으면 기존대로 DEFAULTS 로 물러선다", () => {
     expect(loadConfig("{}").baseBranch).toBe(DEFAULTS.baseBranch);

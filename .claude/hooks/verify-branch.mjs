@@ -86,7 +86,7 @@ export function resolveMetaPaths(configText) {
 //
 // 목록을 훅에 박지 않는 이유: 분기 기준은 이미 config.baseBranch 한 곳에 있는데 훅이 이름을
 // 따로 알고 있으면 이중 출처가 된다 — `baseBranch: "develop"` 인 프로젝트에서 develop 은
-// 보호되지 않고, 이 저장소는 쓰지도 않는 dev·master 를 보호했다(harness/pipeline-review.md 논점 H).
+// 보호되지 않고, 이 저장소는 쓰지도 않는 dev·master 를 보호했다.
 export function resolveProtectedBranches(configText) {
   let baseBranch = DEFAULTS.baseBranch;
   let extra = DEFAULTS.protectedBranches;

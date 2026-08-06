@@ -4,8 +4,7 @@
   "harnessMetaPaths": [
     "harness/",
     ".claude/",
-    ".githooks/",
-    "README.md"
+    ".githooks/"
   ],
   "gate": {
     "typecheck": [],

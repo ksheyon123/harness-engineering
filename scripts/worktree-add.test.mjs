@@ -357,7 +357,7 @@ describe("seedPromptFor", () => {
 
 // warnLaunchContext 는 메인 체크아웃의 index.json 을 읽었다. 새 흐름에서 등록은 언제나
 // 작업 브랜치 위에서 일어나므로 그 정보는 머지 전까지 main 에 없다 — 살아 있는 모든 task 에
-// 대해 항상 '미등록' 을 반환하는, 정보량 0 의 경고였다(pipeline-review §4-4-1).
+// 대해 항상 '미등록' 을 반환하는, 정보량 0 의 경고였다.
 describe("warnLaunchContext 제거", () => {
   const source = readFileSync(
     join(dirname(fileURLToPath(import.meta.url)), "worktree-add.mjs"),
