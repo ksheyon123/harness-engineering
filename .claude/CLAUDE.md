@@ -79,7 +79,6 @@ worktree 세션이 그 task 의 오케스트레이터다. 다음을 순서대로
 **두 층위를 섞지 않는다.** worktree 분리는 **task 사이**의 문제이고(브랜치가 다르므로 워킹트리도 달라야 한다), 한 task 안에서 역할을 스폰해 조율하는 것은 **그 세션 안**의 문제다. 서브에이전트는 스폰한 쪽의 워킹트리를 물려받으므로, 다른 worktree 에서 일하게 하려면 `EnterWorktree` 로 이동시킨다.
 
 - **세션 단위**: worktree 1개 = 오케스트레이터 세션 1개. 두 작업을 동시에 = 세션 2개가 각자의 worktree에서 독립 실행된다(세션 간 컨텍스트는 공유되지 않는다).
-- **생성 위치**: worktree는 **저장소 트리 밖 형제 디렉터리**(`../<repo>-<task>`)에 만든다. **저장소 내부(예: `.claude/worktrees/`)에는 두지 않는다** — 타입 검사·테스트 러너의 글로빙과 `.gitignore`가 그 트리를 untracked/중첩 repo로 오인한다.
 - **생성 방법**: `node scripts/worktree-add.mjs <branch>` 를 쓴다(형제 경로 산출 + `harness/config.json` 의 `baseBranch` 에서 분기). 플래그:
   - `--install` : 그 worktree에서 의존성 설치까지 한다(설치 명령은 `harness/config.json` 의 `installCommand`).
   - `--launch` : `--install` 을 포함하고, 생성·설치 후 **그 worktree에서 개발 세션을 새 터미널 창에서 자동 실행**한다(macOS=Terminal.app/osascript, Windows=새 PowerShell 창/cmd start + `-EncodedCommand`). seed 는 브랜치에서 도출하며(또는 `--seed "<문구>"`로 지정), 새 세션은 `load-spec` 가 spec 을 자동 주입한다. 미지원 플랫폼/실패 시 기동 명령(`cd '<path>' && claude '<seed>'`) 출력으로 폴백한다. 미등록 브랜치/누락 spec 이면 경고만 한다(차단 안 함).
