@@ -3,8 +3,7 @@
     "defaultMode": "acceptEdits",
     "allow": [
       "Bash",
-      "Edit(harness/**)",
-      "Write(harness/**)"
+      "Edit(harness/**)"
     ],
     "deny": [
       "Bash(rm -rf*)",

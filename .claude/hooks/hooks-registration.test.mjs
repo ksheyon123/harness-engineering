@@ -62,24 +62,20 @@ describe("harness/index.json", () => {
   });
 });
 
+// 설계 문서는 README.md 하나다(구 harness-engineering.md 통합 — README '설계 변경 이력' 참고).
+// 두 문서가 같은 사실을 각각 서술하면 드리프트가 나므로 검사 대상도 하나다.
 describe("문서", () => {
   // 설계 문서가 존재하지 않는 훅을 서술하면 다음 도입 프로젝트가 그대로 복제한다.
-  // 단 '설계 변경 이력' 은 제거 사실을 남기는 자리라 예외다.
-  it("harness-engineering.md 는 변경 이력 밖에서 index-sync 를 언급하지 않는다", () => {
-    const doc = read("harness-engineering.md");
-    const [body, history] = doc.split("## 설계 변경 이력");
+  // 단 '설계 변경 이력' 은 제거 사실을 남기는 자리라 예외이고, 제거 작업의 task 이름
+  // (index-sync-removal)도 훅을 '있는 것처럼' 서술하는 게 아니라 이력이라 예외다.
+  it("README 는 변경 이력 밖에서 index-sync 를 언급하지 않는다", () => {
+    const [body, history] = read("README.md").split("## 설계 변경 이력");
     expect(history, "'## 설계 변경 이력' 절을 찾지 못했다").toBeTruthy();
-    expect(body).not.toMatch(/index-sync|Hook ?3/);
+    expect(body).not.toMatch(/index-sync(?!-removal)|Hook ?3/);
   });
 
   it("제거 사실이 설계 변경 이력에 남아 있다", () => {
-    const history = read("harness-engineering.md").split("## 설계 변경 이력")[1] ?? "";
+    const history = read("README.md").split("## 설계 변경 이력")[1] ?? "";
     expect(history).toMatch(/index-sync/);
-  });
-
-  // 훅을 '있는 것처럼' 서술하는 것만 막는다. 제거 작업의 task 이름(index-sync-removal)은
-  // 이력이라 예외다 — harness-engineering.md 쪽에서 '설계 변경 이력' 을 예외로 두는 것과 같다.
-  it("README 는 존재하지 않는 훅 파일을 서술하지 않는다", () => {
-    expect(read("README.md")).not.toMatch(/index-sync(?!-removal)/);
   });
 });

@@ -5,7 +5,7 @@
     "harness/",
     ".claude/",
     ".githooks/",
-    "harness-engineering.md",
+    "README.md",
     "BACKLOG.md"
   ],
   "gate": {

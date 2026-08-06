@@ -354,7 +354,7 @@ describe("이 저장소의 harness/config.json", () => {
       "harness/index.json",
       ".claude/CLAUDE.md",
       ".githooks/pre-push",
-      "harness-engineering.md",
+      "README.md",
       "BACKLOG.md",
     ]) {
       expect(isHarnessMeta(p, meta)).toBe(true);
