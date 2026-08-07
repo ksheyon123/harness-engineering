@@ -5,11 +5,7 @@
   "type": "module",
   "description": "Claude Code 하네스 엔지니어링 — 역할 기반(기획자/개발자/QA) 문서 주도 개발 워크플로우",
   "scripts": {
-    "prepare": "node scripts/setup-githooks.mjs",
-    "test": "vitest run",
-    "gate": "node scripts/gate.mjs",
-    "worktree": "node scripts/worktree-add.mjs",
-    "token-usage": "node scripts/token-usage.mjs"
+    "test": "vitest run"
   },
   "devDependencies": {
     "vitest": "^3.2.4"

@@ -8,10 +8,14 @@ import { defineConfig, defaultExclude } from "vitest/config";
 // 오염은 한 방향뿐이다 — 사본 안에서 돌린 게이트는 부모를 보지 못한다(cwd 가 사본이라
 // 글로빙 루트가 거기다). 그래서 막아야 하는 것은 **오케스트레이터 자신의 실행**이다.
 //
+// `legacy/` 는 구 버전 하네스의 아카이브다(`legacy/README.md` 참고). 참고 자료이지
+// 유지 대상이 아니므로 게이트에서 제외한다 — 고칠 생각이 없는 코드가 게이트를 빨간색으로
+// 만들면 게이트 자체가 신뢰를 잃는다.
+//
 // `defaultExclude` 를 펼쳐서 더한다. 통째로 덮어쓰면 `node_modules`·`dist` 가 다시
 // 테스트 대상이 된다.
 export default defineConfig({
   test: {
-    exclude: [...defaultExclude, "**/.claude/worktrees/**"],
+    exclude: [...defaultExclude, "**/.claude/worktrees/**", "legacy/**"],
   },
 });
