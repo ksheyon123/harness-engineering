@@ -1,7 +1,7 @@
 ---
 name: planner
 description: 기획자. 새 작업을 시작할 때 "기능 목록"(spec.md)을 작성한다. 코드는 작성하지 않고, 무엇을·왜·어떻게 만들지를 명세한다. 요구사항을 설계 문서로 정리하거나 새 기능/작업의 spec을 잡을 때 사용.
-tools: Read, Grep, Glob, Write, Edit, EnterWorktree
+tools: Read, Grep, Glob, Write, Edit
 model: sonnet
 isolation: worktree
 background: true
