@@ -5,7 +5,8 @@
   "type": "module",
   "description": "Claude Code 하네스 엔지니어링 — 역할 기반(기획자/개발자/QA) 문서 주도 개발 워크플로우",
   "scripts": {
-    "test": "vitest run"
+    "test": "vitest run",
+    "posttest": "node .githooks/mark-verified.mjs"
   },
   "devDependencies": {
     "vitest": "^3.2.4"

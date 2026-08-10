@@ -1,0 +1,4 @@
+#!/bin/sh
+# 층 2 진입점. 판정은 옆의 pre-push.mjs 에 있다.
+# stdin 으로 오는 ref 목록을 그대로 물려준다.
+exec node "$(dirname "$0")/pre-push.mjs"

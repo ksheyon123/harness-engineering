@@ -1,0 +1,7 @@
+#!/bin/sh
+# 층 2 진입점. 판정은 옆의 pre-commit.mjs 에 있다 — git 이 훅을 셸로 부르기 때문에
+# 얇은 껍데기만 여기 둔다.
+#
+# `$0` 기준으로 찾는다. core.hooksPath 가 절대경로라 worktree 에서 커밋해도 이 파일이
+# 불리는데, 그때 cwd 는 그 worktree 다. 상대경로로 쓰면 사본 쪽 스크립트가 잡힌다.
+exec node "$(dirname "$0")/pre-commit.mjs"

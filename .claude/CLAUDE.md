@@ -13,12 +13,13 @@
 .claude/agents/*.md        developer · qa (서브에이전트 정의는 이 둘뿐이다)
 .claude/planner-mode.md    기획자 모드의 spec 작성 지침 (에이전트 아님)
 .claude/hooks/             SubagentStop 종료 훅 (hook-kit.mjs = 공통 배선)
+.githooks/                 층 2 — pre-commit · pre-push (core.hooksPath 가 가리킨다)
 .claude/settings.json      permissions + worktree.baseRef
 vitest.config.mjs          테스트 러너 설정
 package.json               scripts.test = "vitest run"  ← 게이트 정의의 단일 출처
 ```
 
-여기에 `scripts/spawn.ps1`(작업 세션을 새 탭에 띄운다)과 `harness/<task>/`(spec · QA 체크리스트)가 더 있다. 없는 것: `.githooks/` · `.claude/rules/` · `docs/`.
+여기에 `scripts/spawn.ps1`(작업 세션을 새 탭에 띄운다)과 `harness/<task>/`(spec · QA 체크리스트), `src/`(제품 코드)가 더 있다. 없는 것: `.claude/rules/` · `docs/`.
 
 > **기획자는 서브에이전트가 아니라 세션의 첫 모드다.** 스폰할 것이 없고, `.claude/agents/` 에는 `developer`·`qa` 둘만 있다. spec 작성 지침은 `.claude/planner-mode.md` 에 있다.
 
@@ -42,8 +43,8 @@ package.json               scripts.test = "vitest run"  ← 게이트 정의의 
 | 층 0 — agent `tools:` 화이트리스트 | ✅ **동작** | 능력 자체의 제거 — **`developer`·`qa` 에 Bash 가 없다**. 세션에는 걸리지 않는다 |
 | worktree 격리 | ✅ **구조적** | 작업 세션이 worktree 안에 있는 한 `main` 을 체크아웃할 수 없다 — git 이 같은 브랜치의 이중 체크아웃을 거부한다 |
 | 층 1 — `PreToolUse(Edit\|Write)` 훅 | ❌ 없음 | 경로 소유권. **전제였던 역할 주입은 이제 있다**(`HARNESS_ROLE` + `SessionStart`) — 같은 변수를 읽어 붙이면 된다 |
-| 층 2 — git `pre-commit` | ❌ 없음 | 전체 스테이징 · **spec 형식**(`verify-spec` 이 여기로 내려온다) |
-| 층 2 — git `pre-push` | ❌ 없음 | green 아닌 sha 의 push — verified marker |
+| 층 2 — git `pre-commit` | ✅ **동작** | `main`/`dev` 직접 커밋 · 부분 스테이징 · 깨진 spec 형식 |
+| 층 2 — git `pre-push` | ✅ **동작** | 게이트 기록이 없는 sha 의 push — verified marker |
 
 여기에 더해 **종료 훅이 두 지점 서 있다.** 층과는 성격이 다르다 — 층은 *못 하게* 막고, 종료 훅은 **빈손이거나 깨진 상태로 못 끝내게** 막는다.
 
@@ -56,10 +57,11 @@ package.json               scripts.test = "vitest run"  ← 게이트 정의의 
 
 그리고 둘 다 통과 직후 **인계 커밋을 찍는다**(`hook-kit.mjs` 의 `handoff`). 검사와 인계를 같은 지점에 두는 이유는 **그 자리 말고는 커밋할 수 있는 데가 없기 때문**이다 — 역할에는 층 0 이 Bash 를 뺐고, 작업 세션은 격리 때문에 역할의 worktree 를 겨냥할 수 없다. 훅은 도구 화이트리스트 밖의 node 프로세스이면서 역할의 worktree 를 cwd 로 도는 유일한 것이다. 덤으로 **게이트가 본 트리와 오케스트레이터가 머지하는 트리가 같아진다.**
 
-`verify-spec.mjs` 는 planner 가 서브에이전트였을 때의 `SubagentStop` 훅이다. **세션에는 `SubagentStop` 이 걸리지 않으므로 지금은 아무것도 막지 못한다.** 판정 로직(`problemsIn`)은 `pre-commit` 으로 옮겨야 한다 — 커밋이 곧 인계이므로 그 자리가 맞고, 누가 커밋하든 걸린다. **미착수.**
+spec 형식 판정은 `.claude/hooks/spec-shape.mjs` 에 있고 `pre-commit` 이 부른다. **커밋이 곧 인계이므로 그 자리가 맞고, 누가 커밋하든 걸린다** — 세션이든 사람이든. 워킹트리가 아니라 **인덱스**를 읽는다: 검사한 것과 커밋되는 것이 달라서는 안 된다.
 
 - `settings.json` 의 `hooks` 블록에는 `SessionStart` 만 있다 → 층 1 부재.
-- `core.hooksPath` 는 `.githooks` 를 가리키지만 그 디렉터리가 없다 → 층 2 부재. 새 훅을 `.githooks/` 에 만들면 별도 설정 없이 붙는다.
+- `core.hooksPath` 가 `.githooks` 를 가리킨다 → 거기 만든 훅은 별도 설정 없이 붙는다. 진입점은 셸 껍데기(`pre-commit` · `pre-push`)고 판정은 옆의 `.mjs` 에 있다 — git 이 훅을 셸로 부르기 때문이다.
+- **층 2 는 `--no-verify` 로 우회된다.** 봉인이 아니라 방어선이고, 우회했다는 사실이 명령에 남는 것이 요점이다.
 - 부분적 방어선: `settings.json` 의 `permissions.deny`(`rm -rf*`, `git push --force*`, `git reset --hard*`, `.env` 읽기). **방어선이지 봉인이 아니다** — 접두어 패턴이라 우회 가능하다.
 
 > **아래 규약 중 층 1·2 가 맡아야 할 것은 지금 규약으로만 존재한다.** 이 파일의 문장은 컨텍스트일 뿐 강제가 아니다. 훅이 붙기 전까지는 네 규율이 유일한 방어다 — 그 차이를 알고 지켜라.
@@ -195,7 +197,10 @@ task 경계 · spec 형식 · 인수기준 작성 지침 · 리비전 판별이 
 6. **회수** — 각 developer 브랜치를 머지
 7. **검증** — 머지된 트리에서 `npm test`. **백그라운드로 돌린다**(`run_in_background`) — 포그라운드면 그 몇 분 동안 대화가 멈춘다. 실패하면 출력을 그대로 `developer` 에게 돌려보낸다
 8. **QA** — `qa` 스폰 → 회수
-9. **push** → `ExitWorktree(keep)`
+9. **최종 게이트** — QA 회수까지 끝난 **그 커밋 위에서** `npm test` 를 한 번 더 돌린다
+10. **push** → `ExitWorktree(keep)`
+
+9단계를 빼먹으면 `pre-push` 가 막는다. 7단계의 green 은 **그때의 HEAD** 것이고, 그 뒤 QA 회수로 커밋이 하나 더 얹혔기 때문이다 — 올리는 것은 아무도 검증한 적 없는 트리가 된다. 훅이 강제하는 것이 정확히 이 순서다.
 
 전부 끝나면 **변경 요약 + 검증 결과 + QA 결과 + 커밋 해시 + push 결과**를 한 번에 보고한다. **PR 리뷰·머지는 사람의 몫이다.**
 
@@ -236,9 +241,9 @@ git merge --no-ff <역할 브랜치>      # 보고에 실린 브랜치명
 
 ### 커밋 + push
 
-- **검증 조건**: `npm test` 가 통과할 때만 커밋한다. 실패하면 커밋하지 않고 멈춰 보고한다. **커밋 시점에 이것을 막는 훅이 없다** — 네가 돌리지 않으면 아무도 돌리지 않는다.
-- **부분 스테이징 금지**: 커밋 시 워킹트리 전체를 스테이징한다(`git add -A`). 검사한 내용과 실제 커밋되는 내용이 어긋나는 것을 막기 위함이다.
-- **브랜치 안전**: worktree 안에 있으면 `main`/`dev` 체크아웃이 구조적으로 불가능하다. 다만 **`EnterWorktree` 를 하는 것 자체는 규약**이므로, 본체에 서 있다면 브랜치를 확인하고 멈춘다.
+- **검증 조건**: `npm test` 가 통과할 때만 push 한다. **커밋은 red 여도 막지 않는다** — 로컬 커밋은 싸고 되돌릴 수 있으니 검증의 경계를 push 에 둔다. 그 경계는 `pre-push` 가 지킨다: 올리려는 sha 에서 게이트가 통과한 기록이 없으면 막힌다.
+- **부분 스테이징 금지**: 커밋 시 워킹트리 전체를 스테이징한다(`git add -A`). 검사한 내용과 실제 커밋되는 내용이 어긋나는 것을 막기 위함이다. **`pre-commit` 이 강제한다.**
+- **브랜치 안전**: worktree 안에 있으면 `main`/`dev` 체크아웃이 구조적으로 불가능하고, `pre-commit` 이 `main`/`dev` 직접 커밋을 막는다. 다만 **`EnterWorktree` 를 하는 것 자체는 규약**이므로, 본체에 서 있다면 브랜치를 확인하고 멈춘다.
 - **소스는 역할이 자기 사본에서 고친다.** 너는 커밋·머지만 하고 코드 파일을 직접 편집하지 않는다. 예외는 `harness/` 아래(spec) — 기획자 모드의 산출물이다.
 - **자동 push**: 커밋 후 **현재 작업 브랜치로 push 한다**(`git push -u origin <현재-브랜치>`).
   - **`main`/`dev` 엔 절대 push 하지 않는다.**
@@ -319,7 +324,7 @@ spec 을 찾아야 하면 `harness/` 를 직접 훑어라. 디렉터리가 곧 �
 
 ### 검증 — 게이트는 `npm test` 다
 
-**게이트 정의의 단일 출처는 `package.json` 의 `scripts.test` 다.** 대상을 바꾸려면 그 스크립트를 고친다 — typecheck 이 필요해지면 `"test": "tsc --noEmit && vitest run"` 처럼 거기에 더한다. 별도 설정 파일이나 러너 스크립트를 두지 않는다.
+**게이트 정의의 단일 출처는 `package.json` 의 `scripts.test` 다.** (`posttest` 는 게이트가 아니라 그 결과를 기록하는 자리다 — `pre-push` 가 읽는다.) 대상을 바꾸려면 그 스크립트를 고친다 — typecheck 이 필요해지면 `"test": "tsc --noEmit && vitest run"` 처럼 거기에 더한다. 별도 설정 파일이나 러너 스크립트를 두지 않는다.
 
 **그 명령을 이 파일에도, 훅에도, 에이전트 정의에도 복사하지 않는다.** CLAUDE.md 는 컨텍스트일 뿐 강제가 아니라서, 사본은 강제력을 더하지 않으면서 원본과 어긋난다. 그리고 **낡은 사본은 없는 것보다 나쁘다**: 문서가 게이트보다 넓게 적히면 그 차이만큼의 검사가 실행되지 않는데, 세션은 문서를 근거로 '통과했다'고 확신한다.
 
@@ -328,13 +333,14 @@ spec 을 찾아야 하면 `harness/` 를 직접 훑어라. 디렉터리가 곧 �
 | 지점 | 대상 트리 | 묻는 것 |
 |---|---|---|
 | `SubagentStop` 훅 (`verify-green.mjs`) | 각 developer 의 worktree | 개별 작업이 green 인가 |
-| 오케스트레이터 모드 (7단계) | 머지된 task 브랜치 | 합친 결과도 green 인가 |
+| 오케스트레이터 7단계 | 머지된 task 브랜치 | 합친 결과도 green 인가 |
+| 오케스트레이터 9단계 | **push 할 그 커밋** | 올리는 것이 green 인가 |
 
-둘은 중복이 아니다. developer 를 병렬로 돌리면 각자의 worktree 에서는 전부 green 인데 합치면 깨질 수 있고, **그 조합은 어느 훅도 본 적이 없다.**
+중복이 아니다. developer 를 병렬로 돌리면 각자의 worktree 에서는 전부 green 인데 합치면 깨질 수 있고, **그 조합은 어느 훅도 본 적이 없다.** 그리고 7단계 뒤에도 QA 회수로 커밋이 더 얹히므로, 9단계가 없으면 **올리는 트리는 아무도 검증한 적이 없다.**
 
-두 번째 지점은 **규약이고, 앞으로도 규약이다.** `pre-commit` 이 이것을 대신할 수 없기 때문이다 — 머지 커밋에는 `pre-merge-commit` 이 돌고, fast-forward 회수에는 아예 아무 훅도 돌지 않는다. 층 2 는 **불변식만** 본다(브랜치·전체 스테이징·spec 형식, 밀리초). 게이트를 거기 얹으면 정작 봐야 할 트리는 놓치면서 회수 턴만 몇 분으로 늘어난다. green 아닌 것이 origin 에 올라가는 것은 `pre-push` 의 verified marker 가 막는다.
+**게이트를 돌리는 것은 여전히 네 몫이다.** 훅은 게이트를 돌리지 않는다 — `posttest` 가 green 인 sha 를 적어두고 `pre-push` 가 그 기록을 확인할 뿐이다. 그래야 무엇이 게이트인지를 `scripts.test` 혼자 정하고, push 마다 몇 분이 붙지 않는다. 다만 **안 돌리면 push 에서 막힌다** — 예전처럼 조용히 넘어가지 않는다.
 
-**그러니 네가 돌리지 않으면 아무도 돌리지 않는다.**
+층 2 에 게이트 자체를 얹지 않는 이유도 같다. `pre-commit` 은 정작 봐야 할 트리를 못 본다 — 머지 커밋에는 `pre-merge-commit` 이 돌고, fast-forward 회수에는 아예 아무 훅도 돌지 않는다. 층 2 는 **불변식만** 본다(브랜치·전체 스테이징·spec 형식, 밀리초).
 
 **`--passWithNoTests` 를 붙이지 않는다.** 붙이면 게이트가 'green' 과 '아무것도 안 돌았음' 을 구분할 수 없게 된다 — glob 오타나 `exclude` 실수로 테스트가 통째로 사라져도 초록이다.
 
@@ -364,7 +370,7 @@ spec 을 찾아야 하면 `harness/` 를 직접 훑어라. 디렉터리가 곧 �
 | ~~`.claude/agents/planner.md` 정리~~ | ✅ **끝.** `.claude/planner-mode.md` 로 옮겼고 에이전트 정의는 지웠다 |
 | `verify-spec.mjs` → `pre-commit` 이주 | 지금은 아무것도 막지 못한다 |
 | 층 1 (`PreToolUse` + 역할 환경변수) | 없다 |
-| 층 2 (`.githooks/`) | 없다 |
+| ~~층 2 (`.githooks/`)~~ | ✅ **붙었다.** `pre-commit` · `pre-push` |
 | ~~`harness/index.json` 존폐~~ | ✅ **없앴다.** 파일도 참조도 없다 |
 | ~~격리 세션에서 `git merge <역할 브랜치>`~~ | ✅ **검증됨.** developer·qa 인계 커밋을 실제로 회수했다 |
 | 게이트 플레이크 | 3회 중 1회, `verify-green.test.mjs` 한 항목이 30초 상한을 넘기고 vitest 가 `Timeout calling "onTaskUpdate"` 를 뱉었다. 재실행은 12초에 통과. **원인 미상** — `verify-green` 의 재시도가 3회뿐이라 죄 없는 developer 가 상한을 태울 수 있다 |
