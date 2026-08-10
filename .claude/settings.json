@@ -3,7 +3,8 @@
     "defaultMode": "acceptEdits",
     "allow": [
       "Bash",
-      "Edit(harness/**)"
+      "Edit(harness/**)",
+      "Read(tasks/**)"
     ],
     "deny": [
       "Bash(rm -rf*)",
