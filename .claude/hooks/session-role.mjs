@@ -18,20 +18,20 @@
  * **이것은 강제가 아니라 통보다.** `SessionStart` 는 차단할 수 없는 이벤트다. 진짜
  * 강제는 층 1(`PreToolUse` 경로 소유권)이 같은 변수를 읽어 붙일 때 생긴다.
  *
+ * **역할만 싣는다.** 사람의 원문은 `spawn` 이 `claude` 의 첫 프롬프트로 직접 건넨다.
+ * 이 훅의 `initialUserMessage` 로도 심어봤으나 설치된 버전에서 아무 일도 일어나지
+ * 않았다 — 문서에만 있는 필드에 파이프라인 진입을 걸지 않는다.
+ *
  * > 주의: 서브에이전트는 세션의 env 를 물려받으므로 `HARNESS_ROLE` 을 그대로 갖는다.
  * > `SessionStart` 가 서브에이전트에는 돌지 않아 지금은 문제가 없지만, 층 1 이 이 변수로
  * > 경로를 강제하게 되면 **서브에이전트가 작업 세션으로 오인된다.** 그때는 변수만으로
  * > 부족하고 훅 입력의 에이전트 정보를 함께 봐야 한다.
  */
 
-import { readFileSync, rmSync } from "node:fs";
 import { emit, readHookInput } from "./hook-kit.mjs";
 
 /** `HARNESS_ROLE` 이 이 값이면 작업 세션. 미설정이면 실행자. 그 외는 오설정이다. */
 const WORK_SESSION = "work-session";
-
-/** 세션이 처음 열린 경우에만 seed 를 싣는다. resume·clear 에 다시 실으면 작업이 중복된다. */
-const FIRST_TURN = "startup";
 
 const EXECUTOR = `너는 **실행자**다 — 맨몸 \`claude\` 로 열렸다(\`HARNESS_ROLE\` 미설정). 파이프라인 밖에 서 있다.
 
@@ -47,14 +47,13 @@ const WORK = `너는 **작업 세션**이다(\`HARNESS_ROLE=${WORK_SESSION}\`). 
 - **하네스 파일(\`.claude/\` · \`.githooks/\` · 루트 설정)은 고치지 않는다** — 실행자 자리다.
 - 세션은 끝나면 닫힌다. **spec 에 안 적힌 것은 없는 것이다.**`;
 
-const input = readHookInput();
-const role = (process.env.HARNESS_ROLE ?? "").trim();
+// 입력을 읽어 버린다 — stdin 을 비우지 않으면 파이프가 막힌 채 남을 수 있다.
+readHookInput();
 
 emit({
   hookSpecificOutput: {
     hookEventName: "SessionStart",
-    additionalContext: contextFor(role),
-    ...seed(input),
+    additionalContext: contextFor((process.env.HARNESS_ROLE ?? "").trim()),
   },
 });
 
@@ -69,34 +68,4 @@ function contextFor(value) {
     `**네가 실행자인지 작업 세션인지 판정할 수 없다.** 아는 값은 \`${WORK_SESSION}\`(작업 세션) ` +
     `또는 미설정(실행자)뿐이다. 일을 시작하기 전에 이 사실을 사람에게 알려라.`
   );
-}
-
-/**
- * 사람의 원문. `spawn` 이 **파일로** 건넨다 — 명령줄에 끼워 넣으면 따옴표·줄바꿈이
- * 셸마다 다르게 깨지는데, 원문을 온전히 옮기는 것이 이 경로의 존재 이유다.
- */
-function seed(hookInput) {
-  if (hookInput.source !== FIRST_TURN) return {};
-
-  const path = (process.env.HARNESS_SEED_FILE ?? "").trim();
-  if (!path) return {};
-
-  let text;
-  try {
-    text = readFileSync(path, "utf8");
-  } catch {
-    // seed 를 못 읽었다고 역할 선언까지 잃을 수는 없다. 사람이 다시 말하면 된다.
-    return {};
-  }
-
-  // 한 번 쓰고 버리는 파일이다. 남겨두면 사람의 요청 원문이 임시 디렉터리에 계속 쌓인다.
-  try {
-    rmSync(path, { force: true });
-  } catch {
-    /* 정리 실패가 seed 전달을 뒤집어서는 안 된다. */
-  }
-
-  // PowerShell 5.1 의 `Set-Content -Encoding UTF8` 은 BOM 을 붙인다.
-  const trimmed = text.replace(/^﻿/, "").trim();
-  return trimmed ? { initialUserMessage: trimmed } : {};
 }
