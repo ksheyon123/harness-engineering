@@ -4,7 +4,7 @@
 
 ## 현재 상태 — 하네스는 재작성 중이다
 
-**이 저장소가 만드는 것이 하네스 자체다.** 목표 구조와 그 설계 근거는 `docs/harness-design.md` 에 있다 — 하네스를 손대기 전에 읽어라.
+**이 저장소가 만드는 것이 하네스 자체다.** 지금의 모양이 왜 그런지는 `docs/harness-design.md` 에 있다 — 하네스를 손대기 전에 읽어라.
 
 지금 존재하는 전부:
 
@@ -13,7 +13,7 @@
 .claude/agents/*.md        역할 3개 (planner · developer · qa)
 .claude/hooks/             SubagentStop 종료 훅 (hook-kit.mjs = 공통 배선)
 .claude/settings.json      permissions + worktree.baseRef
-docs/harness-design.md     목표 구조 · 설계 근거 · 미결 사항
+docs/harness-design.md     설계 근거 — 왜 지금의 모양인가
 vitest.config.mjs          테스트 러너 설정
 package.json               scripts.test = "vitest run"  ← 게이트 정의의 단일 출처
 ```
@@ -63,7 +63,7 @@ package.json               scripts.test = "vitest run"  ← 게이트 정의의 
 
 **오케스트레이터는 이 셋 중 하나가 아니다.** 직접 코드를 쓰지 않고 파이프라인을 진행시킨다 — 브랜치·worktree 를 정하고, 역할을 스폰하고, 받은 결과를 다음 역할에 넘기고, 검증을 돌리고, 커밋·push 한다.
 
-> **세 역할 모두에 Bash 가 없는 것이 층 1 의 전제다.** 파일을 고칠 이유가 있는 세션이 Bash 를 함께 가지면 경로 소유권 훅은 장식이 된다 — `printf > ../worktrees/.../foo.ts` 한 줄은 `PreToolUse(Edit|Write)` 에 걸리지 않는다. Edit/Write 가 파일을 바꾸는 **유일한 경로**여야 그 훅에 우회로가 없다(`docs/harness-design.md` §5·§8).
+> **세 역할 모두에 Bash 가 없는 것이 층 1 의 전제다.** 파일을 고칠 이유가 있는 세션이 Bash 를 함께 가지면 경로 소유권 훅은 장식이 된다 — `printf > ../worktrees/.../foo.ts` 한 줄은 `PreToolUse(Edit|Write)` 에 걸리지 않는다. Edit/Write 가 파일을 바꾸는 **유일한 경로**여야 그 훅에 우회로가 없다(`docs/harness-design.md` §4·§8).
 
 ## 오케스트레이터 프로토콜
 
