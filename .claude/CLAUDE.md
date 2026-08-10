@@ -42,7 +42,7 @@ package.json               scripts.test = "vitest run"  ← 게이트 정의의 
 |---|:---:|---|
 | 층 0 — agent `tools:` 화이트리스트 | ✅ **동작** | 능력 자체의 제거 — **`developer`·`qa` 에 Bash 가 없다**. 세션에는 걸리지 않는다 |
 | worktree 격리 | ✅ **구조적** | 작업 세션이 worktree 안에 있는 한 `main` 을 체크아웃할 수 없다 — git 이 같은 브랜치의 이중 체크아웃을 거부한다 |
-| 층 1 — `PreToolUse(Edit\|Write)` 훅 | ❌ 없음 | 경로 소유권. **전제였던 역할 주입은 이제 있다**(`HARNESS_ROLE` + `SessionStart`) — 같은 변수를 읽어 붙이면 된다 |
+| 층 1 — `PreToolUse(Edit\|Write)` 훅 | ✅ **동작** | 경로 소유권 — 자리마다 만질 수 있는 곳이 정해진다 |
 | 층 2 — git `pre-commit` | ✅ **동작** | `main`/`dev` 직접 커밋 · 부분 스테이징 · 깨진 spec 형식 |
 | 층 2 — git `pre-push` | ✅ **동작** | 게이트 기록이 없는 sha 의 push — verified marker |
 
@@ -59,12 +59,24 @@ package.json               scripts.test = "vitest run"  ← 게이트 정의의 
 
 spec 형식 판정은 `.claude/hooks/spec-shape.mjs` 에 있고 `pre-commit` 이 부른다. **커밋이 곧 인계이므로 그 자리가 맞고, 누가 커밋하든 걸린다** — 세션이든 사람이든. 워킹트리가 아니라 **인덱스**를 읽는다: 검사한 것과 커밋되는 것이 달라서는 안 된다.
 
-- `settings.json` 의 `hooks` 블록에는 `SessionStart` 만 있다 → 층 1 부재.
+**층 1 이 강제하는 경로**(`.claude/hooks/path-ownership.mjs`):
+
+| 자리 | 만질 수 있는 곳 | 막히는 것 |
+|---|---|---|
+| **실행자** | 하네스 전부(`.claude/` · `.githooks/` · `scripts/` · 루트 설정) | `src/**` · `harness/**` — **deny** |
+| **작업 세션** | `harness/**` (spec) | 하네스 — **deny** · `src/**` — **ask**(머지 충돌 해소가 정당한 예외라 사람이 판단한다) |
+| `developer` | 소스와 테스트 | `harness/**` · 하네스 — **deny** |
+| `qa` | `harness/**/qa-checklist.md` **하나뿐** | 나머지 전부 — **deny** |
+
+자리 판정은 **훅 입력의 `agent_type` 이 `HARNESS_ROLE` 을 이긴다.** 서브에이전트는 세션의 env 를 그대로 물려받으므로, 변수만 보면 `developer` 가 작업 세션으로 오인되어 spec 을 고칠 수 있게 된다 — 층 1 의 유일한 함정이 이것이었다.
+
+> **층 1 에는 `--no-verify` 가 없다.** 그래서 사람이 붙어 있고 정당한 예외가 있는 자리에만 `ask` 를 쓴다. 나머지는 `deny` 다 — 서브에이전트에는 물어볼 사람이 없고, 실행자가 코드를 고치는 것은 예외를 둘 이유가 없다(작업 세션을 띄우면 된다). 허용은 `allow` 가 아니라 `defer` 라, 사용자의 permission 설정을 건너뛰지 않는다.
+
 - `core.hooksPath` 가 `.githooks` 를 가리킨다 → 거기 만든 훅은 별도 설정 없이 붙는다. 진입점은 셸 껍데기(`pre-commit` · `pre-push`)고 판정은 옆의 `.mjs` 에 있다 — git 이 훅을 셸로 부르기 때문이다.
 - **층 2 는 `--no-verify` 로 우회된다.** 봉인이 아니라 방어선이고, 우회했다는 사실이 명령에 남는 것이 요점이다.
 - 부분적 방어선: `settings.json` 의 `permissions.deny`(`rm -rf*`, `git push --force*`, `git reset --hard*`, `.env` 읽기). **방어선이지 봉인이 아니다** — 접두어 패턴이라 우회 가능하다.
 
-> **아래 규약 중 층 1·2 가 맡아야 할 것은 지금 규약으로만 존재한다.** 이 파일의 문장은 컨텍스트일 뿐 강제가 아니다. 훅이 붙기 전까지는 네 규율이 유일한 방어다 — 그 차이를 알고 지켜라.
+> **네 층이 다 섰다.** 그래도 이 파일의 문장은 여전히 **컨텍스트일 뿐 강제가 아니다** — 층이 막는 것은 위 표에 적힌 것뿐이고, 나머지(모드 전환, 스폰 프롬프트에 무엇을 싣는가, spec 을 언제 고치지 않는가, 멈춤 조건)는 전부 네 규율에 달려 있다. **무엇이 막히고 무엇이 안 막히는지를 알고 지켜라.**
 
 ## 역할 — 이 파일을 읽는 너는 누구인가
 
@@ -371,11 +383,11 @@ spec 을 찾아야 하면 `harness/` 를 직접 훑어라. 디렉터리가 곧 �
 | `spawn` 의 유닉스판 | 없다. `spawn.ps1` 은 Windows 전용이다 |
 | ~~`.claude/agents/planner.md` 정리~~ | ✅ **끝.** `.claude/planner-mode.md` 로 옮겼고 에이전트 정의는 지웠다 |
 | `verify-spec.mjs` → `pre-commit` 이주 | 지금은 아무것도 막지 못한다 |
-| 층 1 (`PreToolUse` + 역할 환경변수) | 없다 |
+| ~~층 1 (`PreToolUse` + 역할 환경변수)~~ | ✅ **붙었다.** `path-ownership.mjs` |
 | ~~층 2 (`.githooks/`)~~ | ✅ **붙었다.** `pre-commit` · `pre-push` |
 | ~~`harness/index.json` 존폐~~ | ✅ **없앴다.** 파일도 참조도 없다 |
 | ~~격리 세션에서 `git merge <역할 브랜치>`~~ | ✅ **검증됨.** developer·qa 인계 커밋을 실제로 회수했다 |
 | 게이트 플레이크 | 3회 중 1회, `verify-green.test.mjs` 한 항목이 30초 상한을 넘기고 vitest 가 `Timeout calling "onTaskUpdate"` 를 뱉었다. 재실행은 12초에 통과. **원인 미상** — `verify-green` 의 재시도가 3회뿐이라 죄 없는 developer 가 상한을 태울 수 있다 |
 | 작업 세션끼리 파일 소유가 겹치는지 볼 수단 | 없다. 각 spec 이 자기 worktree 안에만 있어 **기획자 둘이 서로를 못 본다** — task 경계 기준의 첫 줄("파일이 겹치나")을 판단할 근거가 없다 |
 | 진행 중인 작업 세션과 갓 열린 세션의 구별 | 없다. 역할은 갈렸지만 **한 작업 세션이 두 번째 task 를 받는 것**은 여전히 규율로만 막힌다 |
-| 서브에이전트가 `HARNESS_ROLE` 을 물려받는다 | `SessionStart` 가 서브에이전트에는 안 돌아 지금은 무해하다. **층 1 이 이 변수로 경로를 강제하면 서브에이전트가 작업 세션으로 오인된다** |
+| ~~서브에이전트가 `HARNESS_ROLE` 을 물려받는다~~ | ✅ **풀렸다.** 훅 입력의 `agent_type` 이 변수를 이긴다 |
