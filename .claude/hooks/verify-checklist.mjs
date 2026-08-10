@@ -16,7 +16,10 @@
 
 import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { cleanEnv, emit, readHookInput, retryBudget } from "./hook-kit.mjs";
+import { cleanEnv, emit, handoff, readHookInput, retryBudget } from "./hook-kit.mjs";
+
+/** 인계 커밋에 이름을 남길 역할. 오케스트레이터가 로그에서 출처를 읽는다. */
+const ROLE = "qa";
 
 /** qa 는 쓰거나(체크리스트) 못 쓰거나(spec 없음) 둘 중 하나다. 한 번 되짚어 주면 충분하다. */
 const MAX_ATTEMPTS = 2;
@@ -159,17 +162,25 @@ const problems =
 
 if (problems.length === 0) {
   budget.reset();
-  emit(null);
+  // 검사를 통과한 체크리스트를 그 자리에서 커밋으로 굳힌다. qa 에도 Bash 가 없어
+  // 이 지점을 놓치면 표가 worktree 와 함께 사라진다.
+  const { notice } = handoff(ROLE, { env });
+  emit(notice ? { systemMessage: notice } : null);
 }
 
 const { count, exhausted } = budget.record();
 
 if (exhausted) {
+  // 표가 없어도 커밋은 시도한다. qa 가 다른 무언가는 남겼을 수 있고, 없으면 handoff 가
+  // '인계할 산출물이 없다' 를 돌려준다 — 확인해야 할 사실은 그쪽도 마찬가지다.
+  const { notice } = handoff(ROLE, { env });
+
   // spec 이 없어 대조할 것이 없는 경우가 있다. 그때 여기서 갇히면 안 된다.
   emit({
     systemMessage:
       `체크리스트 없이 종료를 허용했다(재시도 ${count ?? "?"}회 소진). ` +
-      `이 QA 는 회수할 산출물이 없다 — spec 이 있었는지 확인하라.`,
+      `이 QA 는 회수할 산출물이 없다 — spec 이 있었는지 확인하라.` +
+      (notice ? `\n${notice}` : ""),
   });
 }
 

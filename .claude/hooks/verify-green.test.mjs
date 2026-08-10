@@ -63,7 +63,26 @@ function makeFixture({ exitCode = 0, stderr = "", echoGitDir = false } = {}) {
     ),
   );
 
-  execFileSync("git", ["init", "-q"], { cwd: dir, env: cleanEnv(), stdio: "ignore" });
+  git(dir, ["init", "-q"]);
+  // 인계 커밋이 서명할 신원. 없으면 커밋이 실패해 훅의 성공 경로가 통째로 달라진다.
+  git(dir, ["config", "user.email", "hook@example.invalid"]);
+  git(dir, ["config", "user.name", "hook"]);
+  return dir;
+}
+
+function git(cwd, args) {
+  return execFileSync("git", args, { cwd, env: cleanEnv(), encoding: "utf8" });
+}
+
+/** 저장소가 아닌 디렉터리의 게이트 픽스처 — 카운터도 인계 커밋도 만들 수 없다. */
+function makeBareDir(prefix, exitCode) {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  fixtures.push(dir);
+  writeFileSync(join(dir, "probe.mjs"), `process.exit(${exitCode});\n`);
+  writeFileSync(
+    join(dir, "package.json"),
+    JSON.stringify({ name: "n", private: true, scripts: { test: "node probe.mjs" } }),
+  );
   return dir;
 }
 
@@ -178,13 +197,7 @@ describe("verify-green — SubagentStop 게이트 훅", () => {
     () => {
       // git 저장소가 아니면 gitdir 을 못 구해 카운터가 없다. 상한이 사라지는 대신
       // 훅 입력의 플래그로 대체한다 — 무한 루프만은 막아야 한다.
-      const dir = mkdtempSync(join(tmpdir(), "verify-green-nogit-"));
-      fixtures.push(dir);
-      writeFileSync(join(dir, "probe.mjs"), "process.exit(1);\n");
-      writeFileSync(
-        join(dir, "package.json"),
-        JSON.stringify({ name: "n", private: true, scripts: { test: "node probe.mjs" } }),
-      );
+      const dir = makeBareDir("verify-green-nogit-", 1);
 
       expect(runHook(dir, { input: {} }).verdict.decision).toBe("block");
       expect(runHook(dir, { input: { stop_hook_active: true } }).verdict.decision)
@@ -203,6 +216,87 @@ describe("verify-green — SubagentStop 게이트 훅", () => {
       const { verdict } = runHook(dir, { env: { GIT_DIR: join(dir, "decoy.git") } });
 
       expect(verdict.reason).toContain("SAW_GIT_DIR=unset");
+    },
+    SLOW,
+  );
+
+  it(
+    "green 이면 산출물을 인계 커밋으로 남긴다",
+    () => {
+      const dir = makeFixture({ exitCode: 0 });
+
+      runHook(dir);
+
+      // worktree 는 커밋된 상태만 밖으로 보인다. 커밋이 없으면 오케스트레이터가
+      // 머지할 것이 없고 산출물은 worktree 와 함께 사라진다.
+      expect(git(dir, ["log", "--format=%s"])).toContain(
+        "chore(developer): 산출물을 인계 커밋으로 남긴다",
+      );
+      expect(git(dir, ["ls-files"])).toContain("probe.mjs");
+    },
+    SLOW,
+  );
+
+  it(
+    "인계 커밋은 부분 스테이징을 하지 않는다",
+    () => {
+      const dir = makeFixture({ exitCode: 0 });
+      writeFileSync(join(dir, "stray.txt"), "보고에 안 적힌 파일\n");
+
+      runHook(dir);
+
+      // 역할이 보고에 경로를 빠뜨려도 회수되게 한다 — 검사한 트리와 커밋되는 내용이
+      // 어긋나지 않는 것이 규약이기도 하다.
+      expect(git(dir, ["ls-files"])).toContain("stray.txt");
+      expect(git(dir, ["status", "--porcelain"]).trim()).toBe("");
+    },
+    SLOW,
+  );
+
+  it(
+    "커밋할 변경이 없으면 커밋하지 않고 알린다",
+    () => {
+      const dir = makeFixture({ exitCode: 0 });
+      git(dir, ["add", "-A"]);
+      git(dir, ["commit", "-qm", "seed"]);
+
+      const { verdict } = runHook(dir);
+
+      // green 은 맞지만 아무것도 안 만든 것이다. 빈 커밋을 찍어 인계인 척하지 않는다.
+      expect(verdict.systemMessage).toContain("인계할 산출물이 없다");
+      expect(git(dir, ["log", "--format=%s"]).trim()).toBe("seed");
+    },
+    SLOW,
+  );
+
+  it(
+    "상한이 소진돼 red 로 끝나도 산출물은 커밋한다",
+    () => {
+      const dir = makeFixture({ exitCode: 1 });
+      runHook(dir);
+      runHook(dir);
+
+      const exhausted = runHook(dir).verdict;
+
+      // 커밋하지 않으면 오케스트레이터는 무엇이 실패했는지조차 볼 수 없다.
+      // 머지할지 말지는 그쪽 판단이지만, 볼 수는 있어야 한다.
+      expect(exhausted.decision).toBeUndefined();
+      expect(git(dir, ["log", "--format=%s"])).toContain("chore(developer)");
+    },
+    SLOW,
+  );
+
+  it(
+    "커밋하지 못하면 알리되 종료를 막지는 않는다",
+    () => {
+      // 역할에는 git 을 고칠 수단이 없어 되돌려 봐야 같은 자리에서 다시 실패한다.
+      // 다만 조용히 실패하면 산출물이 사라진 것을 아무도 모른다.
+      const dir = makeBareDir("verify-green-nocommit-", 0);
+
+      const released = runHook(dir).verdict;
+
+      expect(released.decision).toBeUndefined();
+      expect(released.systemMessage).toContain("커밋하지 못했다");
     },
     SLOW,
   );
