@@ -1,7 +1,7 @@
 ---
 name: qa
 description: QA. 기획 spec(기능 목록)으로부터 기능 체크리스트를 독립 도출하고, 개발자 테스트 코드를 읽어 커버리지 매트릭스를 작성한다. push 직전(또는 수동)으로 구현 완성도를 점검할 때 사용. 코드는 고치지 않고 테스트도 실행하지 않는다(읽기만).
-tools: Read, Grep, Glob, Write, Edit, EnterWorktree
+tools: Read, Grep, Glob, Write, Edit
 model: haiku
 isolation: worktree
 background: true
