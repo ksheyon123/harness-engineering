@@ -12,6 +12,7 @@
 .claude/CLAUDE.md          이 파일 — 하네스 코어 규약
 .claude/agents/*.md        developer · qa (서브에이전트 정의는 이 둘뿐이다)
 .claude/planner-mode.md    기획자 모드의 spec 작성 지침 (에이전트 아님)
+.claude/backlog.md         확인됐지만 안 고친 것 — 왜 문제이고 어떻게 고치는지 (실행자가 읽는다)
 .claude/hooks/             SubagentStop 종료 훅 (hook-kit.mjs = 공통 배선)
 .githooks/                 층 2 — pre-commit · pre-push (core.hooksPath 가 가리킨다)
 .claude/settings.json      permissions + worktree.baseRef
@@ -379,6 +380,8 @@ spec 을 찾아야 하면 `harness/` 를 직접 훑어라. 디렉터리가 곧 �
 
 ## 미착수 — 이 설계와 실재의 차이
 
+**여기는 *무엇이* 안 됐는지를 한 줄로 적는다. *왜 문제이고 어떻게 고치는지*는 `.claude/backlog.md` 에 있다** — 하네스를 손대러 왔다면 그쪽을 먼저 열어라. 항목을 고쳤으면 두 곳에서 다 지운다.
+
 | 무엇 | 상태 |
 |---|---|
 | ~~`scripts/spawn.ps1`~~ | ✅ **있다.** `wt` 가 없으면 새 창으로 떨어진다. **탭이 실제로 뜨는지는 자동 검증 불가** — 훅 쪽만 테스트로 덮여 있다 |
@@ -392,5 +395,11 @@ spec 을 찾아야 하면 `harness/` 를 직접 훑어라. 디렉터리가 곧 �
 | ~~격리 세션에서 `git merge <역할 브랜치>`~~ | ✅ **검증됨.** developer·qa 인계 커밋을 실제로 회수했다 |
 | 게이트 플레이크 | 3회 중 1회, `verify-green.test.mjs` 한 항목이 30초 상한을 넘기고 vitest 가 `Timeout calling "onTaskUpdate"` 를 뱉었다. 재실행은 12초에 통과. **원인 미상** — `verify-green` 의 재시도가 3회뿐이라 죄 없는 developer 가 상한을 태울 수 있다 |
 | 작업 세션끼리 파일 소유가 겹치는지 볼 수단 | 없다. 각 spec 이 자기 worktree 안에만 있어 **기획자 둘이 서로를 못 본다** — task 경계 기준의 첫 줄("파일이 겹치나")을 판단할 근거가 없다 |
-| 진행 중인 작업 세션과 갓 열린 세션의 구별 | 없다. 역할은 갈렸지만 **한 작업 세션이 두 번째 task 를 받는 것**은 여전히 규율로만 막힌다 |
+| 진행 중인 작업 세션과 갓 열린 세션의 구별 | 없다. 역할은 갈렸지만 **한 작업 세션이 두 번째 task 를 받는 것**은 여전히 규율로만 막힌다 → **backlog A** |
+| 한 브랜치에 spec 이 둘 쌓이는 것 | 못 막는다. `pre-commit` 은 형식만 보므로 두 task 가 한 PR 로 나간다 → **backlog A** |
+| 병렬 `developer` 의 통합 red 복구 | 7단계의 지시가 실행 불가능하다 — 머지 이전 트리에서 고치게 되고, 그 게이트는 엉뚱한 트리를 본다 → **backlog B** |
+| "한 세션 = 한 작업" 자기모순 | 작업 세션 절과 오케스트레이터 절이 서로 반대로 적혀 있다 → **backlog C** |
+| 실행자가 원문 대신 요약을 실어 넘기는 것 | 못 막는다. 요약과 원문은 문자열로 구분되지 않는다 — 실리면 기획자 모드가 형식적으로 지나간다 → **backlog C** |
+| 회수할 브랜치명을 얻는 경로 | 문서상 비어 있다. `CLAUDE.md` 는 "보고에 실린" 이라 하는데 두 에이전트 정의 어디도 요구하지 않는다 → **backlog E** |
+| "인계 커밋이 찍혔으니 worktree 는 반드시 남는다" | 근거가 뒤집혀 있다. `handoff` 가 성공하면 트리가 깨끗해져 오히려 정리 대상이 된다 → **backlog F** |
 | ~~서브에이전트가 `HARNESS_ROLE` 을 물려받는다~~ | ✅ **풀렸다.** 훅 입력의 `agent_type` 이 변수를 이긴다 |
