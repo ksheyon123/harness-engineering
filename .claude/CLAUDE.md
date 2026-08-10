@@ -43,7 +43,7 @@ package.json               scripts.test = "vitest run"  ← 게이트 정의의 
 | 층 0 — agent `tools:` 화이트리스트 | ✅ **동작** | 능력 자체의 제거 — **`developer`·`qa` 에 Bash 가 없다**. 세션에는 걸리지 않는다 |
 | worktree 격리 | ✅ **구조적** | 작업 세션이 worktree 안에 있는 한 `main` 을 체크아웃할 수 없다 — git 이 같은 브랜치의 이중 체크아웃을 거부한다 |
 | 층 1 — `PreToolUse(Edit\|Write)` 훅 | ✅ **동작** | 경로 소유권 — 자리마다 만질 수 있는 곳이 정해진다 |
-| 층 2 — git `pre-commit` | ✅ **동작** | `main`/`dev` 직접 커밋 · 부분 스테이징 · 깨진 spec 형식 |
+| 층 2 — git `pre-commit` | ✅ **동작** | `main`/`dev`/`master` 직접 커밋 · 부분 스테이징 · 깨진 spec 형식 |
 | 층 2 — git `pre-push` | ✅ **동작** | 게이트 기록이 없는 sha 의 push — verified marker |
 
 여기에 더해 **종료 훅이 두 지점 서 있다.** 층과는 성격이 다르다 — 층은 *못 하게* 막고, 종료 훅은 **빈손이거나 깨진 상태로 못 끝내게** 막는다.
@@ -145,7 +145,7 @@ scripts/spawn.ps1 "<사람의 원문>"
 
 예외는 **어느 파일을 고치느냐**에만 걸린다. 나머지 규약은 그대로다:
 
-- **`main`/`dev` 에 직접 커밋하지 않는다** — 브랜치를 자른다. 실행자는 저장소 본체에 있어 **막는 것이 이 문장뿐이다**
+- **`main`/`dev` 에 직접 커밋하지 않는다** — 브랜치를 자른다. 실행자는 저장소 본체에 있으므로 **worktree 격리가 없다.** 대신 `pre-commit` 이 `main`/`dev`/`master` 직접 커밋을 막는다 — 층 2 라 `--no-verify` 로 열리는 방어선이다
 - 게이트(`npm test`)를 돌린다 — 하네스에도 테스트가 있다
 - `git add -A`, push 는 작업 브랜치로만
 
@@ -257,7 +257,7 @@ git merge --no-ff <역할 브랜치>      # 보고에 실린 브랜치명
 
 - **검증 조건**: `npm test` 가 통과할 때만 push 한다. **커밋은 red 여도 막지 않는다** — 로컬 커밋은 싸고 되돌릴 수 있으니 검증의 경계를 push 에 둔다. 그 경계는 `pre-push` 가 지킨다: 올리려는 sha 에서 게이트가 통과한 기록이 없으면 막힌다.
 - **부분 스테이징 금지**: 커밋 시 워킹트리 전체를 스테이징한다(`git add -A`). 검사한 내용과 실제 커밋되는 내용이 어긋나는 것을 막기 위함이다. **`pre-commit` 이 강제한다.**
-- **브랜치 안전**: worktree 안에 있으면 `main`/`dev` 체크아웃이 구조적으로 불가능하고, `pre-commit` 이 `main`/`dev` 직접 커밋을 막는다. 다만 **`EnterWorktree` 를 하는 것 자체는 규약**이므로, 본체에 서 있다면 브랜치를 확인하고 멈춘다.
+- **브랜치 안전**: worktree 안에 있으면 `main`/`dev` 체크아웃이 구조적으로 불가능하고, `pre-commit` 이 `main`/`dev`/`master` 직접 커밋을 막는다. 다만 **`EnterWorktree` 를 하는 것 자체는 규약**이므로, 본체에 서 있다면 브랜치를 확인하고 멈춘다.
 - **소스는 역할이 자기 사본에서 고친다.** 너는 커밋·머지만 하고 코드 파일을 직접 편집하지 않는다. 예외는 `harness/` 아래(spec) — 기획자 모드의 산출물이다.
 - **자동 push**: 커밋 후 **현재 작업 브랜치로 push 한다**(`git push -u origin <현재-브랜치>`).
   - **`main`/`dev` 엔 절대 push 하지 않는다.**
@@ -382,7 +382,7 @@ spec 을 찾아야 하면 `harness/` 를 직접 훑어라. 디렉터리가 곧 �
 | ~~역할을 진입 시점에 싣는 수단~~ | ✅ **있다.** `HARNESS_ROLE` + `SessionStart` 훅 |
 | `spawn` 의 유닉스판 | 없다. `spawn.ps1` 은 Windows 전용이다 |
 | ~~`.claude/agents/planner.md` 정리~~ | ✅ **끝.** `.claude/planner-mode.md` 로 옮겼고 에이전트 정의는 지웠다 |
-| `verify-spec.mjs` → `pre-commit` 이주 | 지금은 아무것도 막지 못한다 |
+| ~~`verify-spec.mjs` → `pre-commit` 이주~~ | ✅ **끝.** 판정은 `.claude/hooks/spec-shape.mjs` 로 옮겼고 `pre-commit` 이 **인덱스**를 읽어 부른다 |
 | ~~층 1 (`PreToolUse` + 역할 환경변수)~~ | ✅ **붙었다.** `path-ownership.mjs` |
 | ~~층 2 (`.githooks/`)~~ | ✅ **붙었다.** `pre-commit` · `pre-push` |
 | ~~`harness/index.json` 존폐~~ | ✅ **없앴다.** 파일도 참조도 없다 |
