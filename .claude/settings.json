@@ -14,6 +14,18 @@
       "Read(.env*)"
     ]
   },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/session-role.mjs\""
+          }
+        ]
+      }
+    ]
+  },
   "sandbox": {
     "enabled": false
   },
