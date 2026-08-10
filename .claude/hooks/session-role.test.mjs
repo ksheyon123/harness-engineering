@@ -40,11 +40,13 @@ describe("session-role — SessionStart 역할 주입 훅", () => {
     expect(out.additionalContext).toContain("spawn.ps1");
   });
 
-  it("work-session 이면 작업 세션으로 선언한다", () => {
+  it("work-session 이면 작업 세션으로 선언하고 spec 지침을 가리킨다", () => {
     const { out } = runHook({ env: { HARNESS_ROLE: "work-session" } });
 
     expect(out.additionalContext).toContain("작업 세션");
     expect(out.additionalContext).toContain("기획자 모드로 시작한다");
+    // 형식 지침이 CLAUDE.md 에 없으므로, 경로를 알려주지 않으면 찾을 방법이 없다.
+    expect(out.additionalContext).toContain(".claude/planner-mode.md");
   });
 
   it("아는 값이 아니면 실행자로 흡수하지 않고 판정 불가를 알린다", () => {

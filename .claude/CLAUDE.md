@@ -10,16 +10,17 @@
 
 ```
 .claude/CLAUDE.md          이 파일 — 하네스 코어 규약
-.claude/agents/*.md        developer · qa (서브에이전트) + planner (아래 참고)
+.claude/agents/*.md        developer · qa (서브에이전트 정의는 이 둘뿐이다)
+.claude/planner-mode.md    기획자 모드의 spec 작성 지침 (에이전트 아님)
 .claude/hooks/             SubagentStop 종료 훅 (hook-kit.mjs = 공통 배선)
 .claude/settings.json      permissions + worktree.baseRef
 vitest.config.mjs          테스트 러너 설정
 package.json               scripts.test = "vitest run"  ← 게이트 정의의 단일 출처
 ```
 
-없는 것: `scripts/` · `harness/` · `.githooks/` · `.claude/rules/` · `docs/`.
+여기에 `scripts/spawn.ps1`(작업 세션을 새 탭에 띄운다)과 `harness/<task>/`(spec · QA 체크리스트)가 더 있다. 없는 것: `.githooks/` · `.claude/rules/` · `docs/`.
 
-> **`.claude/agents/planner.md` 는 아직 서브에이전트 정의로 남아 있다. 스폰하지 마라.** 기획자는 세션의 한 모드가 됐다(아래). 그 파일의 **본문**(spec 형식 · 인수기준 작성 지침 · 리비전 판별)은 기획자 모드의 지침으로 그대로 유효하고, **frontmatter 는 무시한다.** 파일 정리는 미착수다.
+> **기획자는 서브에이전트가 아니라 세션의 첫 모드다.** 스폰할 것이 없고, `.claude/agents/` 에는 `developer`·`qa` 둘만 있다. spec 작성 지침은 `.claude/planner-mode.md` 에 있다.
 
 ### 자리는 넷 — 세션 둘, 서브에이전트 둘
 
@@ -176,29 +177,11 @@ EnterWorktree(name: <task>)
 git branch --show-current      # 실제 브랜치명을 확인한다
 ```
 
-`EnterWorktree` 가 브랜치를 만든다. **spec frontmatter 의 `branch:` 에는 확인한 실제 값을 적는다** — 추측하지 않는다.
+`EnterWorktree` 가 브랜치를 만든다. **준 이름 그대로가 아니므로**(`feat/x` → `worktree-feat+x`) 확인한 값을 쓰고, 원하는 이름이 따로 있으면 여기서 `git branch -m` 으로 고친다 — push 후에는 원격 브랜치 삭제까지 얽힌다.
 
-#### task 경계는 셋이 정한다
+#### spec 은 `.claude/planner-mode.md` 를 따라 쓴다
 
-| 물음 | 같은 task 로 묶을 이유 |
-|---|---|
-| **파일이 겹치나** | 겹치면 묶는다 — 안 묶으면 최종 머지에서 충돌한다 |
-| **순서 의존이 있나** | A 없이 B 가 성립 안 되면 묶는다. task 는 병렬로 굴러간다 |
-| **따로 리뷰·머지돼도 되나** | 되면 나눈다. task = 브랜치 = PR 하나다 |
-
-"개념적으로 다른 기능인가"는 기준이 아니다. 로그인과 로그아웃은 개념상 다르지만 같은 파일을 건드리니 한 task 고, spec 의 `## 기능 목록` 에 항목 둘로 들어간다.
-
-#### spec.md
-
-형식·인수기준 작성 지침·리비전 판별은 `.claude/agents/planner.md` 의 **본문**을 따른다. 여기에 더해 세 절이 필수다:
-
-| 절 | 왜 |
-|---|---|
-| `## 배경` | 왜 지금 이걸 하는가 |
-| `## 버린 대안` | **스폰 프롬프트로는 절대 안 넘어가는 정보다.** 없으면 `developer` 가 기각된 접근을 다시 택하고, 새 세션이 같은 논의를 반복한다 |
-| `## 범위 밖` | `developer` 는 자율 진행하도록 되어 있어 선의로 범위를 넓히기 쉽다. 그걸 막을 유일한 문장이 여기다 |
-
-인수기준이 **무엇을 만들지**를 정한다면, 이 둘은 **무엇을 만들지 않을지**를 정한다.
+task 경계 · spec 형식 · 인수기준 작성 지침 · 리비전 판별이 전부 거기 있다. **여기 옮겨 적지 않는다** — 사본은 강제력을 더하지 않으면서 원본과 어긋나고, 낡은 사본은 없는 것보다 나쁘다.
 
 **세션은 끝나면 닫힌다. spec 에 안 적힌 것은 없는 것이다.** 그 사실이 곧 완결성의 압력이다.
 
@@ -319,9 +302,11 @@ worktree 는 **격리 장치**다. 사본은 **전부 본체 아래 한 디렉�
 
 > **격리 세션의 git 은 자기 트리에 쓰는 것만 할 수 있다.** 실측 결과: `git -C <다른 worktree>` 는 **거부**되고, `git merge <다른 worktree 에 체크아웃된 브랜치>` 와 `git branch -m <자기 브랜치>` 는 **통한다.** 경계는 "다른 워킹트리를 건드리는가"이지 "다른 브랜치를 참조하는가"가 아니다 — 그래서 회수(머지)는 되고 대리 커밋은 안 된다.
 
-### harness/index.json
+### harness/index.json 은 없다 — 다시 만들지 마라
 
-**재설계 후 읽는 주체가 없다.** 원래 용도는 브랜치→spec 경로 매핑이었고 planner 가 쓰기만 했는데, 지금은 spec 을 쓴 세션이 그대로 이어가므로 중간에 조회할 것이 없다. **쓰기만 하고 아무도 안 읽는 파일은 틀려도 아무도 모른다.** 없앨지 결정 대기 — `developer.md` 와 `planner.md` 가 아직 이 파일을 전제로 쓰여 있다.
+브랜치→spec 경로 매핑용이었고 planner 가 쓰기만 했다. **읽는 주체는 처음부터 없었고**, 지금은 spec 을 쓴 세션이 그대로 이어가므로 중간에 조회할 일 자체가 없다. **쓰기만 하고 아무도 안 읽는 파일은 틀려도 아무도 모른다.**
+
+spec 을 찾아야 하면 `harness/` 를 직접 훑어라. 디렉터리가 곧 목록이고, 그건 어긋날 수가 없다.
 
 ## 공통 규약 — 모든 세션·에이전트
 
@@ -376,11 +361,11 @@ worktree 는 **격리 장치**다. 사본은 **전부 본체 아래 한 디렉�
 | ~~`scripts/spawn.ps1`~~ | ✅ **있다.** `wt` 가 없으면 새 창으로 떨어진다. **탭이 실제로 뜨는지는 자동 검증 불가** — 훅 쪽만 테스트로 덮여 있다 |
 | ~~역할을 진입 시점에 싣는 수단~~ | ✅ **있다.** `HARNESS_ROLE` + `SessionStart` 훅 |
 | `spawn` 의 유닉스판 | 없다. `spawn.ps1` 은 Windows 전용이다 |
-| `.claude/agents/planner.md` 정리 | 서브에이전트 정의로 남아 있다. **스폰하지 마라** |
+| ~~`.claude/agents/planner.md` 정리~~ | ✅ **끝.** `.claude/planner-mode.md` 로 옮겼고 에이전트 정의는 지웠다 |
 | `verify-spec.mjs` → `pre-commit` 이주 | 지금은 아무것도 막지 못한다 |
 | 층 1 (`PreToolUse` + 역할 환경변수) | 없다 |
 | 층 2 (`.githooks/`) | 없다 |
-| `harness/index.json` 존폐 | 결정 대기 |
+| ~~`harness/index.json` 존폐~~ | ✅ **없앴다.** 파일도 참조도 없다 |
 | ~~격리 세션에서 `git merge <역할 브랜치>`~~ | ✅ **검증됨.** developer·qa 인계 커밋을 실제로 회수했다 |
 | 게이트 플레이크 | 3회 중 1회, `verify-green.test.mjs` 한 항목이 30초 상한을 넘기고 vitest 가 `Timeout calling "onTaskUpdate"` 를 뱉었다. 재실행은 12초에 통과. **원인 미상** — `verify-green` 의 재시도가 3회뿐이라 죄 없는 developer 가 상한을 태울 수 있다 |
 | 작업 세션끼리 파일 소유가 겹치는지 볼 수단 | 없다. 각 spec 이 자기 worktree 안에만 있어 **기획자 둘이 서로를 못 본다** — task 경계 기준의 첫 줄("파일이 겹치나")을 판단할 근거가 없다 |
