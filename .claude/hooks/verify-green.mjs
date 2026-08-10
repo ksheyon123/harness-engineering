@@ -8,6 +8,9 @@
  *
  * 훅은 에이전트의 도구 제약을 받지 않는다. 그래서 developer 에게 Bash 를 주지 않고도
  * 게이트가 돈다 — "게이트를 돌리려면 그 역할에 Bash 를 줘야 한다"는 전제가 사라진다.
+ * **인계 커밋도 같은 이유로 여기 선다**(`handoff`) — 게이트를 통과한 트리를 그 자리에서
+ * 커밋으로 굳힌다. worktree 는 커밋된 상태만 밖으로 보이고, 커밋할 수 있는 자리가
+ * 여기밖에 없다.
  *
  * 게이트 대상의 단일 출처는 `package.json` 의 `scripts.test` 다. 여기에 명령을 적지
  * 않는다 — 사본은 강제력을 더하지 않으면서 원본과 어긋나고, 낡은 사본은 없는 것보다
@@ -15,7 +18,10 @@
  */
 
 import { execSync } from "node:child_process";
-import { cleanEnv, emit, readHookInput, retryBudget } from "./hook-kit.mjs";
+import { cleanEnv, emit, handoff, readHookInput, retryBudget } from "./hook-kit.mjs";
+
+/** 인계 커밋에 이름을 남길 역할. 오케스트레이터가 로그에서 출처를 읽는다. */
+const ROLE = "developer";
 
 /** red 를 몇 번까지 되돌려줄 것인가. 넘으면 차단을 풀어 종료를 허용한다. */
 const MAX_ATTEMPTS = 3;
@@ -36,17 +42,25 @@ try {
 
 if (failure === null) {
   budget.reset();
-  emit(null); // green — 종료를 허용한다.
+  // green 인 트리를 그대로 커밋으로 굳힌다. 통과 판정과 인계가 같은 지점에서 일어나야
+  // 오케스트레이터가 머지하는 것이 게이트가 본 것과 같은 트리가 된다.
+  const { notice } = handoff(ROLE, { env });
+  emit(notice ? { systemMessage: notice } : null); // green — 종료를 허용한다.
 }
 
 const { count, exhausted, lastChance } = budget.record();
 
 if (exhausted) {
+  // red 여도 커밋은 한다. 안 하면 산출물이 worktree 와 함께 사라져 오케스트레이터가
+  // 무엇이 실패했는지조차 볼 수 없다 — 머지할지는 그쪽이 판단할 몫이다.
+  const { notice } = handoff(ROLE, { env });
+
   // 차단을 푼다. 조용히 통과시키지는 않는다 — 오케스트레이터가 red 를 알아야 한다.
   emit({
     systemMessage:
       `게이트 red 인 채로 종료를 허용했다(재시도 ${count ?? "?"}회 소진). ` +
-      `이 에이전트의 결과는 green 이 아니다 — 회수 전에 확인이 필요하다.`,
+      `이 에이전트의 결과는 green 이 아니다 — 회수 전에 확인이 필요하다.` +
+      (notice ? `\n${notice}` : ""),
   });
 }
 
