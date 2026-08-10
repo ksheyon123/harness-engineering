@@ -11,7 +11,7 @@
 ```
 .claude/CLAUDE.md          이 파일 — 하네스 코어 규약
 .claude/agents/*.md        역할 3개 (planner · developer · qa)
-.claude/hooks/             verify-green.mjs — developer 의 SubagentStop 게이트
+.claude/hooks/             SubagentStop 종료 훅 (hook-kit.mjs = 공통 배선)
 .claude/settings.json      permissions + worktree.baseRef
 docs/harness-design.md     목표 구조 · 설계 근거 · 미결 사항
 vitest.config.mjs          테스트 러너 설정
@@ -28,7 +28,14 @@ package.json               scripts.test = "vitest run"  ← 게이트 정의의 
 | 층 1 — `PreToolUse(Edit\|Write)` 훅 | ❌ 없음 | 세션 밖 파일 편집 (경로 소유권) |
 | 층 2 — git `pre-commit` / `pre-push` | ❌ 없음 | `main`·`dev` 커밋·push (브랜치 보호) |
 
-여기에 더해 **게이트가 `SubagentStop` 훅으로 한 지점 서 있다** — `developer` 는 `npm test` 가 green 이 아니면 종료할 수 없다(`.claude/hooks/verify-green.mjs`). 층과는 성격이 다르다: 층은 *못 하게* 막고, 이 훅은 *못 끝내게* 막는다.
+여기에 더해 **종료 훅이 두 지점 서 있다.** 층과는 성격이 다르다 — 층은 *못 하게* 막고, 종료 훅은 **빈손이거나 깨진 상태로 못 끝내게** 막는다.
+
+| 훅 | 역할 | 통과 조건 |
+|---|---|---|
+| `verify-green.mjs` | `developer` | `npm test` 가 green |
+| `verify-spec.mjs` | `planner` | 이번에 쓴 `harness/<task>/spec.md` 가 있고 인계될 모양이다 |
+
+둘 다 **객관 검사만** 한다 — 좋은 코드인지, 좋은 spec 인지는 판정하지 않는다(그건 QA 와 사람의 몫이다). 그리고 둘 다 재시도 상한이 있어, 정당하게 통과할 수 없는 상황(외부 원인, `<task>` 미지정)에서 갇히지 않는다. 상한이 소진되면 차단이 풀리되 `systemMessage` 로 알린다 — **그 신호가 오면 회수 전에 확인한다.**
 
 - `settings.json` 에 `hooks` 블록이 없다 → 층 1 부재.
 - `core.hooksPath` 는 `.githooks` 를 가리키지만 그 디렉터리가 없다 → 층 2 부재. 새 훅을 `.githooks/` 에 만들면 별도 설정 없이 붙는다.
@@ -47,7 +54,7 @@ package.json               scripts.test = "vitest run"  ← 게이트 정의의 
 
 | 역할 | 파일 | 도구 경계 | 산출물 |
 |---|---|---|---|
-| 기획자 | `planner.md` | Bash ❌ — 명세만 쓴다 | `harness/<task>/spec.md` |
+| 기획자 | `planner.md` | Bash ❌ — 명세만 쓴다 | `harness/<task>/spec.md` (`SubagentStop` 이 존재를 확인) |
 | 개발자 | `developer.md` | Bash ❌ — 게이트는 `SubagentStop` 훅이 돌린다 | 코드 + 테스트(green) |
 | QA | `qa.md` | Bash ❌ — 테스트 실행 불가 | `harness/<task>/qa-checklist.md` |
 
@@ -208,4 +215,4 @@ worktree 는 **역할 격리 장치**다. `isolation: worktree` 가 붙은 역�
 
 - **이 파일** — 하네스 코어(역할·검증·커밋/push·worktree). 그리고 파일을 읽기 *전* 계획 단계에서 이미 지켜져야 하는 규약.
 - **`.claude/rules/*.md`** — 특정 경로의 코드를 만질 때만 필요한 규약. `paths:` 를 빼면 매 세션 로드돼 분리한 의미가 사라진다.
-- **`.githooks/` · `.claude/hooks/`** — 반드시 막아야 하는 것. CLAUDE.md·rules 는 컨텍스트일 뿐 강제가 아니다. **둘 다 아직 비어 있다.**
+- **`.claude/hooks/` · `.githooks/`** — 반드시 막아야 하는 것. CLAUDE.md·rules 는 컨텍스트일 뿐 강제가 아니다. 앞쪽엔 종료 훅 둘이 서 있고, **`.githooks/` 는 아직 비어 있다**(층 2 부재).
