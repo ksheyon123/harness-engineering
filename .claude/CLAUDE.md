@@ -34,6 +34,7 @@ package.json               scripts.test = "vitest run"  ← 게이트 정의의 
 |---|---|---|
 | `verify-green.mjs` | `developer` | `npm test` 가 green |
 | `verify-spec.mjs` | `planner` | 이번에 쓴 `harness/<task>/spec.md` 가 있고 인계될 모양이다 |
+| `verify-checklist.mjs` | `qa` | 이번에 쓴 `qa-checklist.md` 가 있고, **근거 없는 판정 행이 없다** |
 
 둘 다 **객관 검사만** 한다 — 좋은 코드인지, 좋은 spec 인지는 판정하지 않는다(그건 QA 와 사람의 몫이다). 그리고 둘 다 재시도 상한이 있어, 정당하게 통과할 수 없는 상황(외부 원인, `<task>` 미지정)에서 갇히지 않는다. 상한이 소진되면 차단이 풀리되 `systemMessage` 로 알린다 — **그 신호가 오면 회수 전에 확인한다.**
 
@@ -54,9 +55,11 @@ package.json               scripts.test = "vitest run"  ← 게이트 정의의 
 
 | 역할 | 파일 | 도구 경계 | 산출물 |
 |---|---|---|---|
-| 기획자 | `planner.md` | Bash ❌ — 명세만 쓴다 | `harness/<task>/spec.md` (`SubagentStop` 이 존재를 확인) |
-| 개발자 | `developer.md` | Bash ❌ — 게이트는 `SubagentStop` 훅이 돌린다 | 코드 + 테스트(green) |
+| 기획자 | `planner.md` | Bash ❌ — 명세만 쓴다 | `harness/<task>/spec.md` |
+| 개발자 | `developer.md` | Bash ❌ — 게이트는 종료 훅이 돌린다 | 코드 + 테스트(green) |
 | QA | `qa.md` | Bash ❌ — 테스트 실행 불가 | `harness/<task>/qa-checklist.md` |
+
+**세 역할 모두 종료 훅이 붙어 있다** — 빈손이거나 깨진 산출물로는 끝낼 수 없다(위 표 참고).
 
 **오케스트레이터는 이 셋 중 하나가 아니다.** 직접 코드를 쓰지 않고 파이프라인을 진행시킨다 — 브랜치·worktree 를 정하고, 역할을 스폰하고, 받은 결과를 다음 역할에 넘기고, 검증을 돌리고, 커밋·push 한다.
 
