@@ -89,9 +89,11 @@ describe("path-ownership — 층 1 경로 소유권", () => {
   });
 
   describe("developer", () => {
-    it("소스와 테스트는 통과한다", () => {
-      expect(ask("src/convex-hull.js", { agent: "developer" }).verdict).toBe("defer");
-      expect(ask("src/convex-hull.test.js", { agent: "developer" }).verdict).toBe("defer");
+    it("소스와 테스트는 allow 로 확정한다", () => {
+      // defer 가 아니다. defer 는 '결정하지 않음' 이라 정상 권한 흐름으로 넘어가고,
+      // 거기서 승인 프롬프트가 뜨면 답할 사람이 없어 서브에이전트가 멈춘다.
+      expect(ask("src/convex-hull.js", { agent: "developer" }).verdict).toBe("allow");
+      expect(ask("src/convex-hull.test.js", { agent: "developer" }).verdict).toBe("allow");
     });
 
     it("spec 을 고치려 하면 막는다", () => {
@@ -109,13 +111,39 @@ describe("path-ownership — 층 1 경로 소유권", () => {
   });
 
   describe("qa", () => {
-    it("체크리스트만 쓸 수 있다", () => {
-      expect(ask("harness/thing/qa-checklist.md", { agent: "qa" }).verdict).toBe("defer");
+    it("체크리스트만 쓸 수 있고, 그것은 allow 로 확정한다", () => {
+      expect(ask("harness/thing/qa-checklist.md", { agent: "qa" }).verdict).toBe("allow");
     });
 
     it("spec 도 소스도 막는다", () => {
       expect(ask("harness/thing/spec.md", { agent: "qa" }).verdict).toBe("deny");
       expect(ask("src/convex-hull.js", { agent: "qa" }).verdict).toBe("deny");
+    });
+  });
+
+  describe("사람이 없는 자리는 프롬프트에 걸리지 않는다", () => {
+    // 서브에이전트가 승인 프롬프트를 만나면 답할 사람이 없어 그 자리에서 멈춘다. 멈추는
+    // 것은 끝나는 것과 달라서 SubagentStop 이 돌지 않고, 게이트도 인계 커밋도 없이
+    // base 그대로인 브랜치와 빈 worktree 만 남는다 — 신호 하나 없이. 실제로 그렇게 죽었다.
+
+    it("서브에이전트에는 ask 를 내지 않는다", () => {
+      // 같은 경로라도 자리가 다르면 물을 수 없다.
+      expect(ask("src/convex-hull.js", WORK).verdict).toBe("ask");
+      expect(ask("src/convex-hull.js", { agent: "developer" }).verdict).toBe("allow");
+    });
+
+    it("사람이 붙어 있는 자리는 defer 를 유지한다", () => {
+      // allow 로 답하면 사용자의 permission 설정을 건너뛴다. 물어볼 사람이 있으면
+      // 그럴 이유가 없다 — 이 훅이 답할 것은 '만져도 되는 경로인가' 뿐이다.
+      expect(ask(".claude/hooks/verify-green.mjs").verdict).toBe("defer");
+      expect(ask("harness/thing/spec.md", WORK).verdict).toBe("defer");
+    });
+
+    it("저장소 밖은 사람이 없는 자리라도 판정하지 않는다", () => {
+      // 규칙이 없는 곳까지 allow 로 열지 않는다. 관할 밖은 관할 밖이다.
+      const out = ask("", { agent: "developer", absolute: "C:/tmp/scratch/note.md" });
+
+      expect(out.verdict).toBe("defer");
     });
   });
 
@@ -155,7 +183,7 @@ describe("path-ownership — 층 1 경로 소유권", () => {
     // 작업 세션·서브에이전트는 사본 안에서 돈다. cwd 가 곧 그 트리의 루트다.
     const wt = "C:/repo/.claude/worktrees/agent-a1";
 
-    expect(ask("src/x.js", { agent: "developer", cwd: wt }).verdict).toBe("defer");
+    expect(ask("src/x.js", { agent: "developer", cwd: wt }).verdict).toBe("allow");
     expect(ask("harness/t/spec.md", { agent: "developer", cwd: wt }).verdict).toBe("deny");
   });
 });

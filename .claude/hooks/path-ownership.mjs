@@ -20,8 +20,20 @@
  * - **그 외** → `deny`. 서브에이전트에는 물어볼 사람이 없고, 실행자가 코드를 고치는 것은
  *   예외를 둘 이유가 없다 — 작업 세션을 띄우면 된다.
  *
- * 허용은 `allow` 가 아니라 **`defer`** 다. `allow` 로 답하면 사용자의 permission 설정을
- * 건너뛴다. 이 훅이 답할 것은 '이 자리가 만져도 되는 경로인가' 뿐이다.
+ * ## 허용은 어떻게 답하는가 — 같은 기준이 여기에도 걸린다
+ *
+ * - **사람이 붙어 있는 자리**(실행자·작업 세션) → `defer`. `allow` 로 답하면 사용자의
+ *   permission 설정을 건너뛴다. 이 훅이 답할 것은 '이 자리가 만져도 되는 경로인가' 뿐이다.
+ * - **사람이 없는 자리**(`developer`·`qa`) → `allow`. `defer` 는 '결정하지 않음' 이라
+ *   정상 권한 흐름으로 넘어가는데, 거기서 승인 프롬프트가 뜨면 **답할 사람이 없어
+ *   서브에이전트가 그 자리에서 멈춘다.**
+ *
+ * 멈추는 것은 끝나는 것과 다르다. `SubagentStop` 이 돌지 않으므로 게이트도, 인계 커밋도,
+ * `systemMessage` 도 없다 — 부모가 받는 것은 base 그대로인 브랜치와 빈 worktree 뿐이고
+ * 무엇이 잘못됐는지 알 방법이 없다. 실측으로 그렇게 죽었다.
+ *
+ * `ask` 를 서브에이전트에 쓰지 않는 이유와 같은 이유다. **`defer` 도 결국 프롬프트로
+ * 떨어질 수 있다**는 것이 빠져 있었다.
  */
 
 import { relative, resolve } from "node:path";
@@ -32,6 +44,9 @@ import { emit, readHookInput } from "./hook-kit.mjs";
  *
  * 실행자는 하네스가 본업이라 금지 목록이 짧고, `qa` 는 산출물이 하나뿐이라 허용 목록이
  * 짧다 — 짧은 쪽으로 적어야 규칙이 실재와 어긋나지 않는다.
+ *
+ * `unattended` 는 **그 자리에 사람이 없다**는 뜻이다. 프롬프트가 떠도 답할 사람이 없으므로
+ * 허용을 `defer` 가 아니라 `allow` 로 확정한다(위 머리주석 참고).
  */
 const HARNESS_FILES = [
   ".claude/**",
@@ -58,12 +73,14 @@ const RULES = {
     ],
   },
   developer: {
+    unattended: true,
     deny: [
       { paths: ["harness/**"], why: "spec 은 기획자, 체크리스트는 qa 의 것이다. 틀렸다고 판단되면 고치지 말고 보고하라." },
       { paths: HARNESS_FILES, why: "하네스와 게이트 정의는 이 자리에서 만지지 않는다." },
     ],
   },
   qa: {
+    unattended: true,
     only: { paths: ["harness/**/qa-checklist.md"], why: "qa 의 산출물은 체크리스트 하나다. 코드도 spec 도 고치지 않는다." },
   },
 };
@@ -101,6 +118,12 @@ function decide(hookInput) {
 
   if (rules.only && !rules.only.paths.some((p) => matches(p, path))) {
     return { verdict: "deny", why: `${seat} 는 \`${path}\` 를 만들거나 고칠 수 없다. ${rules.only.why}` };
+  }
+
+  // 이 자리가 만져도 되는 경로다. 사람이 없는 자리에서는 여기서 확정해야 한다 —
+  // `defer` 로 넘기면 승인 프롬프트에서 멈출 수 있고, 그러면 종료 훅조차 돌지 않는다.
+  if (rules.unattended) {
+    return { verdict: "allow", why: `${seat} 의 소유 경로다.` };
   }
 
   return { verdict: "defer" };
