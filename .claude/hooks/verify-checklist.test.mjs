@@ -52,6 +52,9 @@ function makeRepo() {
   const dir = mkdtempSync(join(tmpdir(), "verify-checklist-"));
   fixtures.push(dir);
   git(dir, ["init", "-q"]);
+  // 인계 커밋이 서명할 신원. 없으면 커밋이 실패해 훅의 성공 경로가 통째로 달라진다.
+  git(dir, ["config", "user.email", "hook@example.invalid"]);
+  git(dir, ["config", "user.name", "hook"]);
   return dir;
 }
 
@@ -224,5 +227,29 @@ spec: harness/thing/spec.md
     fixtures.push(dir);
 
     expect(runHook(dir).verdict).toBeNull();
+  });
+
+  it("통과한 체크리스트를 인계 커밋으로 남긴다", () => {
+    const dir = makeRepo();
+    write(dir, "harness/thing/qa-checklist.md", checklist([COVERED]));
+
+    runHook(dir);
+
+    // qa 에도 Bash 가 없다. 이 지점을 놓치면 표가 worktree 와 함께 사라지고,
+    // 사람이 PR 에서 볼 근거가 없어진다.
+    expect(git(dir, ["log", "--format=%s"])).toContain(
+      "chore(qa): 산출물을 인계 커밋으로 남긴다",
+    );
+    expect(git(dir, ["ls-files"])).toContain("harness/thing/qa-checklist.md");
+  });
+
+  it("표가 없어 상한이 소진되면 인계할 산출물이 없음을 함께 알린다", () => {
+    const dir = makeRepo();
+    runHook(dir);
+
+    const released = runHook(dir).verdict;
+
+    expect(released.systemMessage).toContain("체크리스트 없이 종료를 허용했다");
+    expect(released.systemMessage).toContain("인계할 산출물이 없다");
   });
 });

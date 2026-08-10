@@ -8,7 +8,7 @@
  * **검사 자체는 여기 없다.** 무엇이 통과인지는 각 훅이 정한다.
  */
 
-import { execSync } from "node:child_process";
+import { execFileSync, execSync } from "node:child_process";
 import { readFileSync, rmSync, writeFileSync, writeSync } from "node:fs";
 import { join } from "node:path";
 
@@ -105,6 +105,78 @@ export function retryBudget(name, { env, input, max }) {
         /* 카운터 정리 실패가 통과 판정을 뒤집어서는 안 된다. */
       }
     },
+  };
+}
+
+/**
+ * 역할의 산출물을 커밋해 **인계 지점**을 만든다.
+ *
+ * worktree 는 커밋된 상태만 밖으로 보인다. 그런데 커밋할 수 있는 자리가 여기밖에 없다:
+ *
+ * - `developer`·`qa` 에는 Bash 가 없다 — 층 0(도구 화이트리스트)이 의도적으로 뺀 것이다.
+ * - 작업 세션은 `EnterWorktree` 격리 안에 있어 `git -C <역할 worktree>` 로 **밖을
+ *   겨냥할 수 없다.** 격리가 주는 이득의 대가이고, 회수는 정확히 밖을 겨냥하는 동작이다.
+ *
+ * 훅은 양쪽 제약을 다 비껴간다. 도구 화이트리스트 밖의 node 프로세스이고, 역할의
+ * worktree 를 cwd 로 돈다 — `verify-green` 이 거기서 `npm test` 를 돌리는 것과 같은 자리다.
+ *
+ * **판정을 뒤집지 않는다.** 커밋이 실패해도 종료를 막지 않는다 — 역할에는 git 을 고칠
+ * 수단이 없어서 되돌려 봐야 같은 자리에서 다시 실패한다. 대신 `notice` 로 알린다.
+ * 조용히 실패하면 산출물이 worktree 와 함께 사라지고 아무도 모른다.
+ */
+export function handoff(role, { env }) {
+  const run = (args) =>
+    execFileSync("git", args, { env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+
+  try {
+    // 부분 스테이징을 하지 않는다 — 검사한 트리와 커밋되는 내용이 어긋나면 안 된다.
+    run(["add", "-A"]);
+  } catch (error) {
+    return failedHandoff(role, error);
+  }
+
+  try {
+    run(["diff", "--cached", "--quiet"]);
+    // 종료 코드 0 = 차이 없음. 빈 커밋은 인계가 아니다.
+    return {
+      committed: false,
+      sha: null,
+      notice: `${role} 가 변경 없이 끝났다 — 인계할 산출물이 없다. 회수할 것이 없으니 확인이 필요하다.`,
+    };
+  } catch {
+    /* 종료 코드 1 = 차이 있음. 커밋으로 간다. */
+  }
+
+  try {
+    run(["commit", "-m", `chore(${role}): 산출물을 인계 커밋으로 남긴다`, "-m", HANDOFF_BODY]);
+  } catch (error) {
+    return failedHandoff(role, error);
+  }
+
+  let sha = null;
+  try {
+    sha = run(["rev-parse", "--short", "HEAD"]).trim();
+  } catch {
+    /* sha 를 못 읽었을 뿐 커밋은 됐다. 인계 자체는 성립한다. */
+  }
+
+  return { committed: true, sha, notice: null };
+}
+
+const HANDOFF_BODY =
+  "종료 훅이 자동으로 만든 커밋이다. 역할에는 Bash 가 없고 작업 세션은 worktree 격리 밖을\n" +
+  "겨냥할 수 없어, 산출물을 커밋할 수 있는 자리가 종료 훅뿐이다.\n" +
+  "\n" +
+  "무엇을 왜 바꿨는지는 오케스트레이터의 머지 커밋에 적힌다.";
+
+function failedHandoff(role, error) {
+  const detail = `${error.stdout ?? ""}${error.stderr ?? ""}`.trim() || String(error);
+  return {
+    committed: false,
+    sha: null,
+    notice:
+      `${role} 산출물을 커밋하지 못했다 — 이 worktree 에는 회수할 커밋이 없다. ` +
+      `지우기 전에 손으로 건져야 한다.\n${detail.slice(-1000)}`,
   };
 }
 
