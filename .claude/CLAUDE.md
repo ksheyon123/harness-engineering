@@ -4,7 +4,7 @@
 
 ## 현재 상태 — 하네스는 재작성 중이다
 
-**이 저장소가 만드는 것이 하네스 자체다.** 목표 구조와 그 설계 근거는 `docs/harness-design.md` 에 있다 — 하네스를 손대기 전에 읽어라.
+**이 저장소가 만드는 것이 하네스 자체다.** 목표 구조와 그 설계 근거는 이 파일에 있다 — 하네스를 손대기 전에 읽어라.
 
 지금 존재하는 전부:
 
@@ -13,7 +13,6 @@
 .claude/agents/*.md        역할 3개 (planner · developer · qa)
 .claude/hooks/             SubagentStop 종료 훅 (hook-kit.mjs = 공통 배선)
 .claude/settings.json      permissions + worktree.baseRef
-docs/harness-design.md     목표 구조 · 설계 근거 · 미결 사항
 vitest.config.mjs          테스트 러너 설정
 package.json               scripts.test = "vitest run"  ← 게이트 정의의 단일 출처
 ```
@@ -26,7 +25,7 @@ package.json               scripts.test = "vitest run"  ← 게이트 정의의 
 |---|:---:|---|
 | 층 0 — agent `tools:` 화이트리스트 | ✅ **동작** | 능력 자체의 제거 — **세 역할 모두에 Bash 가 없다** |
 | 층 1 — `PreToolUse(Edit\|Write)` 훅 | ❌ 없음 | 세션 밖 파일 편집 (경로 소유권) |
-| 층 2 — git `pre-commit` / `pre-push` | ❌ 없음 | `main`·`dev` 커밋·push (브랜치 보호) · green 아닌 sha 의 push. **불변식만 — 게이트는 얹지 않는다**(`docs/harness-design.md` §8.1) |
+| 층 2 — git `pre-commit` / `pre-push` | ❌ 없음 | `main`·`dev` 커밋·push (브랜치 보호) · green 아닌 sha 의 push. **불변식만 — 게이트는 얹지 않는다** |
 
 여기에 더해 **종료 훅이 세 지점 서 있다.** 층과는 성격이 다르다 — 층은 *못 하게* 막고, 종료 훅은 **빈손이거나 깨진 상태로 못 끝내게** 막는다.
 
@@ -63,7 +62,7 @@ package.json               scripts.test = "vitest run"  ← 게이트 정의의 
 
 **오케스트레이터는 이 셋 중 하나가 아니다.** 직접 코드를 쓰지 않고 파이프라인을 진행시킨다 — 브랜치·worktree 를 정하고, 역할을 스폰하고, 받은 결과를 다음 역할에 넘기고, 검증을 돌리고, 커밋·push 한다.
 
-> **세 역할 모두에 Bash 가 없는 것이 층 1 의 전제다.** 파일을 고칠 이유가 있는 세션이 Bash 를 함께 가지면 경로 소유권 훅은 장식이 된다 — `printf > ../worktrees/.../foo.ts` 한 줄은 `PreToolUse(Edit|Write)` 에 걸리지 않는다. Edit/Write 가 파일을 바꾸는 **유일한 경로**여야 그 훅에 우회로가 없다(`docs/harness-design.md` §5·§8).
+> **세 역할 모두에 Bash 가 없는 것이 층 1 의 전제다.** 파일을 고칠 이유가 있는 세션이 Bash 를 함께 가지면 경로 소유권 훅은 장식이 된다 — `printf > ../worktrees/.../foo.ts` 한 줄은 `PreToolUse(Edit|Write)` 에 걸리지 않는다. Edit/Write 가 파일을 바꾸는 **유일한 경로**여야 그 훅에 우회로가 없다.
 
 ## 오케스트레이터 프로토콜
 
@@ -201,7 +200,7 @@ worktree 는 **역할 격리 장치**다. `isolation: worktree` 가 붙은 역�
 
 둘은 중복이 아니다. developer 를 병렬로 돌리면 각자의 worktree 에서는 전부 green 인데 합치면 깨질 수 있고, **그 조합은 어느 훅도 본 적이 없다.**
 
-두 번째 지점은 **규약이고, 앞으로도 규약이다.** `pre-commit` 이 이것을 대신할 수 없기 때문이다 — 머지 커밋에는 `pre-merge-commit` 이 돌고, fast-forward 회수에는 아예 아무 훅도 돌지 않는다(`docs/harness-design.md` §8.2). 층 2 는 **불변식만** 본다(브랜치·전체 스테이징, 밀리초). 게이트를 거기 얹으면 정작 봐야 할 트리는 놓치면서 회수 턴만 몇 분으로 늘어난다. green 아닌 것이 origin 에 올라가는 것은 `pre-push` 의 verified marker 가 막는다(§8.3).
+두 번째 지점은 **규약이고, 앞으로도 규약이다.** `pre-commit` 이 이것을 대신할 수 없기 때문이다 — 머지 커밋에는 `pre-merge-commit` 이 돌고, fast-forward 회수에는 아예 아무 훅도 돌지 않는다. 층 2 는 **불변식만** 본다(브랜치·전체 스테이징, 밀리초). 게이트를 거기 얹으면 정작 봐야 할 트리는 놓치면서 회수 턴만 몇 분으로 늘어난다. green 아닌 것이 origin 에 올라가는 것은 `pre-push` 의 verified marker 가 막는다.
 
 **그러니 네가 돌리지 않으면 아무도 돌리지 않는다.**
 
