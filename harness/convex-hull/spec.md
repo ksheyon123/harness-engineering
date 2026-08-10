@@ -1,5 +1,5 @@
 ---
-branch: worktree-feat+convex-hull
+branch: feat/convex-hull
 ---
 
 # convex-hull
