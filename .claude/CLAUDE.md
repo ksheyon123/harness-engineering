@@ -11,21 +11,24 @@
 ```
 .claude/CLAUDE.md          이 파일 — 하네스 코어 규약
 .claude/agents/*.md        역할 3개 (planner · developer · qa)
+.claude/hooks/             verify-green.mjs — developer 의 SubagentStop 게이트
 .claude/settings.json      permissions + worktree.baseRef
 docs/harness-design.md     목표 구조 · 설계 근거 · 미결 사항
 vitest.config.mjs          테스트 러너 설정
-package.json               scripts.test = "vitest run"
+package.json               scripts.test = "vitest run"  ← 게이트 정의의 단일 출처
 ```
 
-없는 것: `scripts/` · `harness/` · `.githooks/` · `.claude/hooks/` · `.claude/rules/` · 테스트 파일.
+없는 것: `scripts/` · `harness/` · `.githooks/` · `.claude/rules/`.
 
 ### 강제 층은 셋 중 하나만 서 있다
 
 | 층 | 상태 | 무엇을 막나 |
 |---|:---:|---|
-| 층 0 — agent `tools:` 화이트리스트 | ✅ **동작** | 능력 자체의 제거 — planner·qa 에 Bash 가 실제로 없다 |
+| 층 0 — agent `tools:` 화이트리스트 | ✅ **동작** | 능력 자체의 제거 — **세 역할 모두에 Bash 가 없다** |
 | 층 1 — `PreToolUse(Edit\|Write)` 훅 | ❌ 없음 | 세션 밖 파일 편집 (경로 소유권) |
 | 층 2 — git `pre-commit` / `pre-push` | ❌ 없음 | `main`·`dev` 커밋·push (브랜치 보호) |
+
+여기에 더해 **게이트가 `SubagentStop` 훅으로 한 지점 서 있다** — `developer` 는 `npm test` 가 green 이 아니면 종료할 수 없다(`.claude/hooks/verify-green.mjs`). 층과는 성격이 다르다: 층은 *못 하게* 막고, 이 훅은 *못 끝내게* 막는다.
 
 - `settings.json` 에 `hooks` 블록이 없다 → 층 1 부재.
 - `core.hooksPath` 는 `.githooks` 를 가리키지만 그 디렉터리가 없다 → 층 2 부재. 새 훅을 `.githooks/` 에 만들면 별도 설정 없이 붙는다.
@@ -45,12 +48,12 @@ package.json               scripts.test = "vitest run"
 | 역할 | 파일 | 도구 경계 | 산출물 |
 |---|---|---|---|
 | 기획자 | `planner.md` | Bash ❌ — 명세만 쓴다 | `harness/<task>/spec.md` |
-| 개발자 | `developer.md` | Bash ✅ / spec 편집 ❌ / push ❌ | 코드 + 테스트(green) |
+| 개발자 | `developer.md` | Bash ❌ — 게이트는 `SubagentStop` 훅이 돌린다 | 코드 + 테스트(green) |
 | QA | `qa.md` | Bash ❌ — 테스트 실행 불가 | `harness/<task>/qa-checklist.md` |
 
 **오케스트레이터는 이 셋 중 하나가 아니다.** 직접 코드를 쓰지 않고 파이프라인을 진행시킨다 — 브랜치·worktree 를 정하고, 역할을 스폰하고, 받은 결과를 다음 역할에 넘기고, 검증을 돌리고, 커밋·push 한다.
 
-> developer 의 Bash 는 **목표 구조와 어긋난 잔재다.** `docs/harness-design.md` §5·§8 은 세 역할 모두에서 Bash 를 빼고 게이트를 `SubagentStop` 훅으로 내리기로 결론냈다 — 파일을 고칠 이유가 있는 세션이 Bash 를 함께 가지면 층 1 이 장식이 되기 때문이다(`printf > ../worktrees/.../foo.ts` 는 Edit/Write 훅에 걸리지 않는다). 아직 옮기지 않았다.
+> **세 역할 모두에 Bash 가 없는 것이 층 1 의 전제다.** 파일을 고칠 이유가 있는 세션이 Bash 를 함께 가지면 경로 소유권 훅은 장식이 된다 — `printf > ../worktrees/.../foo.ts` 한 줄은 `PreToolUse(Edit|Write)` 에 걸리지 않는다. Edit/Write 가 파일을 바꾸는 **유일한 경로**여야 그 훅에 우회로가 없다(`docs/harness-design.md` §5·§8).
 
 ## 오케스트레이터 프로토콜
 
@@ -75,7 +78,7 @@ task 하나는 다음 순서로 **자율 진행**한다:
 3. **회수** — planner 의 산출물을 커밋하고 머지한다(아래 '회수' 절).
 4. **구현** — `developer` 를 스폰해 spec 의 기능을 test-first 로 구현시킨다. 기능이 서로 독립이면 여러 개를 병렬로 스폰하되, **파일 소유가 겹치지 않게 나눈다**(같은 파일을 두 developer 가 고치면 머지 충돌이 난다).
 5. **회수** — 각 developer 의 브랜치를 머지한다.
-6. **검증** — 머지된 트리에서 `npm test`. 실패하면 출력을 그대로 `developer` 에게 돌려보내 고치게 한다. (객관 게이트의 현재 실체는 아래 '검증' 절 참고.)
+6. **검증** — 머지된 트리에서 `npm test`. 각 developer 는 자기 worktree 에서 이미 게이트를 통과했지만, **합친 결과는 어느 훅도 본 적이 없다** — 병렬로 돌린 경우 특히 그렇다. 실패하면 출력을 그대로 `developer` 에게 돌려보내 고치게 한다.
 7. **QA** — 검증 통과 후 `qa` 를 스폰하고, 그 산출물도 회수한다.
 8. **push** — 아래 절.
 
@@ -90,15 +93,15 @@ git branch -d <역할 브랜치>          # 난수 이름이 쌓이지 않게
 ```
 
 - `worktree.baseRef` 가 `"head"` 라 역할 브랜치는 **스폰 시점 브랜치의 직계 자손**이다. 그래서 체리픽이 아니라 머지로 충분하다. 머지는 그 task 브랜치에 서서 한다.
-- **`planner`·`qa` 는 Bash 가 없어 스스로 커밋할 수 없다.** 그 둘은 보고에 파일 경로를 적고, 커밋은 네가 그 worktree 를 겨냥해 대신 한다:
+- **세 역할 모두 Bash 가 없어 스스로 커밋할 수 없다.** 각 역할은 보고에 자기가 만들거나 고친 파일 경로를 적고, 커밋은 네가 그 worktree 를 겨냥해 대신 한다:
 
   ```sh
   git -C <역할 worktree> add -A
   git -C <역할 worktree> commit -F <메시지 파일>
   ```
 
-  `developer` 는 Bash 가 있어 스스로 커밋하므로 머지만 하면 된다.
-- **커밋되지 않은 결과는 회수할 수 없다.** 역할이 커밋에 실패했다면 그 작업은 버려지는 것이 맞다 — green 이 아닌 것을 가져오지 않는다.
+- **`developer` 의 결과는 이미 green 이 보장돼 있다.** `SubagentStop` 게이트를 통과해야 종료할 수 있기 때문이다. 다만 재시도 상한(3회)이 소진되면 red 인 채로 끝나고, 그때는 훅이 `systemMessage` 로 알린다 — **그 신호가 있으면 머지하기 전에 확인한다.**
+- **보고에 없는 파일은 회수되지 않는다.** 역할이 경로를 빠뜨리면 그 파일은 worktree 와 함께 사라진다. 보고가 곧 인계 목록이다.
 - worktree·브랜치 정리는 **비가역**이므로, 머지가 끝난 것만 지운다.
 
 진행 전반에 걸쳐:
@@ -172,13 +175,24 @@ worktree 는 **역할 격리 장치**다. `isolation: worktree` 가 붙은 역�
 - **모든 작업 요청은 프로젝트 루트(working directory)에서 시작한다.** 셸 명령에서 `cd` 로 디렉터리를 이동할 필요가 없다. 상대/절대 경로를 그대로 쓰고, 불필요한 `cd ... &&` 체이닝을 하지 않는다(특히 `cd` 와 출력 리다이렉션을 한 컴파운드 명령에 섞으면 샌드박스가 path-resolution 우회로 보고 수동 승인을 요구한다).
 - 파일 검색/읽기/편집은 `find`/`cat`/`grep` 대신 전용 도구(Glob/Read/Grep/Edit)를 쓴다.
 
-### 검증 — 객관 게이트는 아직 없다
+### 검증 — 게이트는 `npm test` 다
 
-현재 검증 수단은 **`npm test`(`vitest run`) 하나뿐**이다. 게이트 러너도, 대상 정의의 단일 출처도, 커밋 시점 강제(`pre-commit`)도 없다. 이것을 만드는 것이 현재 작업의 일부다(`docs/harness-design.md` §8·§11).
+**게이트 정의의 단일 출처는 `package.json` 의 `scripts.test` 다.** 대상을 바꾸려면 그 스크립트를 고친다 — typecheck 이 필요해지면 `"test": "tsc --noEmit && vitest run"` 처럼 거기에 더한다. 별도 설정 파일이나 러너 스크립트를 두지 않는다: 단일 패키지에 불필요한 간접층이고, `package.json` 은 이미 표준이다.
 
-**지금 `npm test` 를 돌리면 `No test files found` 로 exit 1 이다** — 이 저장소에 테스트 파일이 하나도 없다. 첫 테스트가 들어오기 전까지는 이것이 정상 상태다. 게이트를 붙이는 작업은 이 조건을 먼저 처리해야 한다(`--passWithNoTests` 를 줄지, 첫 테스트를 함께 넣을지).
+**그 명령을 이 파일에도, 훅에도, 에이전트 정의에도 복사하지 않는다.** CLAUDE.md 는 컨텍스트일 뿐 강제가 아니라서, 사본은 강제력을 더하지 않으면서 원본과 어긋난다. 그리고 **낡은 사본은 없는 것보다 나쁘다**: 문서가 게이트보다 넓게 적히면 그 차이만큼의 검사가 실행되지 않는데, 세션은 문서를 근거로 '통과했다'고 확신한다. 틀린 검사를 돌린 것을 알아챌 방법이 없는 게 핵심이다.
 
-게이트를 만들 때 지킬 원칙 — **대상 정의는 단일 출처(설정 파일)에 두고 이 파일에 옮겨 적지 않는다.** CLAUDE.md 는 컨텍스트일 뿐 강제가 아니라서, 사본은 강제력을 더하지 않으면서 원본과 어긋난다. 그리고 **낡은 사본은 없는 것보다 나쁘다**: 문서가 게이트보다 넓게 적히면 그 차이만큼의 검사가 실행되지 않는데, 세션은 문서를 근거로 '통과했다'고 확신한다. 틀린 검사를 돌린 것을 알아챌 방법이 없는 게 핵심이다.
+게이트는 **서로 다른 트리를 보는 두 지점**에서 돈다:
+
+| 지점 | 대상 트리 | 묻는 것 |
+|---|---|---|
+| `SubagentStop` 훅 (`verify-green.mjs`) | 각 developer 의 worktree | 개별 작업이 green 인가 |
+| 오케스트레이터 (8단계 중 6) | 머지된 task 브랜치 | 합친 결과도 green 인가 |
+
+둘은 중복이 아니다. developer 를 병렬로 돌리면 각자의 worktree 에서는 전부 green 인데 합치면 깨질 수 있고, **그 조합은 어느 훅도 본 적이 없다.**
+
+두 번째 지점은 아직 **규약이다** — `pre-commit` 이 없어 네가 돌리지 않으면 아무도 돌리지 않는다.
+
+**`--passWithNoTests` 를 붙이지 않는다.** 붙이면 게이트가 'green' 과 '아무것도 안 돌았음' 을 구분할 수 없게 된다 — glob 오타나 `exclude` 실수로 테스트가 통째로 사라져도 초록이다. developer 는 test-first 라 게이트가 발동할 시점엔 항상 테스트가 있으므로, 이 플래그가 필요한 상황은 새 저장소를 세우는 한 번뿐이다.
 
 ### 테스트가 git 을 부를 때
 
