@@ -64,8 +64,8 @@ claude
 
 **기능을 만들려면** — 작업 세션을 새 탭에 띄운다. 사람의 요구사항 원문을 그대로 넘긴다.
 
-```powershell
-scripts/spawn.ps1 "<요구사항 원문>"
+```sh
+node scripts/harness.mjs spawn "<요구사항 원문>"
 ```
 
 > 지금은 **Windows 전용**이다. 유닉스판은 아직 없다.
@@ -81,7 +81,7 @@ npm test
 **설정이 의도대로 읽히는지 확인하려면:**
 
 ```sh
-node scripts/harness.mjs doctor    # 또는 node scripts/doctor.mjs
+node scripts/harness.mjs doctor
 ```
 
 `harness.config.json` 을 검사해 모르는 키·타입 불일치·아무것도 걸지 않는 경로 패턴을 보고한다. 아무것도 막지 않는다 — 오류가 있으면 종료 코드 1 을 준다.
@@ -90,7 +90,8 @@ node scripts/harness.mjs doctor    # 또는 node scripts/doctor.mjs
 
 ```
 .claude/
-  CLAUDE.md          하네스 코어 규약 — 모든 세션·서브에이전트에 로드된다
+  harness.md         하네스 코어 규약 — 설치될 때 이 파일이 복사된다
+  CLAUDE.md          위를 임포트하고 이 저장소 사정을 덧붙인다
   planner-mode.md    spec 작성 지침 (task 경계 · 형식 · 인수기준)
   agents/            developer · qa 정의
   hooks/             경로 소유권 · 종료 훅 · 세션 훅
@@ -109,7 +110,8 @@ src/                 제품 코드
 
 | 어디 | 무엇 |
 |---|---|
-| `.claude/CLAUDE.md` | 하네스 규약 전부 — 자리·모드·검증·커밋/push·worktree |
+| `.claude/harness.md` | 하네스 규약 전부 — 자리·모드·검증·커밋/push·worktree |
+| `.claude/CLAUDE.md` | 위를 임포트하고 **이 저장소 사정**(파일 목록·미착수 표)을 덧붙인다 |
 | `.claude/planner-mode.md` | spec 을 어떻게 쓰는가 |
 | `docs/backlog.md` | 확인됐지만 안 고친 것 — 왜 문제이고 어떻게 고치는지 |
 
@@ -120,4 +122,4 @@ src/                 제품 코드
 큰 것 둘:
 
 - **`spawn` 의 유닉스판이 없다** — Windows 밖에서는 작업 세션을 규약대로 띄울 수 없다
-- **다른 저장소에 설치하는 수단이 없다** — 단일 저장소를 전제로 설계돼 있다 (`docs/backlog.md` G)
+- **다른 저장소에 설치하는 수단은 있다** — `harness init`·`harness sync`. 다만 아직 발행하지 않았다 (`docs/backlog.md` G)

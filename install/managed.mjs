@@ -51,7 +51,10 @@ export const VERBATIM = [
   { from: ".claude/planner-mode.md", to: ".claude/planner-mode.md" },
   // 규약 본문. A 의 `CLAUDE.md` 가 `@harness.md` 로 끌어온다 — 루트 안이라 worktree 에서도
   // 임포트가 풀린다(밖으로 나가는 것만 막힌다).
-  { from: ".claude/CLAUDE.md", to: ".claude/harness.md" },
+  //
+  // **이 저장소도 같은 파일을 같은 방식으로 읽는다.** 여기 `CLAUDE.md` 는 규약을 임포트하고
+  // 이 저장소 사정만 덧붙인다 — 그래서 임포트가 깨지면 A 가 아니라 여기서 먼저 드러난다.
+  { from: ".claude/harness.md", to: ".claude/harness.md" },
 ];
 
 /**

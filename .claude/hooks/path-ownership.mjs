@@ -64,7 +64,7 @@ function rulesFor({ source, harnessFiles, specRoot }) {
   return {
     실행자: {
       deny: [
-        { paths: source, why: "저장소 코드는 작업 세션의 몫이다. `scripts/spawn.ps1 \"<원문>\"` 으로 띄워라 — 오타·리팩터도 마찬가지다." },
+        { paths: source, why: "저장소 코드는 작업 세션의 몫이다. `harness spawn \"<원문>\"` 으로 띄워라 — 오타·리팩터도 마찬가지다." },
         { paths: [spec], why: "spec 과 QA 체크리스트는 작업 세션·qa 의 산출물이다." },
       ],
     },

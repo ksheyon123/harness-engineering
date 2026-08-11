@@ -35,7 +35,7 @@
 
    **남은 것 셋:**
 
-   - **복사된 `harness.md` 가 이 저장소의 도구 경로를 가리킨다.** `scripts/spawn.ps1` · `node scripts/reap-worktrees.mjs` · `docs/backlog.md` 는 A 에 없다. 층 1 의 deny 메시지도 `scripts/spawn.ps1` 을 안내한다. **설치는 기계적으로 성립하는데 지시가 없는 도구를 가리킨다** — `harness <명령>` 으로 바꾸고 `spawn` 을 CLI 에 올려야 한다
+   - ~~복사된 문서가 이 저장소의 도구 경로를 가리키는 것~~ ✅ **문서를 갈랐다.** `.claude/harness.md` 는 규약만이고 A 로 복사되는 것이 그것이다. 이 저장소의 `CLAUDE.md` 는 `@harness.md` 를 임포트하고 자기 사정(파일 목록·미착수 표)만 덧붙인다 — **그래서 이 저장소도 A 와 똑같은 방식으로 규약을 읽는다.** 도구 호출은 전부 `harness <명령>` 이고 `spawn` 이 CLI 에 올라갔다(비Windows 에서는 없다고 말하고 멈춘다). 층 1 의 deny 메시지도 같이 고쳤다
    - **`chmod` 는 이 기계에서 검증이 안 된다.** Windows 에 실행권한 개념이 없어 그 테스트는 POSIX 에서만 의미가 있다 → CI 없이는 안 켜진다
    - ~~**`sync`**~~ ✅ **있다.** `init` 이 `.claude/harness-manifest.json` 에 버전과 내용 해시를 남기고, `sync` 가 그 기록으로 세 경우를 가른다 — 최신이면 그대로, **설치 그대로면 갱신**, 둘 다 아니면 **A 가 손댄 것이라 덮지 않고 알린다.** `doctor` 가 설치본 버전과 패키지 버전이 다르면 짚는다. 해시는 줄바꿈을 normalize 한 뒤 잰다(A 가 `core.autocrlf=true` 면 체크아웃이 LF 를 CRLF 로 바꿔 멀쩡한 파일이 '수정됨' 으로 잡힌다)
 

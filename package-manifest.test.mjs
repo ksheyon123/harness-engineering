@@ -66,8 +66,14 @@ describe("발행되는 tarball", () => {
     // 하므로 원본이 tarball 에 있어야 한다.
     expect(has(".claude/agents/developer.md")).toBe(true);
     expect(has(".claude/agents/qa.md")).toBe(true);
-    expect(has(".claude/CLAUDE.md")).toBe(true);
+    expect(has(".claude/harness.md")).toBe(true);
     expect(has(".claude/planner-mode.md")).toBe(true);
+  });
+
+  it("이 저장소의 `CLAUDE.md` 는 담기지 않는다", () => {
+    // 그건 규약이 아니라 **이 저장소 사정**이다 — 파일 목록·미착수 표·backlog 포인터.
+    // A 로 딸려가면 없는 경로를 가리키는 문서가 된다.
+    expect(has(".claude/CLAUDE.md")).toBe(false);
   });
 
   it("실행 가능한 스크립트가 담긴다", () => {

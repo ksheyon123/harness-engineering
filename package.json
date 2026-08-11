@@ -8,7 +8,7 @@
     "node": ">=18"
   },
   "files": [
-    ".claude/CLAUDE.md",
+    ".claude/harness.md",
     ".claude/planner-mode.md",
     ".claude/agents/",
     ".claude/hooks/",
