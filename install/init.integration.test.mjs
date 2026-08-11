@@ -203,6 +203,23 @@ describe("설치된 하네스 (tarball → init)", () => {
     }
   });
 
+  it("설치 기록을 남긴다 — `sync` 가 낡음을 판정하는 근거다", () => {
+    const manifest = JSON.parse(readFileSync(join(A, ".claude/harness-manifest.json"), "utf8"));
+
+    expect(manifest.version).toBe(JSON.parse(readFileSync(join(REPO, "package.json"), "utf8")).version);
+    expect(Object.keys(manifest.files)).toContain(".claude/harness.md");
+  });
+
+  it("`harness sync` 가 설치본에서 돌고, 갓 설치한 것에는 손대지 않는다", () => {
+    const out = execFileSync(
+      process.execPath,
+      [join(A, "node_modules", PKG_NAME, "scripts", "harness.mjs"), "sync"],
+      { cwd: A, env: cleanEnv(), encoding: "utf8" },
+    );
+
+    expect(out).toContain("다시 쓸 것이 없다");
+  });
+
   it("다시 돌려도 바꿀 것이 없다", () => {
     const out = execFileSync(
       process.execPath,

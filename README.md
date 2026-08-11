@@ -98,7 +98,7 @@ node scripts/harness.mjs doctor    # 또는 node scripts/doctor.mjs
   worktrees/         격리된 사본이 쌓이는 곳 (추적 안 함)
 .githooks/           pre-commit · pre-push
 scripts/             harness.mjs · spawn.ps1 · reap-worktrees.mjs · doctor.mjs
-install/             init.mjs — 다른 저장소에 이 하네스를 설치한다
+install/             init.mjs · sync.mjs — 다른 저장소에 설치하고 갱신한다
 harness.config.json  프로젝트마다 달라지는 값 (없으면 기본값 — 이 저장소는 두지 않는다)
 harness/<task>/      spec.md · qa-checklist.md   ← 산출물
 docs/                backlog.md

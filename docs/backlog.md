@@ -37,7 +37,7 @@
 
    - **복사된 `harness.md` 가 이 저장소의 도구 경로를 가리킨다.** `scripts/spawn.ps1` · `node scripts/reap-worktrees.mjs` · `docs/backlog.md` 는 A 에 없다. 층 1 의 deny 메시지도 `scripts/spawn.ps1` 을 안내한다. **설치는 기계적으로 성립하는데 지시가 없는 도구를 가리킨다** — `harness <명령>` 으로 바꾸고 `spawn` 을 CLI 에 올려야 한다
    - **`chmod` 는 이 기계에서 검증이 안 된다.** Windows 에 실행권한 개념이 없어 그 테스트는 POSIX 에서만 의미가 있다 → CI 없이는 안 켜진다
-   - **`sync`** — 설치본의 문서(`harness.md` · `planner-mode.md` · `agents/*.md`)를 패키지 갱신에 맞춰 다시 쓰는 명령. 버전 스탬프를 두고 `doctor` 가 낡음을 짚어야 한다
+   - ~~**`sync`**~~ ✅ **있다.** `init` 이 `.claude/harness-manifest.json` 에 버전과 내용 해시를 남기고, `sync` 가 그 기록으로 세 경우를 가른다 — 최신이면 그대로, **설치 그대로면 갱신**, 둘 다 아니면 **A 가 손댄 것이라 덮지 않고 알린다.** `doctor` 가 설치본 버전과 패키지 버전이 다르면 짚는다. 해시는 줄바꿈을 normalize 한 뒤 잰다(A 가 `core.autocrlf=true` 면 체크아웃이 LF 를 CRLF 로 바꿔 멀쩡한 파일이 '수정됨' 으로 잡힌다)
 
 ~~**빌드는 없다 — 대신 발행 위생이 있다.**~~ ✅ **끝났다.** 컴파일할 것이 없다는 판단은 그대로다: TS 가 아니고(`.mjs` + `"type": "module"`), 소비자가 `import` 하는 라이브러리가 아니라 **Claude Code·git 이 별도 프로세스로 부르는 실행 파일**이며, payload 의 절반은 `.md` 다. `dist/` 를 만들면 **게이트가 검사한 트리와 발행되는 트리가 갈리기만** 한다.
 

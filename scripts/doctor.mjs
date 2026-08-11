@@ -30,12 +30,16 @@ import { fileURLToPath } from "node:url";
 import { matches } from "../.claude/hooks/glob.mjs";
 import { CONFIG_FILE, DEFAULTS, loadConfig } from "../.claude/hooks/harness-config.mjs";
 import { cleanEnv } from "../.claude/hooks/hook-kit.mjs";
+import { MANIFEST_PATH, parseManifest } from "../install/managed.mjs";
 
 /** 경로 패턴을 쓰는 키. 저장소에 실제로 걸리는지 확인할 수 있는 것들이다. */
 const PATH_KEYS = ["source", "harnessFiles"];
 
+/** 이 패키지의 루트. 설치본에서는 `node_modules/<이름>/` 이 된다. */
+const PKG_ROOT = fileURLToPath(new URL("..", import.meta.url));
+
 export function diagnose(baseDir) {
-  const notes = [];
+  const notes = [...installNotes(baseDir)];
   const path = join(baseDir, CONFIG_FILE);
 
   if (!existsSync(path)) {
@@ -81,6 +85,56 @@ export function diagnose(baseDir) {
   notes.push(...keyProblems(raw));
   notes.push(...pathProblems(loadConfig(baseDir), baseDir));
   return notes;
+}
+
+/**
+ * 설치본이 낡았는가.
+ *
+ * A 의 복사본(`harness.md` · `agents/*.md` · shim)은 `npm update` 로 갱신되지 않는다.
+ * 낡으면 **에이전트는 옛 규약대로 돌고 훅은 새 규칙으로 판정한다** — 그 어긋남을 아무도
+ * 알아채지 못하는 것이 문제라, 물어볼 수 있는 유일한 자리가 여기다.
+ *
+ * 설치되지 않은 저장소(이 저장소가 그렇다)에서는 아무 말도 하지 않는다.
+ */
+function installNotes(baseDir) {
+  const manifestPath = join(baseDir, MANIFEST_PATH);
+  if (!existsSync(manifestPath)) return []; // 설치본이 아니다.
+
+  const manifest = parseManifest(readFileSync(manifestPath, "utf8"));
+  if (!manifest) {
+    return [{ level: "error", text: `\`${MANIFEST_PATH}\` 를 읽을 수 없다 — \`harness sync\` 가 판단 근거를 잃는다.` }];
+  }
+
+  const installed = installedVersion(baseDir);
+  if (!installed) {
+    return [
+      {
+        level: "warning",
+        text: `설치본은 \`${manifest.version}\` 인데 패키지를 찾지 못했다 — \`node_modules\` 가 없는가?`,
+      },
+    ];
+  }
+  if (installed === manifest.version) return [];
+
+  return [
+    {
+      level: "warning",
+      text:
+        `복사본이 \`${manifest.version}\` 인데 패키지는 \`${installed}\` 다. ` +
+        `\`harness sync\` 로 다시 써라 — 안 하면 에이전트가 옛 규약대로 돈다.`,
+    },
+  ];
+}
+
+/** A 에 깔린 패키지의 버전. `node_modules` 에서 읽는다. */
+function installedVersion(baseDir) {
+  try {
+    const own = JSON.parse(readFileSync(join(PKG_ROOT, "package.json"), "utf8"));
+    const path = join(baseDir, "node_modules", own.name, "package.json");
+    return JSON.parse(readFileSync(path, "utf8")).version;
+  } catch {
+    return null;
+  }
 }
 
 /** 키 이름과 타입. **`DEFAULTS` 가 정답지다** — 여기에 목록을 또 두지 않는다. */

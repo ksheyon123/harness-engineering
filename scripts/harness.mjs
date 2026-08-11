@@ -11,8 +11,7 @@
  *
  * ## 없는 명령은 여기 적지 않는다
  *
- * `sync`(설치본 문서 갱신)는 아직 없다. 목록에 미리 올려두면 "있는데 안 되는" 상태가
- * 되고, 그것은 없는 것보다 나쁘다.
+ * 목록에 미리 올려두면 "있는데 안 되는" 상태가 되고, 그것은 없는 것보다 나쁘다.
  */
 
 import { spawnSync } from "node:child_process";
@@ -26,6 +25,7 @@ import { fileURLToPath } from "node:url";
  */
 const COMMANDS = {
   init: "../install/init.mjs",
+  sync: "../install/sync.mjs",
   doctor: "doctor.mjs",
   reap: "reap-worktrees.mjs",
 };
@@ -57,6 +57,7 @@ function usage() {
   process.stdout.write(
     "사용법: harness <명령>\n\n" +
       "  init     이 저장소에 하네스를 설치한다 (`--dry-run` 으로 먼저 볼 수 있다)\n" +
+      "  sync     설치본의 복사본을 패키지 현재 버전으로 다시 쓴다\n" +
       "  doctor   harness.config.json 을 검사해 보고한다\n" +
       "  reap     회수가 끝난 서브에이전트 사본을 거둔다\n\n",
   );

@@ -31,39 +31,23 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "n
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import {
+  GITHOOK_SHIMS,
+  HOOK_SHIMS,
+  MANIFEST_PATH,
+  VERBATIM,
+  hashOf,
+  manifestContents,
+} from "./managed.mjs";
+
 /** 패키지 루트. 이 파일은 `<pkg>/install/` 에 있다. */
 const PKG = fileURLToPath(new URL("..", import.meta.url));
 
 /** 설치될 때 A 가 `import` 할 이름. 패키지 자신의 것을 읽는다 — 여기 적으면 사본이 된다. */
 const PKG_NAME = JSON.parse(readFileSync(join(PKG, "package.json"), "utf8")).name;
 
-/**
- * A 의 `.claude/hooks/` 에 남길 shim.
- *
- * 훅 본체는 임포트되는 순간 판정을 내보내고 끝난다 — 그래서 한 줄이면 된다.
- * **내용이 영원히 바뀌지 않으므로 드리프트가 없다.**
- */
-const HOOK_SHIMS = [
-  "path-ownership.mjs",
-  "session-role.mjs",
-  "verify-green.mjs",
-  "verify-checklist.mjs",
-];
-
-/** `.githooks/` 쪽 shim. 셸 진입점이 `$(dirname "$0")/<이름>.mjs` 를 부른다. */
-const GITHOOK_SHIMS = ["pre-commit.mjs", "pre-push.mjs", "mark-verified.mjs"];
-
-/** 그대로 복사할 것. 셸 진입점은 git 이 직접 실행하므로 shim 이 될 수 없다. */
-const VERBATIM = [
-  { from: ".githooks/pre-commit", to: ".githooks/pre-commit", exec: true },
-  { from: ".githooks/pre-push", to: ".githooks/pre-push", exec: true },
-  { from: ".claude/agents/developer.md", to: ".claude/agents/developer.md" },
-  { from: ".claude/agents/qa.md", to: ".claude/agents/qa.md" },
-  { from: ".claude/planner-mode.md", to: ".claude/planner-mode.md" },
-  // 규약 본문. A 의 `CLAUDE.md` 가 `@harness.md` 로 끌어온다 — 루트 안이라 worktree 에서도
-  // 임포트가 풀린다(밖으로 나가는 것만 막힌다).
-  { from: ".claude/CLAUDE.md", to: ".claude/harness.md" },
-];
+/** 패키지 버전. 설치 흔적에 남아 `sync`·`doctor` 가 낡음을 판정하는 근거가 된다. */
+const PKG_VERSION = JSON.parse(readFileSync(join(PKG, "package.json"), "utf8")).version;
 
 /** A 의 `.claude/CLAUDE.md` 가 반드시 품어야 할 한 줄. */
 const IMPORT_LINE = "@harness.md";
@@ -114,6 +98,12 @@ export function plan(tree, git) {
       exec: item.exec ?? false,
     });
   }
+
+  // 하네스가 통째로 소유하는 것들의 해시를 남긴다. 아래 병합 파일은 A 의 것이라 안 남긴다.
+  const owned = Object.fromEntries(
+    steps.filter((s) => s.kind === "file").map((s) => [s.path, hashOf(s.contents)]),
+  );
+  steps.push(file(tree, MANIFEST_PATH, manifestContents({ version: PKG_VERSION, files: owned })));
 
   steps.push(claudeMd(tree));
   steps.push(gitignore(tree));
