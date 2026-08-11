@@ -144,7 +144,9 @@ git branch --list 'worktree-agent-*' --contains <내 spec 커밋 sha>
 
 **어떻게 — 순서가 있다.**
 
-1. **설정 추출이 먼저다.** `harness.config.json`(`gate` · `source` · `specRoot` · `protectedBranches`)을 만들고 위 네 파일이 그걸 읽게 한다. 이걸 건너뛰고 패키지부터 만들면 하드코딩이 `node_modules` 안으로 들어가 더 고치기 어려워진다. **게이트 정의의 단일 출처가 `scripts.test` 에서 여기로 옮겨간다** — 사본이 느는 게 아니라 자리가 바뀌는 것이지만, `posttest` 의 "성공했을 때만 돈다" 보장을 종료 코드로 직접 재현해야 한다
+1. ~~**설정 추출이 먼저다.**~~ ✅ **끝났다.** `.claude/hooks/harness-config.mjs` 가 `harness.config.json`(`gate` · `source` · `harnessFiles` · `specRoot` · `protectedBranches`)을 읽고, 네 파일이 전부 그걸 쓴다. 기본값이 이 저장소의 동작 그대로라 **파일이 없어도 아무것도 안 바뀐다** — 그래서 이 저장소는 설정 파일을 두지 않는다(사본을 만들지 않기 위해).
+   - **남은 것**: 설정이 오타 나면 조용히 기본값으로 돌아간다. 여기서 던지지 않는 이유는 `PreToolUse` 훅이 죽으면 차단이 아니라 **통과**가 되기 때문이다. 검증은 `doctor` 의 몫으로 남는다
+   - **남은 것**: `posttest` 의 "성공했을 때만 돈다" 보장은 아직 npm 에 얹혀 있다. `gate` 를 npm 밖 명령으로 바꾸면 그 기록이 안 남고 `pre-push` 가 막는다
 2. **배포 수단은 플러그인 + A 의 실체 파일을 섞는 형태가 된다.** 플러그인은 CLI 쪽에 설치되어 **프로젝트 기준 해석에 아예 안 걸리므로** 위 근거 3 의 두 함정을 비껴간다(실측: 훅·주입 지침·에이전트가 **진짜 worktree 안에서 동작**했다). 다만 아래에서 보듯 **에이전트 정의와 종료 훅은 플러그인이 못 가져간다** — 그 둘은 A 에 남는다
 3. **그래도 층 2 는 플러그인이 못 싣는다.** `.githooks/` · `core.hooksPath` · `harness.config.json` · `.gitignore` · 러너 제외 · `posttest` 는 A 에 남는다. `init`/`doctor` 가 그 다섯을 처리하고, 처리 못 하면 **덮어쓰지 말고 멈춰서 알린다**
 

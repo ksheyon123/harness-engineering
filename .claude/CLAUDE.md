@@ -14,6 +14,7 @@
 .claude/planner-mode.md    기획자 모드의 spec 작성 지침 (에이전트 아님)
 docs/backlog.md            확인됐지만 안 고친 것 — 왜 문제이고 어떻게 고치는지 (실행자가 읽는다)
 .claude/hooks/             층 1 · 종료 훅 · 세션 훅 (hook-kit.mjs = 공통 배선)
+                           harness-config.mjs = 프로젝트마다 달라지는 값의 단일 출처
 .githooks/                 층 2 — pre-commit · pre-push (core.hooksPath 가 가리킨다)
 .claude/settings.json      permissions + worktree.baseRef
 vitest.config.mjs          테스트 러너 설정
@@ -378,7 +379,9 @@ spec 을 찾아야 하면 `harness/` 를 직접 훑어라. 디렉터리가 곧 �
 
 ### 검증 — 게이트는 `npm test` 다
 
-**게이트 정의의 단일 출처는 `package.json` 의 `scripts.test` 다.** (`posttest` 는 게이트가 아니라 그 결과를 기록하는 자리다 — `pre-push` 가 읽는다.) 대상을 바꾸려면 그 스크립트를 고친다 — typecheck 이 필요해지면 `"test": "tsc --noEmit && vitest run"` 처럼 거기에 더한다. 별도 설정 파일이나 러너 스크립트를 두지 않는다.
+**게이트 정의의 단일 출처는 `package.json` 의 `scripts.test` 다.** (`posttest` 는 게이트가 아니라 그 결과를 기록하는 자리다 — `pre-push` 가 읽는다.) 대상을 바꾸려면 그 스크립트를 고친다 — typecheck 이 필요해지면 `"test": "tsc --noEmit && vitest run"` 처럼 거기에 더한다. 별도 러너 스크립트를 두지 않는다.
+
+> **명령과 대상은 자리가 다르다.** *무엇을 검사하는가*는 `scripts.test` 가 정하고, *어떤 명령을 부르는가*는 `harness.config.json` 의 `gate` 가 정한다(기본값 `npm test` — 이 저장소는 그 파일을 두지 않으므로 기본값으로 돈다). 출처가 둘로 는 것이 아니라 각각 한 곳씩 갖는다. npm 이 아닌 프로젝트는 `gate` 만 바꾸면 된다.
 
 **그 명령을 이 파일에도, 훅에도, 에이전트 정의에도 복사하지 않는다.** CLAUDE.md 는 컨텍스트일 뿐 강제가 아니라서, 사본은 강제력을 더하지 않으면서 원본과 어긋난다. 그리고 **낡은 사본은 없는 것보다 나쁘다**: 문서가 게이트보다 넓게 적히면 그 차이만큼의 검사가 실행되지 않는데, 세션은 문서를 근거로 '통과했다'고 확신한다.
 

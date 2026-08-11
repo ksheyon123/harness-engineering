@@ -1,4 +1,6 @@
 import { spawnSync } from "node:child_process";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -113,6 +115,39 @@ describe("path-ownership — 층 1 경로 소유권", () => {
     it("게이트 정의를 고치려 하면 막는다", () => {
       expect(ask("package.json", { agent: "developer" }).verdict).toBe("deny");
       expect(ask(".claude/hooks/verify-green.mjs", { agent: "developer" }).verdict).toBe("deny");
+    });
+  });
+
+  describe("설정을 읽는다", () => {
+    /** `harness.config.json` 이 놓인 임시 트리. 훅은 이 트리를 `cwd` 로 판정한다. */
+    function repoWith(config) {
+      const dir = mkdtempSync(join(tmpdir(), "path-ownership-"));
+      writeFileSync(join(dir, "harness.config.json"), JSON.stringify(config));
+      return dir;
+    }
+
+    it("source 를 바꾸면 그 경로가 저장소 코드가 된다", () => {
+      const cwd = repoWith({ source: ["app/**"] });
+
+      expect(ask("app/main.py", { cwd }).verdict).toBe("deny"); // 실행자는 코드를 안 고친다
+      expect(ask("app/main.py", { ...WORK, cwd }).verdict).toBe("ask");
+      expect(ask("src/legacy.js", { cwd }).verdict).toBe("defer"); // 더는 소스가 아니다
+    });
+
+    it("specRoot 를 바꾸면 spec 과 체크리스트가 따라간다", () => {
+      const cwd = repoWith({ specRoot: "docs/specs" });
+
+      expect(ask("docs/specs/login/spec.md", { ...WORK, cwd }).verdict).toBe("defer");
+      expect(ask("docs/specs/login/spec.md", { agent: "developer", cwd }).verdict).toBe("deny");
+      expect(ask("docs/specs/login/qa-checklist.md", { agent: "qa", cwd }).verdict).toBe("allow");
+      expect(ask("harness/login/spec.md", { agent: "qa", cwd }).verdict).toBe("deny");
+    });
+
+    it("harnessFiles 를 바꾸면 작업 세션이 막히는 곳이 바뀐다", () => {
+      const cwd = repoWith({ harnessFiles: ["tools/**"] });
+
+      expect(ask("tools/gate.sh", { ...WORK, cwd }).verdict).toBe("deny");
+      expect(ask("package.json", { ...WORK, cwd }).verdict).toBe("defer"); // 목록에서 빠졌다
     });
   });
 

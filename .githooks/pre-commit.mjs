@@ -8,22 +8,33 @@
  *
  * 세 가지다:
  *
- * 1. **브랜치** — `main`/`dev`/`master` 에 직접 커밋하지 않는다. 사람이 PR 을 머지하는 머지 커밋은
+ * 1. **브랜치** — 보호 브랜치에 직접 커밋하지 않는다. 사람이 PR 을 머지하는 머지 커밋은
  *    `pre-merge-commit` 이 받으므로 여기 걸리지 않는다.
  * 2. **전체 스테이징** — 부분 스테이징을 막는다. 검사한 트리와 커밋되는 내용이 어긋나면
  *    검사가 무의미해지고, 역할이 만든 파일이 조용히 누락된다.
- * 3. **spec 형식** — 스테이징된 `harness/<task>/spec.md` 가 인계될 수 있는 모양인가.
+ * 3. **spec 형식** — 스테이징된 `<specRoot>/<task>/spec.md` 가 인계될 수 있는 모양인가.
  *    커밋이 곧 인계이므로 이 자리가 맞고, **누가 커밋하든 걸린다.**
+ *
+ * 보호 브랜치 목록과 spec 위치는 `harness.config.json` 이 정한다(기본값 `main`/`dev`/
+ * `master` · `harness`).
  *
  * 막혔는데 정말 지나가야 한다면 `git commit --no-verify` 다. 규약을 어기는 것이므로
  * 그 사실이 보이게 남는다.
  */
 
 import { execFileSync } from "node:child_process";
+import { loadConfig } from "../.claude/hooks/harness-config.mjs";
 import { problemsIn } from "../.claude/hooks/spec-shape.mjs";
 
+/**
+ * 설정은 **cwd 기준**으로 읽는다. `core.hooksPath` 가 절대경로라 worktree 에서 커밋해도
+ * 본체의 이 스크립트가 불리는데, git 은 훅의 cwd 를 커밋이 일어나는 트리의 top-level 로
+ * 놓는다. 모듈 위치 기준으로 찾으면 본체 설정을 읽어버린다.
+ */
+const { protectedBranches, specRoot } = loadConfig(process.cwd());
+
 /** 직접 커밋을 막을 브랜치. */
-const PROTECTED = new Set(["main", "dev", "master"]);
+const PROTECTED = new Set(protectedBranches);
 
 const problems = [
   ...protectedBranch(),
@@ -120,7 +131,9 @@ function partiallyStaged() {
 function malformedSpecs() {
   let staged;
   try {
-    staged = git(["diff", "--cached", "--name-only", "-z", "--diff-filter=d", "--", "harness/"]);
+    staged = git([
+      "diff", "--cached", "--name-only", "-z", "--diff-filter=d", "--", `${specRoot}/`,
+    ]);
   } catch {
     return [];
   }

@@ -37,63 +37,57 @@
  */
 
 import { relative, resolve } from "node:path";
+import { loadConfig } from "./harness-config.mjs";
 import { emit, readHookInput } from "./hook-kit.mjs";
 
 /**
- * 자리별 규칙. `deny`·`ask` 는 막을 경로, `only` 는 **그것 말고 전부 막는다**.
+ * 자리별 규칙을 **설정에서** 짓는다. `deny`·`ask` 는 막을 경로, `only` 는 **그것 말고
+ * 전부 막는다**.
  *
  * 실행자는 하네스가 본업이라 금지 목록이 짧고, `qa` 는 산출물이 하나뿐이라 허용 목록이
  * 짧다 — 짧은 쪽으로 적어야 규칙이 실재와 어긋나지 않는다.
  *
  * `unattended` 는 **그 자리에 사람이 없다**는 뜻이다. 프롬프트가 떠도 답할 사람이 없으므로
  * 허용을 `defer` 가 아니라 `allow` 로 확정한다(위 머리주석 참고).
- */
-/**
- * 하네스 파일 — **여기 드는 기준은 하나다: 고치면 하네스의 동작이 바뀌는가.**
  *
- * 훅은 강제를 정의하고, 에이전트 정의는 권한을 정의하고, `package.json` 은 게이트를
- * 정의한다. 그래서 `developer` 가 `verify-green.mjs` 를 만질 수 있으면 자기 게이트를
- * 끌 수 있다 — 막아야 하는 것은 그런 것들이다.
+ * `harnessFiles` 에 드는 기준은 하나다 — **고치면 하네스의 동작이 바뀌는가.** 훅은 강제를,
+ * 에이전트 정의는 권한을, 게이트 설정은 검증을 정의한다. `developer` 가 `verify-green.mjs`
+ * 를 만질 수 있으면 자기 게이트를 끌 수 있다.
  *
  * **하네스에 *대한* 산문은 여기 들지 않는다**(`README.md` · `docs/**`). 고쳐도 강제되는
  * 것은 하나도 안 바뀐다. 누가 쓰느냐는 규약이 정할 문제지 층이 정할 문제가 아니다.
  */
-const HARNESS_FILES = [
-  ".claude/**",
-  ".githooks/**",
-  "scripts/**",
-  "package.json",
-  "package-lock.json",
-  "vitest.config.mjs",
-];
+function rulesFor({ source, harnessFiles, specRoot }) {
+  const spec = `${specRoot}/**`;
 
-const RULES = {
-  실행자: {
-    deny: [
-      { paths: ["src/**"], why: "저장소 코드는 작업 세션의 몫이다. `scripts/spawn.ps1 \"<원문>\"` 으로 띄워라 — 오타·리팩터도 마찬가지다." },
-      { paths: ["harness/**"], why: "spec 과 QA 체크리스트는 작업 세션·qa 의 산출물이다." },
-    ],
-  },
-  "작업 세션": {
-    deny: [
-      { paths: HARNESS_FILES, why: "하네스는 실행자 자리다. 맨몸 `claude` 세션에서 고쳐라." },
-    ],
-    ask: [
-      { paths: ["src/**"], why: "소스는 역할이 자기 사본에서 고치고 너는 커밋·머지만 한다. 머지 충돌을 푸는 경우라면 사람이 승인해야 한다." },
-    ],
-  },
-  developer: {
-    unattended: true,
-    deny: [
-      { paths: ["harness/**"], why: "spec 은 기획자, 체크리스트는 qa 의 것이다. 틀렸다고 판단되면 고치지 말고 보고하라." },
-      { paths: HARNESS_FILES, why: "하네스와 게이트 정의는 이 자리에서 만지지 않는다." },
-    ],
-  },
-  qa: {
-    unattended: true,
-    only: { paths: ["harness/**/qa-checklist.md"], why: "qa 의 산출물은 체크리스트 하나다. 코드도 spec 도 고치지 않는다." },
-  },
-};
+  return {
+    실행자: {
+      deny: [
+        { paths: source, why: "저장소 코드는 작업 세션의 몫이다. `scripts/spawn.ps1 \"<원문>\"` 으로 띄워라 — 오타·리팩터도 마찬가지다." },
+        { paths: [spec], why: "spec 과 QA 체크리스트는 작업 세션·qa 의 산출물이다." },
+      ],
+    },
+    "작업 세션": {
+      deny: [
+        { paths: harnessFiles, why: "하네스는 실행자 자리다. 맨몸 `claude` 세션에서 고쳐라." },
+      ],
+      ask: [
+        { paths: source, why: "소스는 역할이 자기 사본에서 고치고 너는 커밋·머지만 한다. 머지 충돌을 푸는 경우라면 사람이 승인해야 한다." },
+      ],
+    },
+    developer: {
+      unattended: true,
+      deny: [
+        { paths: [spec], why: "spec 은 기획자, 체크리스트는 qa 의 것이다. 틀렸다고 판단되면 고치지 말고 보고하라." },
+        { paths: harnessFiles, why: "하네스와 게이트 정의는 이 자리에서 만지지 않는다." },
+      ],
+    },
+    qa: {
+      unattended: true,
+      only: { paths: [`${specRoot}/**/qa-checklist.md`], why: "qa 의 산출물은 체크리스트 하나다. 코드도 spec 도 고치지 않는다." },
+    },
+  };
+}
 
 const input = readHookInput();
 const decision = decide(input);
@@ -107,12 +101,13 @@ emit({
 });
 
 function decide(hookInput) {
-  const seat = seatOf(hookInput);
-  const rules = RULES[seat];
-  if (!rules) return { verdict: "defer" }; // 모르는 자리 — 판정하지 않는다.
-
   const path = repoRelative(hookInput);
   if (!path) return { verdict: "defer" }; // 경로가 없거나 저장소 밖이다.
+
+  const seat = seatOf(hookInput);
+  // 설정은 판정 대상 경로를 재는 기준과 같은 트리에서 읽는다.
+  const rules = rulesFor(loadConfig(hookInput.cwd))[seat];
+  if (!rules) return { verdict: "defer" }; // 모르는 자리 — 판정하지 않는다.
 
   for (const rule of rules.deny ?? []) {
     if (rule.paths.some((p) => matches(p, path))) {

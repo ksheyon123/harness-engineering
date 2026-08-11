@@ -2,7 +2,8 @@
 /**
  * SubagentStop 훅 — qa 는 근거 없는 표를 남기고 끝낼 수 없다.
  *
- * qa 의 산출물은 `harness/<task>/qa-checklist.md` 하나이고, 그것을 읽는 것은 사람이다.
+ * qa 의 산출물은 `<specRoot>/<task>/qa-checklist.md` 하나이고, 그것을 읽는 것은 사람이다
+ * (`specRoot` 는 `harness.config.json` 이 정한다 — 기본값 `harness`).
  * QA 는 비차단(조언)이라 아무것도 막지 않으므로, **표가 틀려도 알려주는 장치가 없다.**
  * 그래서 최소한의 형태만 여기서 잡는다.
  *
@@ -17,7 +18,11 @@
 
 import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { loadConfig } from "./harness-config.mjs";
 import { cleanEnv, emit, handoff, readHookInput, retryBudget } from "./hook-kit.mjs";
+
+/** 이 훅은 qa 의 worktree 를 cwd 로 돈다 — 산출물도 설정도 그 트리의 것이다. */
+const { specRoot } = loadConfig(process.cwd());
 
 /** 인계 커밋에 이름을 남길 역할. 오케스트레이터가 로그에서 출처를 읽는다. */
 const ROLE = "qa";
@@ -37,7 +42,7 @@ const NEEDS_EVIDENCE = /✅|△|❌[^|]*구현\s*있음/;
 function changedChecklists(env) {
   let out;
   try {
-    out = execSync("git status --porcelain -z -uall -- harness/", {
+    out = execSync(`git status --porcelain -z -uall -- ${specRoot}/`, {
       env,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
@@ -122,7 +127,7 @@ function problemsIn(path) {
       problems.push(`\`${path}\`: frontmatter 를 닫는 \`---\` 가 없다.`);
     } else if (!lines.slice(1, close).some((line) => /^spec:\s*\S/.test(line))) {
       problems.push(
-        `\`${path}\`: frontmatter 에 \`spec: harness/<task>/spec.md\` 가 없다 — ` +
+        `\`${path}\`: frontmatter 에 \`spec: ${specRoot}/<task>/spec.md\` 가 없다 — ` +
           `무엇을 대조한 표인지 남아야 한다.`,
       );
     }
@@ -156,7 +161,7 @@ if (checklists === null) emit(null);
 const problems =
   checklists.length === 0
     ? [
-        "이번에 쓴 `harness/<task>/qa-checklist.md` 가 없다. " +
+        `이번에 쓴 \`${specRoot}/<task>/qa-checklist.md\` 가 없다. ` +
           "체크리스트는 네 유일한 산출물이고, 없으면 사람이 볼 것이 없다.",
       ]
     : checklists.flatMap(problemsIn);

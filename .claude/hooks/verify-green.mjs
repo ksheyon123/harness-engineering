@@ -12,12 +12,16 @@
  * 커밋으로 굳힌다. worktree 는 커밋된 상태만 밖으로 보이고, 커밋할 수 있는 자리가
  * 여기밖에 없다.
  *
- * 게이트 대상의 단일 출처는 `package.json` 의 `scripts.test` 다. 여기에 명령을 적지
- * 않는다 — 사본은 강제력을 더하지 않으면서 원본과 어긋나고, 낡은 사본은 없는 것보다
- * 나쁘다(세션이 틀린 검사를 돌리고 통과했다고 확신한다).
+ * **돌릴 명령은 `harness.config.json` 의 `gate` 가 정한다**(기본값 `npm test`). 여기에
+ * 명령을 적지 않는다 — 사본은 강제력을 더하지 않으면서 원본과 어긋나고, 낡은 사본은
+ * 없는 것보다 나쁘다(세션이 틀린 검사를 돌리고 통과했다고 확신한다).
+ *
+ * 기본값을 그대로 쓰면 *무엇을 검사하는지*는 여전히 `package.json` 의 `scripts.test` 가
+ * 혼자 정한다. 출처가 둘로 늘어난 것이 아니라, **명령과 대상이 각각 한 곳씩** 갖는다.
  */
 
 import { execSync } from "node:child_process";
+import { loadConfig } from "./harness-config.mjs";
 import { cleanEnv, emit, handoff, readHookInput, retryBudget } from "./hook-kit.mjs";
 
 /** 인계 커밋에 이름을 남길 역할. 오케스트레이터가 로그에서 출처를 읽는다. */
@@ -33,9 +37,12 @@ const env = cleanEnv();
 const input = readHookInput();
 const budget = retryBudget("verify-green", { env, input, max: MAX_ATTEMPTS });
 
+// 이 훅은 역할의 worktree 를 cwd 로 돈다 — 게이트도 설정도 그 트리의 것이라야 한다.
+const { gate } = loadConfig(process.cwd());
+
 let failure = null;
 try {
-  execSync("npm test", { env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  execSync(gate, { env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 } catch (error) {
   failure = `${error.stdout ?? ""}${error.stderr ?? ""}`.trim() || String(error);
 }
