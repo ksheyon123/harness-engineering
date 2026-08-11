@@ -78,6 +78,12 @@ describe("path-ownership — 층 1 경로 소유권", () => {
       expect(ask("vitest.config.mjs", WORK).verdict).toBe("deny");
     });
 
+    it("하네스 문서는 막지 않는다", () => {
+      // 고쳐도 강제되는 것이 하나도 안 바뀐다. 층이 판정할 대상이 아니다.
+      expect(ask("docs/backlog.md", WORK).verdict).toBe("defer");
+      expect(ask("README.md", WORK).verdict).toBe("defer");
+    });
+
     it("소스는 deny 가 아니라 ask 다", () => {
       // PreToolUse 에는 --no-verify 가 없다. 머지 충돌을 푸는 정당한 필요가 있으므로
       // 사람에게 넘긴다 — 갇히게 두지 않는다.

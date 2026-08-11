@@ -12,7 +12,7 @@
 .claude/CLAUDE.md          이 파일 — 하네스 코어 규약
 .claude/agents/*.md        developer · qa (서브에이전트 정의는 이 둘뿐이다)
 .claude/planner-mode.md    기획자 모드의 spec 작성 지침 (에이전트 아님)
-.claude/backlog.md         확인됐지만 안 고친 것 — 왜 문제이고 어떻게 고치는지 (실행자가 읽는다)
+docs/backlog.md            확인됐지만 안 고친 것 — 왜 문제이고 어떻게 고치는지 (실행자가 읽는다)
 .claude/hooks/             층 1 · 종료 훅 · 세션 훅 (hook-kit.mjs = 공통 배선)
 .githooks/                 층 2 — pre-commit · pre-push (core.hooksPath 가 가리킨다)
 .claude/settings.json      permissions + worktree.baseRef
@@ -20,7 +20,7 @@ vitest.config.mjs          테스트 러너 설정
 package.json               scripts.test = "vitest run"  ← 게이트 정의의 단일 출처
 ```
 
-여기에 `scripts/`(`spawn.ps1` — 작업 세션을 새 탭에 띄운다 · `reap-worktrees.mjs` — 회수된 에이전트 사본을 거둔다)와 `harness/<task>/`(spec · QA 체크리스트), `src/`(제품 코드)가 더 있다. 없는 것: `.claude/rules/` · `docs/`.
+여기에 `scripts/`(`spawn.ps1` — 작업 세션을 새 탭에 띄운다 · `reap-worktrees.mjs` — 회수된 에이전트 사본을 거둔다)와 `harness/<task>/`(spec · QA 체크리스트), `src/`(제품 코드)가 더 있다. 없는 것: `.claude/rules/`.
 
 > **기획자는 서브에이전트가 아니라 세션의 첫 모드다.** 스폰할 것이 없고, `.claude/agents/` 에는 `developer`·`qa` 둘만 있다. spec 작성 지침은 `.claude/planner-mode.md` 에 있다.
 
@@ -416,7 +416,7 @@ spec 을 찾아야 하면 `harness/` 를 직접 훑어라. 디렉터리가 곧 �
 
 ## 미착수 — 이 설계와 실재의 차이
 
-**여기는 *무엇이* 안 됐는지를 한 줄로 적는다. *왜 문제이고 어떻게 고치는지*는 `.claude/backlog.md` 에 있다** — 하네스를 손대러 왔다면 그쪽을 먼저 열어라. 항목을 고쳤으면 두 곳에서 다 지운다.
+**여기는 *무엇이* 안 됐는지를 한 줄로 적는다. *왜 문제이고 어떻게 고치는지*는 `docs/backlog.md` 에 있다** — 하네스를 손대러 왔다면 그쪽을 먼저 열어라. 항목을 고쳤으면 두 곳에서 다 지운다.
 
 | 무엇 | 상태 |
 |---|---|
