@@ -443,4 +443,5 @@ spec 을 찾아야 하면 `harness/` 를 직접 훑어라. 디렉터리가 곧 �
 | ~~서브에이전트가 `HARNESS_ROLE` 을 물려받는다~~ | ✅ **풀렸다.** 훅 입력의 `agent_type` 이 변수를 이긴다 |
 | 남의 저장소에 설치하는 수단 | 없다. 단일 저장소 전제로 설계돼 있어 파일 복사와 설정 병합을 손으로 해야 한다 → **backlog G** |
 | `node_modules` 를 겨냥한 배선이 worktree 에서 죽는 것 | 실측됐다. `@` 임포트는 프로젝트 루트 밖으로 못 나가고 `${CLAUDE_PROJECT_DIR}` 는 worktree 를 가리킨다 — **둘 다 조용히 실패한다** → **backlog G** |
-| 플러그인 에이전트의 `isolation`·`SubagentStop` | **미확인.** `claude -p` 로는 대조군도 안 걸려 판정 불가 — 대화형에서 재야 한다 → **backlog G** |
+| ~~플러그인 에이전트의 `isolation`·`SubagentStop`~~ | ✅ **쟀다. 둘 다 안 걸린다** — `tools:` 화이트리스트만 먹는다. `developer`·`qa` 는 플러그인으로 못 옮긴다 → **backlog G** |
+| `pre-push` 가 보호 브랜치로의 push 를 안 막는다 | 게이트 기록만 본다. 실제로 아무도 부르지 않은 `main` push 가 서버까지 갔다(원인 미상) → **backlog H** |

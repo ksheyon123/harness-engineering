@@ -145,7 +145,7 @@ git branch --list 'worktree-agent-*' --contains <내 spec 커밋 sha>
 **어떻게 — 순서가 있다.**
 
 1. **설정 추출이 먼저다.** `harness.config.json`(`gate` · `source` · `specRoot` · `protectedBranches`)을 만들고 위 네 파일이 그걸 읽게 한다. 이걸 건너뛰고 패키지부터 만들면 하드코딩이 `node_modules` 안으로 들어가 더 고치기 어려워진다. **게이트 정의의 단일 출처가 `scripts.test` 에서 여기로 옮겨간다** — 사본이 느는 게 아니라 자리가 바뀌는 것이지만, `posttest` 의 "성공했을 때만 돈다" 보장을 종료 코드로 직접 재현해야 한다
-2. **배포 수단은 플러그인이 유력하다.** 플러그인은 CLI 쪽에 설치되어 **프로젝트 기준 해석에 아예 안 걸린다** — 위 근거 3 의 두 함정을 통째로 비껴간다. 실측으로 훅·주입 지침·에이전트가 **진짜 worktree 안에서 동작**했다
+2. **배포 수단은 플러그인 + A 의 실체 파일을 섞는 형태가 된다.** 플러그인은 CLI 쪽에 설치되어 **프로젝트 기준 해석에 아예 안 걸리므로** 위 근거 3 의 두 함정을 비껴간다(실측: 훅·주입 지침·에이전트가 **진짜 worktree 안에서 동작**했다). 다만 아래에서 보듯 **에이전트 정의와 종료 훅은 플러그인이 못 가져간다** — 그 둘은 A 에 남는다
 3. **그래도 층 2 는 플러그인이 못 싣는다.** `.githooks/` · `core.hooksPath` · `harness.config.json` · `.gitignore` · 러너 제외 · `posttest` 는 A 에 남는다. `init`/`doctor` 가 그 다섯을 처리하고, 처리 못 하면 **덮어쓰지 말고 멈춰서 알린다**
 
 **빌드는 없다 — 대신 발행 위생이 있다.** 컴파일할 것이 없다: TS 가 아니고(`.mjs` + `"type": "module"`), 소비자가 `import` 하는 라이브러리가 아니라 **Claude Code·git 이 별도 프로세스로 부르는 실행 파일**이며, payload 의 절반은 `.md` 다. 오히려 `dist/` 를 만들면 **게이트가 검사한 트리와 발행되는 트리가 갈린다** — 이 문서가 반복해서 경계하는 그것이다. 필요한 것은 `files:` 화이트리스트(테스트를 발행하지 않는다) · `exports` 맵(`"./hooks/*"` — 실측 확인) · `bin` · `engines.node` 뿐이다.
@@ -154,13 +154,58 @@ git branch --list 'worktree-agent-*' --contains <내 spec 커밋 sha>
 
 > 이 문단의 마지막 고리("git 이 조용히 건너뛴다")는 **이 저장소에서 재현하지 못했다** — Windows git 은 실행권한을 파일 모드로 구분하지 않는다. POSIX 에서 확인해야 한다. 다만 `chmod +x` 와 검사를 넣는 비용이 워낙 작아, 확인 전이라도 넣는 쪽이 맞다.
 
-**미확인 — 이것이 2번의 전제다.** 플러그인이 제공하는 에이전트가 `isolation: worktree` 와 frontmatter `SubagentStop` 훅을 가질 수 있는지는 **못 쟀다.** `claude -p` 로는 프로젝트 에이전트(대조군)도 똑같이 안 걸렸으므로 **플러그인에 불리한 증거가 아니라 측정 방법의 한계**다. 대화형 세션에서 재야 한다. **아니면 `developer`·`qa` 는 플러그인으로 못 옮기고 A 에 남는다.**
+**플러그인이 가져갈 수 있는 것은 절반뿐이다 — 대화형에서 쟀다.** 플러그인이 제공한 에이전트를 실제로 스폰해 확인했다:
+
+| 무엇 | 결과 |
+|---|---|
+| `tools:` 화이트리스트 (층 0) | **동작한다.** 에이전트가 "쓸 수 있는 것은 `Read` 하나, Bash 없다" 고 보고했다 |
+| `isolation: worktree` | **안 붙는다.** `git worktree list` 에 사본이 늘지 않았다 |
+| frontmatter `SubagentStop` | **안 돈다.** 훅이 아무것도 남기지 않았다 |
+
+**그래서 `developer`·`qa` 는 플러그인으로 못 옮긴다.** 둘의 존재 이유가 정확히 뒤의 둘이다 — 격리된 사본에서 돌고, 종료 훅이 게이트를 걸고 인계 커밋을 찍는 것. 플러그인이 대신할 수 있는 것은 도구 화이트리스트까지다.
+
+남는 이득은 이렇게 줄어든다:
+
+| A 에 커밋되는 것 | 플러그인이 없앨 수 있나 |
+|---|---|
+| `agents/*.md` · 종료 훅 shim | **아니다** — 에이전트 frontmatter 가 부르므로 A 에 실체로 있어야 한다 |
+| `SessionStart`·`PreToolUse` 훅 shim | 가능 |
+| 문서(`CLAUDE.md` · `planner-mode.md`) | 가능 — `additionalContext` 주입으로 |
+
+즉 **문서 사본과 훅 shim 절반이 사라지고, 에이전트 정의와 종료 훅은 남는다.** `harness sync` 는 여전히 필요하다(범위가 줄 뿐이다).
+
+**부수 발견.** 플러그인을 깔거나 고치면 **세션을 다시 열어야 에이전트가 붙는다.** 스킬 목록은 세션 중에 갱신되는데 에이전트 레지스트리는 시작 시점에 고정된다 — `/reload-plugins` 로 풀린다. 설치 안내에 이 한 줄이 없으면 "깔았는데 에이전트가 없다" 로 막힌다.
 
 **딸린 것.** 플러그인 에이전트는 **`플러그인명:에이전트명`** 으로 네임스페이스된다 — 스폰 코드와 문서가 그만큼 바뀐다. 그리고 플러그인 에이전트·지침은 CLI 쪽에 있어 **A 가 프로젝트별로 못 고친다**(지금은 A 가 `developer.md` 를 자기 스택에 맞게 손볼 수 있다).
 
 **어디.** 1번은 `.claude/hooks/path-ownership.mjs` · `verify-green.mjs` · `verify-checklist.mjs` · `.githooks/pre-commit.mjs` + 각 테스트. 2·3번은 저장소 구조 전체 — **A 를 먼저 하고, 미확인 항목을 잰 뒤에 2번을 정한다.**
 
 **부수 사실.** `.gitignore` 의 "worktree 는 저장소 밖 형제 디렉터리에 두는 것이 원칙" 주석은 패키지화하면 **틀린다.** 사본이 A 안에 중첩돼 있어야만 `node_modules` 상향 해석이 닿고(훅 shim · worktree 안의 `npm test`), 밖으로 나가면 둘 다 깨진다. 2번을 할 때 같이 고친다.
+
+---
+
+## H — `pre-push` 가 보호 브랜치로의 push 를 막게 한다
+
+**증상.** 아무도 부르지 않은 `main` 체크아웃·머지·push 가 일어났다. 2026-08-11, 실행자 세션에서 관측됐다.
+
+**근거.** reflog:
+
+```
+a19a135 HEAD@{0}: merge docs/packaging-findings: Fast-forward
+d678e97 HEAD@{1}: checkout: moving from docs/packaging-findings to main
+```
+
+그리고 `git ls-remote origin` 이 `refs/heads/main` = `a19a135` 를 돌려줬다 — **서버까지 갔다.** 그 세션이 부른 push 는 `git push -u origin docs/packaging-findings` 하나뿐이고 `push.default` 는 기본값(`simple`)이라 그 명령으로 `main` 이 올라갈 수 없다. 시점은 서브에이전트 스폰 구간이었다. **원인 미상이고 재현 조건도 못 잡았다.**
+
+**어떻게 — 원인을 몰라도 결과는 막을 수 있다.** `pre-commit` 은 `main`/`dev`/`master` 직접 **커밋**을 막는데, **push** 에는 같은 방어선이 없다. `pre-push` 는 stdin 으로 `<local ref> <local sha> <remote ref> <remote sha>` 를 받으므로 `remote ref` 가 보호 브랜치면 거부하면 된다.
+
+- 지금 `pre-push` 가 보는 것은 **verified marker 하나**다. 게이트를 통과한 sha 면 어느 브랜치로 가든 통과한다 — 이번 건이 정확히 그 구멍으로 나갔다(같은 sha 라 marker 가 있었다)
+- 층 2 라 `--no-verify` 로 열린다. 봉인이 아니라 **방어선이고, 우회 사실이 명령에 남는 것이 요점**이다
+- 이걸 넣으면 원인이 무엇이든(사람의 오타든, 도구든) 같은 결과가 다시 나오지 않는다
+
+**어디.** `.githooks/pre-push.mjs` + `.githooks/pre-push.test.mjs`. 보호 브랜치 목록은 `pre-commit.mjs` 의 `PROTECTED` 와 **같은 출처를 써야 한다** — 지금 그 상수는 `pre-commit.mjs` 안에 있으므로 꺼내서 공유하거나, G-1 의 `harness.config.json` 으로 함께 옮긴다.
+
+**부수.** GitHub 쪽 branch protection 은 저장소 밖 설정이라 하네스가 못 건다. 사람이 켜는 것이 맞고, 그건 이 방어선과 별개다.
 
 ---
 
@@ -192,7 +237,11 @@ git branch --list 'worktree-agent-*' --contains <내 spec 커밋 sha>
 | 플러그인 훅(`SessionStart`·`PreToolUse`)이 worktree 안에서 도나 | **돈다.** `${CLAUDE_PLUGIN_ROOT}` 는 **프로젝트 밖 절대경로**라 cwd 와 무관하다 |
 | 플러그인의 `additionalContext` 주입이 worktree 안에서 실리나 | **실린다** |
 | 플러그인 에이전트가 worktree 안에서 스폰되나 | **된다.** 이름은 **`플러그인명:에이전트명`**, 자기 시스템 프롬프트가 적용된다 |
-| 플러그인 에이전트의 `isolation: worktree` · frontmatter `SubagentStop` | **미확인.** `claude -p` 에서는 **프로젝트 에이전트(대조군)도 똑같이 안 걸렸다** — 플러그인 탓이 아니라 비대화형 모드의 한계다. 대화형에서 재라 |
+| 플러그인 에이전트의 `tools:` 화이트리스트 | **먹는다.** 스폰된 에이전트가 `Read` 하나만 갖고 Bash 가 없다고 보고했다 |
+| 플러그인 에이전트의 `isolation: worktree` | **안 붙는다.** 대화형에서 스폰해도 사본이 안 생긴다 |
+| 플러그인 에이전트의 frontmatter `SubagentStop` | **안 돈다.** 훅이 아무것도 남기지 않는다 → `developer`·`qa` 는 플러그인으로 못 옮긴다 |
+| 플러그인 설치·수정이 도는 세션에 반영되나 | **에이전트는 아니다.** 스킬 목록은 세션 중에 갱신되지만 에이전트 레지스트리는 시작 시점에 고정된다 — `/reload-plugins` 가 푼다 |
+| `claude -p` 에서 `isolation`·frontmatter 훅 | **판정에 쓸 수 없다.** 프로젝트 에이전트(대조군)도 똑같이 안 걸린다 — 비대화형 모드의 한계다 |
 
 ---
 
