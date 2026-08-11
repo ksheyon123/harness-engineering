@@ -127,6 +127,37 @@ git branch --list 'worktree-agent-*' --contains <내 spec 커밋 sha>
 
 ---
 
+## G — 패키지화: 이 하네스를 남의 저장소에 설치할 수 있게 한다
+
+**증상.** 이 하네스를 다른 프로젝트(이하 **A**)에 이식하려면 파일을 손으로 옮기고 설정을 손으로 합쳐야 한다. 설계가 **단일 저장소 전제**로 되어 있어서다.
+
+**근거 1 — 코드 결합은 작다.** 훅·스크립트 3,025줄 중 프로젝트에 따라 달라지는 리터럴은 스무 줄 남짓이다: `path-ownership.mjs` 의 `RULES`(`src/**` · `harness/**` · `HARNESS_FILES`), `verify-green.mjs` 의 `npm test`, `verify-checklist.mjs` 의 `harness/`·`qa-checklist.md`, `pre-commit.mjs` 의 `PROTECTED`·`harness/`. 나머지(`hook-kit` · `reap-worktrees` · `session-role` · `verified-marker` · `spec-shape`)는 이미 프로젝트에 무관하다.
+
+**근거 2 — 진짜 비용은 설치 절차다.** `settings.json` 병합, `core.hooksPath` 점유(husky·lefthook 과 충돌), `posttest` 배선, 러너의 `**/.claude/worktrees/**` 제외, `.gitignore` 의 `.claude/worktrees/`. 마지막 것은 특히 위험하다 — **`pre-commit` 이 `git add -A` 를 강제**하므로 무시되지 않으면 작업 세션의 커밋이 에이전트 사본을 통째로 쓸어 담는다.
+
+**근거 3 — 이게 설계를 가른다. worktree 는 추적되는 파일만 본다.** 실측(아래 표):
+
+- `CLAUDE.md` 의 `@` 임포트는 **프로젝트 루트 밖으로 못 나간다.** worktree 세션에서는 worktree 자신이 프로젝트 루트라, `node_modules` 의 문서가 **조용히 안 실린다**
+- `${CLAUDE_PROJECT_DIR}` 는 worktree 안에서 **worktree 루트**를 가리킨다. 거기엔 `node_modules` 가 없으므로 `${CLAUDE_PROJECT_DIR}/node_modules/...` 로 배선한 훅은 **전부 ENOENT** 로 죽는다 — 층 1 도, 종료 게이트도, 인계 커밋도. 그것도 **조용히**
+
+즉 `npm install` 만으로는 하네스가 서지 않는다. **설치는 두 단계**다: `npm i -D` 로 기계를 배달하고, `npx harness init` 이 A 의 트리에 추적되는 실체를 만든다.
+
+**어떻게 — 순서가 있다.**
+
+1. **설정 추출이 먼저다.** `harness.config.json`(`gate` · `source` · `specRoot` · `protectedBranches`)을 만들고 위 네 파일이 그걸 읽게 한다. 이걸 건너뛰고 패키지부터 만들면 하드코딩이 `node_modules` 안으로 들어가 더 고치기 어려워진다. **게이트 정의의 단일 출처가 `scripts.test` 에서 여기로 옮겨간다** — 사본이 느는 게 아니라 자리가 바뀌는 것이지만, `posttest` 의 "성공했을 때만 돈다" 보장을 종료 코드로 직접 재현해야 한다
+2. **배포 수단은 플러그인이 유력하다.** 플러그인은 CLI 쪽에 설치되어 **프로젝트 기준 해석에 아예 안 걸린다** — 위 근거 3 의 두 함정을 통째로 비껴간다. 실측으로 훅·주입 지침·에이전트가 **진짜 worktree 안에서 동작**했다
+3. **그래도 층 2 는 플러그인이 못 싣는다.** `.githooks/` · `core.hooksPath` · `harness.config.json` · `.gitignore` · 러너 제외 · `posttest` 는 A 에 남는다. `init`/`doctor` 가 그 다섯을 처리하고, 처리 못 하면 **덮어쓰지 말고 멈춰서 알린다**
+
+**미확인 — 이것이 2번의 전제다.** 플러그인이 제공하는 에이전트가 `isolation: worktree` 와 frontmatter `SubagentStop` 훅을 가질 수 있는지는 **못 쟀다.** `claude -p` 로는 프로젝트 에이전트(대조군)도 똑같이 안 걸렸으므로 **플러그인에 불리한 증거가 아니라 측정 방법의 한계**다. 대화형 세션에서 재야 한다. **아니면 `developer`·`qa` 는 플러그인으로 못 옮기고 A 에 남는다.**
+
+**딸린 것.** 플러그인 에이전트는 **`플러그인명:에이전트명`** 으로 네임스페이스된다 — 스폰 코드와 문서가 그만큼 바뀐다. 그리고 플러그인 에이전트·지침은 CLI 쪽에 있어 **A 가 프로젝트별로 못 고친다**(지금은 A 가 `developer.md` 를 자기 스택에 맞게 손볼 수 있다).
+
+**어디.** 1번은 `.claude/hooks/path-ownership.mjs` · `verify-green.mjs` · `verify-checklist.mjs` · `.githooks/pre-commit.mjs` + 각 테스트. 2·3번은 저장소 구조 전체 — **A 를 먼저 하고, 미확인 항목을 잰 뒤에 2번을 정한다.**
+
+**부수 사실.** `.gitignore` 의 "worktree 는 저장소 밖 형제 디렉터리에 두는 것이 원칙" 주석은 패키지화하면 **틀린다.** 사본이 A 안에 중첩돼 있어야만 `node_modules` 상향 해석이 닿고(훅 shim · worktree 안의 `npm test`), 밖으로 나가면 둘 다 깨진다. 2번을 할 때 같이 고친다.
+
+---
+
 ## 실측으로 확인된 것 — 다시 재보지 마라
 
 | 무엇 | 결과 |
@@ -147,11 +178,22 @@ git branch --list 'worktree-agent-*' --contains <내 spec 커밋 sha>
 | dirty · 미머지 · locked 사본을 `--force` 없이 지우기 | **셋 다 거부된다.** 정리의 안전장치가 전부 여기 걸려 있다 |
 | `SessionEnd` 가 Ctrl+C 에도 도나 | **돈다.** 그 세션이 무엇을 하던 중이었는지 묻지 않는다 — 정리를 거기 걸었다가 병렬 세션을 깨뜨렸다 |
 | `.claude/worktrees/` 를 세션들이 공유하나 | **공유한다.** 그래서 정리 판정을 저장소 전역으로 넓히면 **남의 사본을 지운다.** 소유의 근거는 `--merged HEAD` 하나뿐이다 |
+| `CLAUDE.md` 의 `@` 임포트가 `node_modules` 를 타나 | **탄다.** `.claude/CLAUDE.md` 의 `@../node_modules/<pkg>/CLAUDE.md` 가 로드됐다 |
+| 그 임포트가 worktree 안에서도 되나 | **안 된다.** 상대경로 거리를 맞춰도 실패하고, `node_modules` 를 worktree **안**에 두면 성공한다 → **임포트는 프로젝트 루트 밖으로 못 나간다** |
+| 조상 디렉터리의 `CLAUDE.md` 는 worktree 에서 로드되나 | **로드된다.** 다만 **그 파일의 임포트는 펼쳐지지 않는다** — A 가 직접 쓴 문장만 살아남는다 |
+| worktree 안에서 `${CLAUDE_PROJECT_DIR}` 가 가리키는 곳 | **worktree 루트.** 본체가 아니다 — `node_modules` 가 없는 곳이다 |
+| worktree 안에서 `import "<pkg>/..."` (node 상향 해석) | **된다.** 사본에 `node_modules` 가 없어도 부모의 것을 찾는다. **사본이 저장소 안에 중첩돼 있어야만 성립** |
+| 플러그인 훅(`SessionStart`·`PreToolUse`)이 worktree 안에서 도나 | **돈다.** `${CLAUDE_PLUGIN_ROOT}` 는 **프로젝트 밖 절대경로**라 cwd 와 무관하다 |
+| 플러그인의 `additionalContext` 주입이 worktree 안에서 실리나 | **실린다** |
+| 플러그인 에이전트가 worktree 안에서 스폰되나 | **된다.** 이름은 **`플러그인명:에이전트명`**, 자기 시스템 프롬프트가 적용된다 |
+| 플러그인 에이전트의 `isolation: worktree` · frontmatter `SubagentStop` | **미확인.** `claude -p` 에서는 **프로젝트 에이전트(대조군)도 똑같이 안 걸렸다** — 플러그인 탓이 아니라 비대화형 모드의 한계다. 대화형에서 재라 |
 
 ---
 
 ## 순서
 
 **A 는 코드+테스트라 독립**이다. **B·C·E·F 는 `CLAUDE.md` 의 인접 문단**을 건드리므로 한 브랜치로 묶는 편이 낫다 — 따로 가면 서로 충돌한다.
+
+**G 는 가장 나중이다.** 저장소 구조 전체를 건드리므로 B·C·E·F 가 `CLAUDE.md` 를 정리한 뒤에 시작하는 편이 낫다. 다만 **G-1(설정 추출)은 지금 해도 된다** — 네 파일의 리터럴을 `harness.config.json` 으로 빼는 것이라 나머지와 겹치지 않는다.
 
 이 문서에 없는 것: 실행자의 요약 전달(C 에서 "못 막는다"로 기재만 한다), spec 의 파일 소유 명시(B 의 딸린 선택지).
