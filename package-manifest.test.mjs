@@ -77,6 +77,11 @@ describe("발행되는 tarball", () => {
     expect(has("scripts/spawn.ps1")).toBe(true);
   });
 
+  it("설치기가 담긴다", () => {
+    // `install/` 이 빠지면 `npm i` 는 되는데 `harness init` 이 죽는다.
+    expect(has("install/init.mjs")).toBe(true);
+  });
+
   it("테스트는 담기지 않는다", () => {
     // 담기면 A 의 러너가 남의 하네스 테스트를 돌린다.
     expect(packed.filter((p) => p.endsWith(".test.mjs"))).toEqual([]);

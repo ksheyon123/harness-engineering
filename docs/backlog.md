@@ -29,7 +29,13 @@
    - ~~설정 오타가 조용히 기본값으로 돌아가는 것~~ ✅ **`scripts/doctor.mjs` 가 검사한다.** 로더는 여전히 조용하다(훅에서 던지면 차단이 아니라 **통과**가 된다) — 대신 doctor 가 모르는 키·타입 불일치·헛도는 경로 패턴을 사람에게 보고한다. **막지는 않는다**: 오류가 있으면 종료 코드 1 을 줄 뿐이다
    - **남은 것**: `posttest` 의 "성공했을 때만 돈다" 보장은 아직 npm 에 얹혀 있다. `gate` 를 npm 밖 명령으로 바꾸면 그 기록이 안 남고 `pre-push` 가 막는다
 2. **배포 수단은 플러그인 + A 의 실체 파일을 섞는 형태가 된다.** 플러그인은 CLI 쪽에 설치되어 **프로젝트 기준 해석에 아예 안 걸리므로** 위 근거 3 의 두 함정을 비껴간다(실측: 훅·주입 지침·에이전트가 **진짜 worktree 안에서 동작**했다). 다만 아래에서 보듯 **에이전트 정의와 종료 훅은 플러그인이 못 가져간다** — 그 둘은 A 에 남는다
-3. **그래도 층 2 는 플러그인이 못 싣는다.** `.githooks/` · `core.hooksPath` · `harness.config.json` · `.gitignore` · 러너 제외 · `posttest` 는 A 에 남는다. `init`/`doctor` 가 그 다섯을 처리하고, 처리 못 하면 **덮어쓰지 말고 멈춰서 알린다**
+3. **설치 절차** — `install/init.mjs`. `plan`/`apply` 로 갈라 판정을 파일 없이 검사할 수 있게 했고, 덮어쓰면 안 되는 것(`core.hooksPath` 점유 · 기존 `posttest` · 다른 `worktree.baseRef`)에서는 **멈추거나 사람에게 넘긴다.** 실제로 pack → install → init 을 밟아 층 1·2 가 서고 **worktree 안에서도 shim 이 도는 것**까지 확인했다.
+
+   **남은 것 셋:**
+
+   - **복사된 `harness.md` 가 이 저장소의 도구 경로를 가리킨다.** `scripts/spawn.ps1` · `node scripts/reap-worktrees.mjs` · `docs/backlog.md` 는 A 에 없다. 층 1 의 deny 메시지도 `scripts/spawn.ps1` 을 안내한다. **설치는 기계적으로 성립하는데 지시가 없는 도구를 가리킨다** — `harness <명령>` 으로 바꾸고 `spawn` 을 CLI 에 올려야 한다
+   - **`chmod` 는 이 기계에서 검증이 안 된다.** Windows 에 실행권한 개념이 없어 그 테스트는 POSIX 에서만 의미가 있다 → CI 없이는 안 켜진다
+   - **`sync`** — 설치본의 문서(`harness.md` · `planner-mode.md` · `agents/*.md`)를 패키지 갱신에 맞춰 다시 쓰는 명령. 버전 스탬프를 두고 `doctor` 가 낡음을 짚어야 한다
 
 ~~**빌드는 없다 — 대신 발행 위생이 있다.**~~ ✅ **끝났다.** 컴파일할 것이 없다는 판단은 그대로다: TS 가 아니고(`.mjs` + `"type": "module"`), 소비자가 `import` 하는 라이브러리가 아니라 **Claude Code·git 이 별도 프로세스로 부르는 실행 파일**이며, payload 의 절반은 `.md` 다. `dist/` 를 만들면 **게이트가 검사한 트리와 발행되는 트리가 갈리기만** 한다.
 
