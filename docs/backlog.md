@@ -182,33 +182,6 @@ git branch --list 'worktree-agent-*' --contains <내 spec 커밋 sha>
 
 **부수 사실.** `.gitignore` 의 "worktree 는 저장소 밖 형제 디렉터리에 두는 것이 원칙" 주석은 패키지화하면 **틀린다.** 사본이 A 안에 중첩돼 있어야만 `node_modules` 상향 해석이 닿고(훅 shim · worktree 안의 `npm test`), 밖으로 나가면 둘 다 깨진다. 2번을 할 때 같이 고친다.
 
----
-
-## H — `pre-push` 가 보호 브랜치로의 push 를 막게 한다
-
-**증상.** 아무도 부르지 않은 `main` 체크아웃·머지·push 가 일어났다. 2026-08-11, 실행자 세션에서 관측됐다.
-
-**근거.** reflog:
-
-```
-a19a135 HEAD@{0}: merge docs/packaging-findings: Fast-forward
-d678e97 HEAD@{1}: checkout: moving from docs/packaging-findings to main
-```
-
-그리고 `git ls-remote origin` 이 `refs/heads/main` = `a19a135` 를 돌려줬다 — **서버까지 갔다.** 그 세션이 부른 push 는 `git push -u origin docs/packaging-findings` 하나뿐이고 `push.default` 는 기본값(`simple`)이라 그 명령으로 `main` 이 올라갈 수 없다. 시점은 서브에이전트 스폰 구간이었다. **원인 미상이고 재현 조건도 못 잡았다.**
-
-**어떻게 — 원인을 몰라도 결과는 막을 수 있다.** `pre-commit` 은 `main`/`dev`/`master` 직접 **커밋**을 막는데, **push** 에는 같은 방어선이 없다. `pre-push` 는 stdin 으로 `<local ref> <local sha> <remote ref> <remote sha>` 를 받으므로 `remote ref` 가 보호 브랜치면 거부하면 된다.
-
-- 지금 `pre-push` 가 보는 것은 **verified marker 하나**다. 게이트를 통과한 sha 면 어느 브랜치로 가든 통과한다 — 이번 건이 정확히 그 구멍으로 나갔다(같은 sha 라 marker 가 있었다)
-- 층 2 라 `--no-verify` 로 열린다. 봉인이 아니라 **방어선이고, 우회 사실이 명령에 남는 것이 요점**이다
-- 이걸 넣으면 원인이 무엇이든(사람의 오타든, 도구든) 같은 결과가 다시 나오지 않는다
-
-**어디.** `.githooks/pre-push.mjs` + `.githooks/pre-push.test.mjs`. 보호 브랜치 목록은 `pre-commit.mjs` 의 `PROTECTED` 와 **같은 출처를 써야 한다** — 지금 그 상수는 `pre-commit.mjs` 안에 있으므로 꺼내서 공유하거나, G-1 의 `harness.config.json` 으로 함께 옮긴다.
-
-**부수.** GitHub 쪽 branch protection 은 저장소 밖 설정이라 하네스가 못 건다. 사람이 켜는 것이 맞고, 그건 이 방어선과 별개다.
-
----
-
 ## 실측으로 확인된 것 — 다시 재보지 마라
 
 | 무엇 | 결과 |
