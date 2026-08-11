@@ -37,6 +37,7 @@
  */
 
 import { relative, resolve } from "node:path";
+import { matches } from "./glob.mjs";
 import { loadConfig } from "./harness-config.mjs";
 import { emit, readHookInput } from "./hook-kit.mjs";
 
@@ -157,22 +158,3 @@ function repoRelative({ tool_input: toolInput, cwd }) {
   return rel;
 }
 
-/**
- * `dir/**` · `**\/name` · 정확한 파일명만 쓰는 최소 글롭.
- *
- * **한 번의 스캔으로 바꾼다.** 순차 치환하면 앞선 치환이 만든 정규식 메타문자를 뒤의
- * 치환이 또 건드린다 — `**` → `.*` 로 바꾼 뒤 `*` 를 `[^/]*` 로 바꾸면 `.[^/]*` 가 되어
- * 디렉터리 경계를 못 넘는다.
- */
-function matches(pattern, path) {
-  const source = pattern.replace(
-    /(\*\*\/)|(\*\*)|(\*)|([.+^${}()|[\]\\])/g,
-    (_, dirPrefix, deep, single, special) => {
-      if (dirPrefix) return "(?:.*/)?";
-      if (deep) return ".*";
-      if (single) return "[^/]*";
-      return `\\${special}`;
-    },
-  );
-  return new RegExp(`^${source}$`).test(path);
-}

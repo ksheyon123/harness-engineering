@@ -78,6 +78,14 @@ npm test
 
 무엇이 게이트인지는 `package.json` 의 `scripts.test` 가 혼자 정한다. 대상을 바꾸려면 그 스크립트를 고친다.
 
+**설정이 의도대로 읽히는지 확인하려면:**
+
+```sh
+node scripts/doctor.mjs
+```
+
+`harness.config.json` 을 검사해 모르는 키·타입 불일치·아무것도 걸지 않는 경로 패턴을 보고한다. 아무것도 막지 않는다 — 오류가 있으면 종료 코드 1 을 준다.
+
 ## 저장소 구조
 
 ```
@@ -89,7 +97,8 @@ npm test
   settings.json      permissions · 훅 배선
   worktrees/         격리된 사본이 쌓이는 곳 (추적 안 함)
 .githooks/           pre-commit · pre-push
-scripts/             spawn.ps1 · reap-worktrees.mjs
+scripts/             spawn.ps1 · reap-worktrees.mjs · doctor.mjs
+harness.config.json  프로젝트마다 달라지는 값 (없으면 기본값 — 이 저장소는 두지 않는다)
 harness/<task>/      spec.md · qa-checklist.md   ← 산출물
 docs/                backlog.md
 src/                 제품 코드

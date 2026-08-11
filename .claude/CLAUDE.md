@@ -21,7 +21,7 @@ vitest.config.mjs          테스트 러너 설정
 package.json               scripts.test = "vitest run"  ← 게이트 정의의 단일 출처
 ```
 
-여기에 `scripts/`(`spawn.ps1` — 작업 세션을 새 탭에 띄운다 · `reap-worktrees.mjs` — 회수된 에이전트 사본을 거둔다)와 `harness/<task>/`(spec · QA 체크리스트), `src/`(제품 코드)가 더 있다. 없는 것: `.claude/rules/`.
+여기에 `scripts/`(`spawn.ps1` — 작업 세션을 새 탭에 띄운다 · `reap-worktrees.mjs` — 회수된 에이전트 사본을 거둔다 · `doctor.mjs` — 설정을 검사해 보고한다)와 `harness/<task>/`(spec · QA 체크리스트), `src/`(제품 코드)가 더 있다. 없는 것: `.claude/rules/`.
 
 > **기획자는 서브에이전트가 아니라 세션의 첫 모드다.** 스폰할 것이 없고, `.claude/agents/` 에는 `developer`·`qa` 둘만 있다. spec 작성 지침은 `.claude/planner-mode.md` 에 있다.
 
