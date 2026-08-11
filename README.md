@@ -81,7 +81,7 @@ npm test
 **설정이 의도대로 읽히는지 확인하려면:**
 
 ```sh
-node scripts/doctor.mjs
+node scripts/harness.mjs doctor    # 또는 node scripts/doctor.mjs
 ```
 
 `harness.config.json` 을 검사해 모르는 키·타입 불일치·아무것도 걸지 않는 경로 패턴을 보고한다. 아무것도 막지 않는다 — 오류가 있으면 종료 코드 1 을 준다.
