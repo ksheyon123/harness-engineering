@@ -229,6 +229,92 @@ describe("pre-commit — 층 2 불변식", () => {
     expect(commit(dir, "spec 철회").status).toBe(0);
   });
 
+  describe("한 브랜치에 spec 은 하나", () => {
+    /**
+     * `main` 에 base 커밋 하나를 두고 작업 브랜치로 갈라진 저장소.
+     *
+     * **base 커밋을 `main` 위에서 만들 수는 없다** — 이 훅이 바로 그것을 막는다. 보호되지
+     * 않는 브랜치에서 커밋한 뒤 `main` 을 거기 붙인다.
+     */
+    function branchedRepo(seed = () => {}) {
+      const dir = makeRepo("seed");
+      write(dir, "a.txt", "a\n");
+      seed(dir);
+      git(dir, ["add", "-A"]);
+      commit(dir, "base");
+      git(dir, ["branch", "main"]);
+      git(dir, ["checkout", "-q", "-b", "feat/thing"]);
+      return dir;
+    }
+
+    function addSpec(dir, task) {
+      write(dir, `harness/${task}/spec.md`, SPEC);
+      git(dir, ["add", "-A"]);
+    }
+
+    it("하나면 통과한다", () => {
+      const dir = branchedRepo();
+      addSpec(dir, "first");
+
+      expect(commit(dir, "spec").status).toBe(0);
+    });
+
+    it("한 커밋에 둘을 담으면 막는다", () => {
+      const dir = branchedRepo();
+      addSpec(dir, "first");
+      addSpec(dir, "second");
+
+      const { status, stderr } = commit(dir, "spec 둘");
+
+      expect(status).not.toBe(0);
+      expect(stderr).toContain("spec 을 2개 추가한다");
+      expect(stderr).toContain("harness/first/spec.md");
+      expect(stderr).toContain("harness/second/spec.md");
+    });
+
+    it("커밋을 나눠 담아도 막는다 — 브랜치 전체로 센다", () => {
+      // HEAD 가 아니라 base 와 인덱스를 비교하는 이유가 이것이다.
+      const dir = branchedRepo();
+      addSpec(dir, "first");
+      commit(dir, "첫 spec");
+      addSpec(dir, "second");
+
+      const { status, stderr } = commit(dir, "둘째 spec");
+
+      expect(status).not.toBe(0);
+      expect(stderr).toContain("spec 을 2개 추가한다");
+    });
+
+    it("기존 spec 을 고치는 것은 추가가 아니다 — 리비전은 통과한다", () => {
+      const dir = branchedRepo();
+      addSpec(dir, "first");
+      commit(dir, "첫 spec");
+      write(dir, "harness/first/spec.md", `${SPEC}\n- **인수기준**: 재시도는 1회\n`);
+      git(dir, ["add", "-A"]);
+
+      expect(commit(dir, "spec 개정").status).toBe(0);
+    });
+
+    it("base 에 이미 있던 spec 은 세지 않는다", () => {
+      const dir = branchedRepo((d) => write(d, "harness/old/spec.md", SPEC));
+      addSpec(dir, "new");
+
+      expect(commit(dir, "새 spec").status).toBe(0);
+    });
+
+    it("보호 브랜치가 없는 저장소에서는 판정하지 않는다", () => {
+      // 없는 것과 모르는 것은 다르다. base 를 못 잡으면 세지 않는다.
+      const dir = makeRepo("work");
+      write(dir, "a.txt", "a\n");
+      git(dir, ["add", "-A"]);
+      commit(dir, "base");
+      addSpec(dir, "first");
+      addSpec(dir, "second");
+
+      expect(commit(dir, "spec 둘").status).toBe(0);
+    });
+  });
+
   it("--no-verify 로 지나갈 수 있다", () => {
     // 정당하게 못 지키는 상황이 있다. 다만 그 사실이 명령에 보이게 남는다.
     const dir = makeRepo("main");

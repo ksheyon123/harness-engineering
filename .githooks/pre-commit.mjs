@@ -14,6 +14,8 @@
  *    검사가 무의미해지고, 역할이 만든 파일이 조용히 누락된다.
  * 3. **spec 형식** — 스테이징된 `<specRoot>/<task>/spec.md` 가 인계될 수 있는 모양인가.
  *    커밋이 곧 인계이므로 이 자리가 맞고, **누가 커밋하든 걸린다.**
+ * 4. **한 브랜치에 spec 은 하나** — 이 브랜치가 base 이후로 *추가한* spec 이 둘 이상이면
+ *    두 task 가 한 PR 로 나간다.
  *
  * 보호 브랜치 목록과 spec 위치는 `harness.config.json` 이 정한다(기본값 `main`/`dev`/
  * `master` · `harness`).
@@ -40,6 +42,7 @@ const problems = [
   ...protectedBranch(),
   ...partiallyStaged(),
   ...malformedSpecs(),
+  ...multipleSpecs(),
 ];
 
 if (problems.length > 0) {
@@ -125,6 +128,81 @@ function partiallyStaged() {
     `부분 스테이징이다. 워킹트리 전체를 담아라 — \`git add -A\`.\n` +
       leftovers.map((l) => `      ${l}`).join("\n"),
   ];
+}
+
+/**
+ * 이 브랜치가 base 이후로 **추가한** spec 을 센다. 둘 이상이면 거부한다.
+ *
+ * 규약은 "한 브랜치는 spec 을 정확히 한 번만 확정한다" 인데, 지금까지 그걸 지키는 것은
+ * 규율뿐이었다. 어긋나면 **두 task 가 한 PR 로 나가고**, 리뷰하는 사람은 어느 인수기준이
+ * 어느 변경을 덮는지 알 수 없게 된다.
+ *
+ * ## base 를 어떻게 잡나
+ *
+ * `main` 으로 박지 않는다 — `dev` 기반 브랜치에서 틀린다. 보호 브랜치 목록(설정)마다
+ * `merge-base` 를 구하고 **HEAD 에서 가장 가까운 것**을 고른다. 하나도 못 찾으면
+ * (보호 브랜치가 없는 저장소) 판정하지 않는다 — 없는 것과 모르는 것은 다르다.
+ *
+ * ## `HEAD` 가 아니라 **인덱스**와 비교한다
+ *
+ * 지금 커밋되려는 spec 은 아직 `HEAD` 에 없다. `git diff --cached <base>` 는 base 와
+ * **인덱스**를 비교하므로, 이미 브랜치에 커밋된 spec 과 지금 담기는 spec 을 함께 센다.
+ * `--diff-filter=A` 라 base 에 이미 있던 spec 은 세지 않는다.
+ *
+ * 그래서 **리비전은 걸리지 않는다** — 기존 spec 을 고치는 것은 추가가 아니라 수정이다.
+ */
+function multipleSpecs() {
+  // 머지 커밋에는 상대 브랜치의 spec 이 통째로 들어온다. 사람이 PR 을 합치는 정당한
+  // 경로이므로 세지 않는다.
+  if (inMerge()) return [];
+
+  const base = nearestBase();
+  if (!base) return [];
+
+  let added;
+  try {
+    added = git([
+      "diff", "--cached", "--name-only", "-z", "--diff-filter=A", base, "--", `${specRoot}/`,
+    ]);
+  } catch {
+    return [];
+  }
+
+  const specs = added.split("\0").filter((path) => path.endsWith("spec.md"));
+  if (specs.length <= 1) return [];
+
+  return [
+    `이 브랜치가 spec 을 ${specs.length}개 추가한다 — 한 브랜치는 task 하나다.\n` +
+      specs.map((s) => `      ${s}`).join("\n") +
+      `\n      나중 것은 원본에서 새 브랜치를 자르고 거기서 확정해라.`,
+  ];
+}
+
+/** 보호 브랜치 중 `HEAD` 에서 가장 가까운 갈림점. 못 찾으면 `null`. */
+function nearestBase() {
+  let best = null;
+
+  for (const branch of PROTECTED) {
+    let base;
+    try {
+      base = git(["merge-base", "HEAD", branch]).trim();
+    } catch {
+      continue; // 그 브랜치가 이 저장소에 없다.
+    }
+    if (!base) continue;
+
+    let distance;
+    try {
+      distance = Number.parseInt(git(["rev-list", "--count", `${base}..HEAD`]).trim(), 10);
+    } catch {
+      continue;
+    }
+    if (!Number.isFinite(distance)) continue;
+
+    if (best === null || distance < best.distance) best = { base, distance };
+  }
+
+  return best?.base ?? null;
 }
 
 /** 이 커밋에 담기는 spec 들. 워킹트리가 아니라 **인덱스**에서 읽는다. */
