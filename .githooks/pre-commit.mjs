@@ -91,9 +91,18 @@ function partiallyStaged() {
   }
 
   const leftovers = [];
-  for (const entry of out.split("\0").filter(Boolean)) {
-    const worktree = entry[1]; // XY <path> — Y 가 워킹트리 상태다
+  const entries = out.split("\0").filter(Boolean);
+
+  for (let i = 0; i < entries.length; i += 1) {
+    const entry = entries[i];
+    const index = entry[0]; // XY <path> — X 가 인덱스, Y 가 워킹트리 상태다
+    const worktree = entry[1];
     const path = entry.slice(3);
+
+    // rename·copy 는 **레코드 둘**로 온다: `XY <새 경로>\0<원래 경로>`. 뒤엣것은 상태
+    // 접두어가 없는 맨 경로라, 해석하면 첫 두 글자를 상태로 읽고 경로는 세 글자가 잘린다
+    // (`.claude/…` → `aude/…`). 그러면 `git mv` 한 커밋이 전부 부분 스테이징으로 걸린다.
+    if ("RC".includes(index) || "RC".includes(worktree)) i += 1;
 
     if (entry.startsWith("??")) leftovers.push(`${path} (추적되지 않음)`);
     else if (worktree !== " ") leftovers.push(`${path} (수정이 스테이징되지 않음)`);

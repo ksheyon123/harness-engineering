@@ -145,6 +145,8 @@ git branch --list 'worktree-agent-*' --contains <내 spec 커밋 sha>
 | 링크된 worktree 안에서 *다른* worktree `remove` | **된다** (순수 git 기준) |
 | 사본을 지운 뒤 그 브랜치 머지 | **된다.** `worktree remove` 는 objects 도 refs 도 건드리지 않는다 |
 | dirty · 미머지 · locked 사본을 `--force` 없이 지우기 | **셋 다 거부된다.** 정리의 안전장치가 전부 여기 걸려 있다 |
+| `SessionEnd` 가 Ctrl+C 에도 도나 | **돈다.** 그 세션이 무엇을 하던 중이었는지 묻지 않는다 — 정리를 거기 걸었다가 병렬 세션을 깨뜨렸다 |
+| `.claude/worktrees/` 를 세션들이 공유하나 | **공유한다.** 그래서 정리 판정을 저장소 전역으로 넓히면 **남의 사본을 지운다.** 소유의 근거는 `--merged HEAD` 하나뿐이다 |
 
 ---
 

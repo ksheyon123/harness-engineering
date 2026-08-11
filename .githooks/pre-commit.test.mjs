@@ -94,6 +94,36 @@ describe("pre-commit — 층 2 불변식", () => {
     expect(stderr).toContain("stray.txt");
   });
 
+  it("`git mv` 만 한 커밋을 부분 스테이징으로 오인하지 않는다", () => {
+    // rename 은 `XY <새 경로>\0<원래 경로>` 두 레코드로 온다. 뒤엣것을 레코드로
+    // 해석하면 맨 경로의 첫 두 글자를 상태로 읽어, 옮기기만 한 커밋이 통째로 막힌다.
+    const dir = makeRepo();
+    write(dir, ".claude/hooks/thing.mjs", "x\n");
+    git(dir, ["add", "-A"]);
+    commit(dir, "seed");
+
+    mkdirSync(join(dir, "scripts"), { recursive: true });
+    git(dir, ["mv", ".claude/hooks/thing.mjs", "scripts/thing.mjs"]);
+
+    expect(commit(dir).status).toBe(0);
+  });
+
+  it("`git mv` 와 함께 남은 미스테이징은 여전히 잡는다", () => {
+    const dir = makeRepo();
+    write(dir, ".claude/hooks/thing.mjs", "x\n");
+    git(dir, ["add", "-A"]);
+    commit(dir, "seed");
+
+    mkdirSync(join(dir, "scripts"), { recursive: true });
+    git(dir, ["mv", ".claude/hooks/thing.mjs", "scripts/thing.mjs"]);
+    write(dir, "stray.txt", "잊힌 파일\n");
+
+    const { status, stderr } = commit(dir);
+
+    expect(status).not.toBe(0);
+    expect(stderr).toContain("stray.txt");
+  });
+
   it("새로 생긴 디렉터리 안의 파일도 찾아낸다", () => {
     // -uall 이 없으면 `?? harness/` 한 줄만 보이고 그 안의 파일은 목록에 없다.
     const dir = makeRepo();

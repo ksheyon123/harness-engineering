@@ -4,7 +4,8 @@
     "allow": [
       "Bash",
       "Edit(harness/**)",
-      "Read(tasks/**)"
+      "Edit(.claude/**)",
+      "Edit(scripts/**)"
     ],
     "deny": [
       "Bash(rm -rf*)",
@@ -13,7 +14,8 @@
       "Bash(git reset --hard*)",
       "Read(./.env)",
       "Read(.env*)"
-    ]
+    ],
+    "additionalDirectories": ["~/AppData/Local/Temp/claude"]
   },
   "hooks": {
     "PreToolUse": [
@@ -33,16 +35,6 @@
           {
             "type": "command",
             "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/session-role.mjs\""
-          }
-        ]
-      }
-    ],
-    "SessionEnd": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/reap-worktrees.mjs\""
           }
         ]
       }

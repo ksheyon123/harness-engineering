@@ -176,10 +176,7 @@ describe("reap-worktrees — 회수가 끝난 서브에이전트 사본만 거�
     expect(repo.git(["branch", "--list"])).toContain(agent.branch);
   });
 
-  it("본체(main)에 서서 끝나도 거둔다 — 10단계가 ExitWorktree 로 격리를 빠져나온다", () => {
-    // 오케스트레이터는 push 후 ExitWorktree(keep) 로 본체에 돌아온 채 세션이 끝난다.
-    // 그 시점의 HEAD 는 main 이고, 에이전트 브랜치는 main 이 아니라 task 브랜치에
-    // 머지돼 있다 — '내 HEAD 에 머지됐나' 로 물으면 하나도 잡히지 않는다.
+  it("내 task 브랜치 위에서 부르면 내 에이전트만 거둔다", () => {
     const repo = makeRepo();
     const task = join(repo.dir, ".claude", "worktrees", "feat-login");
     repo.git(["worktree", "add", "-q", "-b", "worktree-feat+login", task]);
@@ -196,8 +193,8 @@ describe("reap-worktrees — 회수가 끝난 서브에이전트 사본만 거�
     inAgent(["commit", "-qm", "chore(developer): 산출물을 인계 커밋으로 남긴다"]);
     inTask(["merge", "--no-ff", "-q", "-m", "recover", "worktree-agent-a1b2c3"]);
 
-    // task 브랜치는 main 에 머지되지 않았다 — PR 로 나가는 중이다.
-    const { reaped } = run(repo);
+    // 오케스트레이터는 push 직후, 아직 자기 worktree 안에 서서 부른다.
+    const { reaped } = reap({ run: gitIn(task), cwd: task });
 
     expect(reaped.map((t) => t.branch)).toEqual(["worktree-agent-a1b2c3"]);
     expect(existsSync(agent)).toBe(false);
@@ -206,8 +203,19 @@ describe("reap-worktrees — 회수가 끝난 서브에이전트 사본만 거�
     expect(repo.git(["branch", "--list"])).toContain("worktree-feat+login");
   });
 
-  it("앞선 세션이 놓치고 간 사본도 거둔다 — 자가치유", () => {
+  it("다른 세션의 에이전트 사본은 회수됐어도 건드리지 않는다", () => {
+    // 이것이 이 스크립트가 낸 실제 사고다. 판정을 '아무 브랜치나 품고 있으면 회수된 것'
+    // 으로 넓혔더니, 세션 하나가 Ctrl+C 로 죽으면서 병렬로 돌던 다른 세션들의 사본까지
+    // 전부 쓸어갔다. 소유의 근거는 '내 HEAD 에 머지됐나' 하나뿐이다.
     const repo = makeRepo();
+
+    const mine = join(repo.dir, ".claude", "worktrees", "feat-mine");
+    repo.git(["worktree", "add", "-q", "-b", "worktree-feat+mine", mine]);
+    const inMine = gitIn(mine);
+    writeFileSync(join(mine, "mine.md"), "mine\n");
+    inMine(["add", "-A"]);
+    inMine(["commit", "-qm", "my spec"]);
+
     const other = join(repo.dir, ".claude", "worktrees", "other-task");
     repo.git(["worktree", "add", "-q", "-b", "worktree-other", other]);
     const inOther = gitIn(other);
@@ -215,6 +223,7 @@ describe("reap-worktrees — 회수가 끝난 서브에이전트 사본만 거�
     inOther(["add", "-A"]);
     inOther(["commit", "-qm", "other task"]);
 
+    // 남의 세션의 에이전트 — 그쪽 브랜치에는 이미 회수됐다.
     const foreign = join(repo.dir, ".claude", "worktrees", "agent-999999");
     inOther(["worktree", "add", "-q", "-b", "worktree-agent-999999", foreign]);
     const inForeign = gitIn(foreign);
@@ -223,15 +232,12 @@ describe("reap-worktrees — 회수가 끝난 서브에이전트 사본만 거�
     inForeign(["commit", "-qm", "handoff"]);
     inOther(["merge", "--no-ff", "-q", "-m", "recover", "worktree-agent-999999"]);
 
-    // 그 세션은 정리하지 않고 닫혔다. 다음에 끝나는 세션이 대신 거둔다 —
-    // 회수까지 끝난 사본이라 누가 거두든 잃는 것이 없다.
-    const { reaped } = run(repo);
+    const { reaped } = reap({ run: inMine, cwd: mine });
 
-    expect(reaped.map((t) => t.branch)).toEqual(["worktree-agent-999999"]);
-    expect(existsSync(foreign)).toBe(false);
-    // 남의 작업 세션 사본에는 손대지 않는다.
+    expect(reaped).toEqual([]);
+    expect(existsSync(foreign)).toBe(true);
     expect(existsSync(other)).toBe(true);
-    expect(repo.git(["branch", "--list"])).toContain("worktree-other");
+    expect(repo.git(["branch", "--list"])).toContain("worktree-agent-999999");
   });
 
   it("사본이 이미 없고 회수된 브랜치만 남았으면 ref 를 접는다", () => {
@@ -274,7 +280,7 @@ describe("reap-worktrees — 회수가 끝난 서브에이전트 사본만 거�
     expect(existsSync(blocked.path)).toBe(true);
   });
 
-  it("훅으로 실행하면 종료 코드 0 으로 무엇을 했는지 적는다", () => {
+  it("직접 실행하면 종료 코드 0 으로 무엇을 했는지 적는다", () => {
     const repo = makeRepo();
     const agent = addAgent(repo, "abc555");
     recover(repo, agent.branch);
@@ -291,7 +297,7 @@ describe("reap-worktrees — 회수가 끝난 서브에이전트 사본만 거�
     expect(existsSync(agent.path)).toBe(false);
   });
 
-  it("git 저장소가 아니면 조용히 통과한다", () => {
+  it("git 을 못 써도 실패로 끝나지 않되, 조용히 넘어가지도 않는다", () => {
     const dir = mkdtempSync(join(tmpdir(), "reap-worktrees-nogit-"));
     fixtures.push(dir);
 
@@ -302,7 +308,9 @@ describe("reap-worktrees — 회수가 끝난 서브에이전트 사본만 거�
       env: cleanEnv(),
     });
 
+    // push 는 이미 끝난 뒤라 여기서 실패해도 되돌릴 것이 없다. 다만 부른 쪽이
+    // '정리됐다' 고 오해하면 사본이 소리 없이 쌓인다.
     expect(result.status).toBe(0);
-    expect(result.stdout.trim()).toBe("");
+    expect(result.stdout).toContain("정리하지 못했다");
   });
 });
