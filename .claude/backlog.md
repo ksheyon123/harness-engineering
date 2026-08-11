@@ -109,23 +109,21 @@ git branch --list 'worktree-agent-*' --contains <내 spec 커밋 sha>
 
 ---
 
-## F — worktree 가 남아 있다는 전제를 걷어낸다
+## F — 회수 전 확인을 worktree 가 아니라 브랜치로 한다
 
-**증상.** `CLAUDE.md` 서브에이전트 층 절:
+**F 의 원래 지적은 실측으로 틀렸다.** "`handoff` 가 성공하면 트리가 깨끗해져 오히려 정리 대상이 된다" 고 추측했었는데, 실제로는 **인계 커밋이 있으면 Claude Code 가 지우지 않는다** — 실측 시점에 죽은 사본 4개가 남아 있었다. "반드시 남는다" 는 문장이 맞았다.
 
-> 변경 없이 끝나면 사본은 즉시 사라진다. **변경이 있으면 남는다 — 인계 커밋이 찍혔으니 반드시 남는다.**
+그래서 남은 것은 하나뿐이다.
 
-**근거 — 근거가 뒤집혀 있다.** 이 문장은 정리 규칙이 "unchanged 면 지운다"라는 데 기댄다. 그런데 `handoff` 는 `git add -A` + commit 이라 **성공하고 나면 워킹트리가 깨끗해진다.** 정리 판정이 커밋되지 않은 변경을 본다면, 인계 커밋이 성공한 바로 그 순간 그 worktree 는 unchanged 로 보인다 — **남는 근거로 든 것이 오히려 지워지는 조건**이다.
+**증상.** `CLAUDE.md` 회수 절이 확인의 근거를 **사본의 존재**에 둔다:
 
-**그리고 지워져도 손실이 아니다.** 커밋 객체는 `<main>/.git/objects`, 브랜치 ref 는 `<main>/.git/refs/heads/` 에 있고 `git worktree remove` 는 둘 다 건드리지 않는다. 인계 커밋만 찍혔으면 머지는 그대로 된다. **손실이 되는 경우는 인계 커밋이 없는 채로 지워질 때 하나뿐이다.**
+> red 여도 커밋은 되어 있으니 머지하지 않고 들여다볼 수 있다
 
-**어떻게.**
+**근거.** 이제 `reap-worktrees.mjs` 가 회수된 사본을 거둔다. 아직 회수 전이면 사본이 남아 있으므로 이 문장이 당장 틀리지는 않는다 — 다만 **확인의 근거를 사라질 수 있는 것에 두고 있다.** 브랜치 ref 로 물으면 사본이 있든 없든 같은 답이 나온다.
 
-- "반드시 남는다" 문장을 지운다
-- 회수의 근거를 **worktree 존재가 아니라 브랜치 ref** 로 못 박는다 — E 와 정확히 같은 방향이고, worktree 가 지워져도 그 질의는 멀쩡히 동작한다
-- "worktree 가 남아 있으니 머지하지 않고 들여다볼 수 있다" → `git show <브랜치>` / `git diff <내 브랜치>...<역할 브랜치>` 로 바꾼다
+**어떻게.** `git show <역할 브랜치>` / `git diff <내 브랜치>...<역할 브랜치>` 로 바꾼다. E 의 조상 질의와 정확히 같은 방향이다.
 
-**어디.** `.claude/CLAUDE.md`. E 와 묶는다.
+**어디.** `.claude/CLAUDE.md` 회수 절. E 와 묶는다.
 
 ---
 
@@ -142,6 +140,11 @@ git branch --list 'worktree-agent-*' --contains <내 spec 커밋 sha>
 | `.claude/` 가 protected path 라 쓰기가 막히나 | **아니다.** `.claude` 는 보호 대상이지만 **`.claude/worktrees` 는 명시적 예외**다 |
 | `defer` 가 유효한 `permissionDecision` 인가 | **유효하다.** `allow`·`deny`·`ask`·`defer` 넷 다. `defer` = '결정하지 않음' = 정상 권한 흐름 |
 | 사후 rename 으로 `agent-<난수>` 를 정리하는 것 | **의미 없다.** 회수는 한 번 쓰고 버리는 이름이고, 동일성은 E 의 조상 질의로 푼다 |
+| 인계 커밋이 찍힌 사본을 Claude Code 가 자동으로 지우나 | **안 지운다.** 죽은 사본이 계속 쌓인다 — `reap-worktrees.mjs` 가 생긴 이유다 |
+| 자기가 서 있는 worktree 를 지우기 | **안 된다.** `failed to delete: Permission denied` (Windows 가 cwd 를 잡는다). 그 사본을 cwd 로 가진 **다른** 프로세스가 살아 있어도 마찬가지다 |
+| 링크된 worktree 안에서 *다른* worktree `remove` | **된다** (순수 git 기준) |
+| 사본을 지운 뒤 그 브랜치 머지 | **된다.** `worktree remove` 는 objects 도 refs 도 건드리지 않는다 |
+| dirty · 미머지 · locked 사본을 `--force` 없이 지우기 | **셋 다 거부된다.** 정리의 안전장치가 전부 여기 걸려 있다 |
 
 ---
 
