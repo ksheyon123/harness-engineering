@@ -173,6 +173,20 @@ describe("init — 설치 판정", () => {
       expect(notes.join("\n")).toContain(".claude/worktrees/**");
       expect(notes.join("\n")).toContain("harness.config.json");
     });
+
+    it("커밋하라고 말한다 — 안 하면 worktree 사본에 하나도 안 간다", () => {
+      // 파일을 쓰기만 하고 커밋하지 않는 것은 의도지만, 말해주지 않으면 사람은
+      // 설치가 끝난 줄 알고 스폰한다. 그리고 사본에는 하네스가 통째로 없다.
+      const { notes } = plan(tree(), fakeGit());
+
+      expect(notes.join("\n")).toContain("git add -A");
+    });
+
+    it("게이트가 도는지 확인하라고 말한다 — 러너도 `scripts.test` 도 만들지 않았다", () => {
+      const { notes } = plan(tree(), fakeGit());
+
+      expect(notes.join("\n")).toContain("scripts.test");
+    });
   });
 
   describe("apply", () => {

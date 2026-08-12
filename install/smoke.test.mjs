@@ -83,7 +83,13 @@ function repo({ files = {}, drop = [], untrack = [], hooksPath = ".githooks" } =
     ".githooks/pre-push.mjs": "// 판정\n",
     ".gitignore": ".claude/worktrees/\nnode_modules\n",
     "package.json": JSON.stringify(
-      { name: "a", version: "1.0.0", type: "module", scripts: { posttest: "node .githooks/mark-verified.mjs" } },
+      {
+        name: "a",
+        version: "1.0.0",
+        type: "module",
+        // 게이트가 부를 것과 그 결과를 적을 곳. 둘 다 있어야 설치본이 실제로 돈다.
+        scripts: { test: "vitest run", posttest: "node .githooks/mark-verified.mjs" },
+      },
       null,
       2,
     ),
@@ -272,6 +278,41 @@ describe("smoke — 배선이 살아 있는가", () => {
       const { checks } = look({ files: { ".gitignore": "node_modules\n" } });
 
       expect(find(checks, "사본이 커밋에").state).toBe("broken");
+    });
+
+    it("게이트가 부르는 스크립트가 없으면 `developer` 가 끝날 방법이 없다", () => {
+      // **설치 직후의 프로젝트가 정확히 이 모양이다** — `init` 은 러너를 깔지 않는다.
+      // 배선은 전부 멀쩡한데 돌릴 것이 없다.
+      const { checks } = look({
+        files: {
+          "package.json": JSON.stringify({ name: "a", scripts: { posttest: "node .githooks/mark-verified.mjs" } }),
+        },
+      });
+      const check = find(checks, "돌릴 것이 있다");
+
+      expect(check.state).toBe("broken");
+      expect(check.detail).toContain("scripts.test");
+    });
+
+    it("`npm run <이름>` 게이트도 그 스크립트를 따라간다", () => {
+      const { checks } = look({
+        files: {
+          "harness.config.json": JSON.stringify({ gate: "npm run verify" }),
+          "package.json": JSON.stringify({
+            name: "a",
+            scripts: { verify: "node --test", posttest: "node .githooks/mark-verified.mjs" },
+          }),
+        },
+      });
+
+      expect(find(checks, "돌릴 것이 있다").state).toBe("ok");
+    });
+
+    it("npm 이 아닌 게이트는 판정하지 않는다 — 없는 것과 모르는 것은 다르다", () => {
+      // 여기서 red 를 내면 make·just 를 쓰는 멀쩡한 프로젝트가 전부 빨개진다.
+      const { checks } = look({ files: { "harness.config.json": JSON.stringify({ gate: "make check" }) } });
+
+      expect(find(checks, "돌릴 것이 있다").state).toBe("unknown");
     });
 
     it("`posttest` 가 없으면 push 가 전부 막힌다", () => {

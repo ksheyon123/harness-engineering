@@ -9,6 +9,7 @@
 | Node ≥ 18 | 훅과 스크립트가 전부 ESM `.mjs` 다 |
 | git 저장소 | 층 2 가 `core.hooksPath` 를 쓴다. `git init` 만 돼 있으면 된다 |
 | Claude Code | 층 1·세션 훅·서브에이전트 격리가 전부 Claude Code 의 기능이다 |
+| **도는 게이트** | 종료 훅이 `npm test` 를 돌린다. `init` 은 러너를 설치하지 않는다 — [아래](#게이트는-init-이-만들지-않는다) |
 | Windows | **`harness spawn` 만** 그렇다. 나머지는 플랫폼을 안 가린다 — 유닉스판 `spawn` 은 아직 없다 |
 
 ## 설치 — 네 단계
@@ -52,6 +53,25 @@ npx harness smoke           # 배선이 살아 있는지 묻는다
 스테이징하면 초록이 된다. 커밋까지 하는 것이 정석이지만, **판정 기준은 git 이 아는가**이므로 `git add -A` 만으로도 넘어간다.
 
 > 첫 커밋에서 `pre-commit` 이 막을 수 있다 — 보호 브랜치(`main`/`dev`/`master`)에 직접 커밋하려 할 때다. **층 2 가 살아 있다는 증거이므로 정상이다.** `git switch -c chore/harness` 로 브랜치를 자르고 커밋해라.
+
+### 게이트는 `init` 이 만들지 않는다
+
+**무엇을 검사할지는 A 가 정한다.** 하네스가 정하는 것은 *어떤 명령을 부르는가*(`gate`)뿐이고, *무엇이 돌아가는가*는 `package.json` 의 `scripts.test` 다. 그래서 `init` 은 테스트 러너를 설치하지도 `scripts.test` 를 쓰지도 않는다 — 남의 러너 선택을 하네스가 대신하면 그때부터 그것도 하네스 책임이 된다.
+
+대가는 **갓 설치된 프로젝트에 게이트가 없다**는 것이다. 그 상태는 스스로 드러나지 않는다:
+
+- 배선은 전부 멀쩡하다. `smoke` 의 다른 항목이 전부 초록이다
+- `developer` 를 스폰하고 나서야, 그 종료 훅이 `npm test` 를 돌려 `Missing script: test` 로 죽고 **재시도 상한을 태운 뒤에야** 보인다
+- `scripts.test` 가 없으면 npm 은 `posttest` 도 안 부른다. 게이트 통과 기록이 안 남아 **push 까지 막힌다**
+
+`smoke` 가 이것을 따로 묻는다:
+
+```
+  ✗  게이트 — `verify-green` 이 돌릴 것이 있다
+      `scripts.test` 가 없다 — `npm test` 가 그 자리에서 죽는다. …
+```
+
+npm 이 아닌 게이트(`make check` 등)는 `?` 로 찍고 넘어간다. **없는 것과 모르는 것은 다르다** — 여기서 red 를 내면 make·just 를 쓰는 멀쩡한 프로젝트가 전부 빨개진다. 그때는 직접 한 번 돌려봐야 한다.
 
 ## `init` 이 만드는 것
 
@@ -157,6 +177,7 @@ npx harness sync
 | `smoke` 가 ✗ 하나로 종료코드 1 | 설치 직후라 추적이 안 됐다. `git add -A` |
 | 첫 커밋이 막힌다 | 보호 브랜치 직접 커밋이다. **정상 동작** — 브랜치를 자르고 커밋해라 |
 | `init` 이 멈추고 `core.hooksPath` 를 말한다 | husky·lefthook 이 이미 차지했다. 빼앗지 않으므로 사람이 정해야 한다 |
+| `developer` 가 재시도만 태우고 red 로 끝난다 | 게이트가 없거나 안 돈다. `npm test` 를 직접 돌려봐라 — `Missing script: test` 면 `scripts.test` 부터 만든다 |
 | 게이트가 두 배로 돈다 | 러너에서 `**/.claude/worktrees/**` 를 제외 안 했다 |
 | 서브에이전트가 빈 브랜치만 남기고 끝났다 | 승인 프롬프트에서 멈춘 것이다. 멈춤은 종료가 아니라 `SubagentStop` 이 안 돌고, 게이트도 인계 커밋도 없다 |
 

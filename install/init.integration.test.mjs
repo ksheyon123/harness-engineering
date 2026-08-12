@@ -93,7 +93,13 @@ beforeAll(() => {
   const tgz = join(stage, JSON.parse(packed)[0].filename);
 
   // 2) A 를 만든다.
-  writeFileSync(join(dir, "package.json"), `${JSON.stringify({ name: "a-project", version: "1.0.0", private: true, type: "module" }, null, 2)}\n`);
+  // `scripts.test` 를 준다. **게이트가 없는 A 는 smoke 가 red 를 내는 것이 맞고**, 그
+  // 판정은 `smoke.test.mjs` 가 따로 덮는다. 여기서 묻는 것은 배선이므로, 게이트는 갖춰진
+  // 정상적인 프로젝트를 세운다.
+  writeFileSync(
+    join(dir, "package.json"),
+    `${JSON.stringify({ name: "a-project", version: "1.0.0", private: true, type: "module", scripts: { test: "node --test" } }, null, 2)}\n`,
+  );
   writeFileSync(join(dir, "src", "a.js"), "export const x = 1;\n");
   writeFileSync(join(dir, ".gitignore"), "node_modules\n");
   git(dir, ["init", "-q", "-b", "main"]);

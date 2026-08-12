@@ -102,6 +102,7 @@ export function inspect(tree, git) {
     layerTwo(tree, git),
     baseRef(settings),
     contract(tree),
+    gateTarget(tree, config),
     gateRecord(tree),
     ignored(tree),
     trackedForWorktrees(tree, tracked),
@@ -315,6 +316,65 @@ function contract(tree) {
   return imports
     ? ok(name, "`.claude/CLAUDE.md` 가 `@harness.md` 를 끌어온다.")
     : broken(name, "`.claude/CLAUDE.md` 에 `@harness.md` 가 없다 — 규약이 안 실린다.");
+}
+
+/**
+ * 게이트가 부르는 것이 **실재하는가.**
+ *
+ * 설치 직후의 프로젝트가 정확히 이 자리에서 무너진다. `init` 은 테스트 러너를 설치하지도
+ * `scripts.test` 를 만들지도 않는다(무엇을 검사할지는 A 가 정한다). 그래서 배선은 전부
+ * 멀쩡한데 **돌릴 것이 없는** 상태가 만들어지는데, 지금까지 그것을 묻는 자리가 없었다 —
+ * `gateRecord` 는 `posttest` 만 보므로 이 상태에서도 초록이다.
+ *
+ * 드러나는 시점이 최악이다: `developer` 를 스폰하고 나서야, 그 종료 훅이 재시도 상한을
+ * 태운 뒤에야 보인다.
+ *
+ * **돌려보지는 않는다.** 게이트는 몇 분이고 `posttest` 가 marker 를 남긴다 — 검사하려다
+ * 저장소에 흔적을 쓰는 것은 스모크가 할 일이 아니다(`exitGates` 와 같은 이유다).
+ */
+function gateTarget(tree, config) {
+  const name = "게이트 — `verify-green` 이 돌릴 것이 있다";
+  const script = npmScriptIn(config.gate);
+
+  // npm 이 아닌 게이트는 여기서 답할 수 없다. **없는 것과 모르는 것은 다르다.**
+  if (!script) {
+    return unknown(
+      name,
+      `게이트가 \`${config.gate}\` 다 — npm 스크립트가 아니라 여기서는 판정할 수 없다. ` +
+        `한 번 직접 돌려봐라.`,
+    );
+  }
+
+  const path = join(tree, "package.json");
+  if (!existsSync(path)) {
+    return broken(name, `게이트가 \`${config.gate}\` 인데 \`package.json\` 이 없다.`);
+  }
+
+  const command = readJson(path)?.scripts?.[script];
+  if (typeof command !== "string" || !command.trim()) {
+    return broken(
+      name,
+      `\`scripts.${script}\` 가 없다 — \`${config.gate}\` 가 그 자리에서 죽는다. ` +
+        `\`developer\` 는 종료 게이트를 **통과할 수 없어** 재시도 상한을 태우고 red 로 끝나고, ` +
+        `\`${script}\` 가 없으면 \`posttest\` 도 불리지 않아 push 까지 막힌다.`,
+    );
+  }
+
+  return ok(name, `\`${config.gate}\` → \`scripts.${script}\` = \`${command}\``);
+}
+
+/**
+ * 게이트 명령이 부르는 npm 스크립트 이름. npm 이 아니면 `null`.
+ *
+ * 형태를 넓게 받지 않는다 — 못 읽은 것을 `unknown` 으로 넘기는 쪽이, 잘못 읽고 멀쩡한
+ * 설정을 red 로 부르는 쪽보다 낫다.
+ */
+function npmScriptIn(gate) {
+  const [runner, verb, target] = `${gate}`.trim().split(/\s+/);
+  if (runner !== "npm") return null;
+  if (verb === "test" || verb === "t") return "test";
+  if (verb === "run" || verb === "run-script") return target ?? null;
+  return null;
 }
 
 function gateRecord(tree) {
