@@ -82,12 +82,15 @@ beforeAll(() => {
   mkdirSync(join(dir, "src"), { recursive: true });
 
   // 1) 발행될 물건을 만든다.
-  execSync(`npm pack --pack-destination "${stage}"`, {
+  //
+  // **파일명을 조립하지 않는다.** 스코프가 붙으면 `@a/b` 가 `a-b-<버전>.tgz` 로 눌리는데,
+  // 그 규칙을 여기 옮겨 적으면 이름을 바꿀 때 이 파일만 낡는다 — npm 에게 묻는다.
+  const packed = execSync(`npm pack --json --pack-destination "${stage}"`, {
     cwd: REPO,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "ignore"],
   });
-  const tgz = join(stage, `${PKG_NAME}-${JSON.parse(readFileSync(join(REPO, "package.json"), "utf8")).version}.tgz`);
+  const tgz = join(stage, JSON.parse(packed)[0].filename);
 
   // 2) A 를 만든다.
   writeFileSync(join(dir, "package.json"), `${JSON.stringify({ name: "a-project", version: "1.0.0", private: true, type: "module" }, null, 2)}\n`);

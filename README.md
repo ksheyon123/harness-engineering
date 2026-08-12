@@ -1,4 +1,4 @@
-# harness-engineering
+# @kshyeon123/harness-engineering
 
 역할 기반(기획자 · 개발자 · QA) 문서 주도 개발 하네스. **Claude Code 위에서 돈다.**
 

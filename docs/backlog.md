@@ -47,7 +47,7 @@
 **남은 것: 실행권한. 이제 추측이 아니라 실측이다.**
 
 ```
-$ tar -tvzf harness-engineering-0.1.0.tgz
+$ tar -tvzf kshyeon123-harness-engineering-0.1.0.tgz
 -rw-r--r--  package/.githooks/pre-commit      ← git 인덱스는 100755 인데 644 로 떨어졌다
 -rw-r--r--  package/.githooks/pre-push
 ```

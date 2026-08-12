@@ -5,6 +5,9 @@ import { describe, expect, it } from "vitest";
 
 import { apply, plan } from "./init.mjs";
 
+/** 패키지 이름은 **한 곳에서만** 온다. 여기 적으면 이름을 바꿀 때 이 파일만 낡는다. */
+const PKG_NAME = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).name;
+
 /**
  * 설치 대상 흉내. **git 은 부르지 않는다** — `plan` 이 git 에게 묻는 것은
  * `core.hooksPath` 하나뿐이라 가짜로 충분하다.
@@ -53,7 +56,7 @@ describe("init — 설치 판정", () => {
     // node 의 상향 해석이 부모의 node_modules 를 찾는다.
     const contents = step(plan(tree(), fakeGit()), ".claude/hooks/verify-green.mjs").contents;
 
-    expect(contents.trim()).toBe('import "harness-engineering/hooks/verify-green.mjs";');
+    expect(contents.trim()).toBe(`import "${PKG_NAME}/hooks/verify-green.mjs";`);
   });
 
   it("두 번 돌려도 아무것도 안 바뀐다", () => {
