@@ -112,7 +112,7 @@ scripts/             harness.mjs · spawn.ps1 · reap-worktrees.mjs · doctor.mj
 install/             init.mjs · sync.mjs · smoke.mjs — 다른 저장소에 설치하고 갱신하고 검사한다
 harness.config.json  프로젝트마다 달라지는 값 (없으면 기본값 — 이 저장소는 두지 않는다)
 harness/<task>/      spec.md · qa-checklist.md   ← 산출물
-docs/                backlog.md
+docs/                implementation.md — 설치와 운영 · backlog.md — 안 고친 것
 src/                 제품 코드
 ```
 
@@ -123,6 +123,7 @@ src/                 제품 코드
 | `.claude/harness.md` | 하네스 규약 전부 — 자리·모드·검증·커밋/push·worktree |
 | `.claude/CLAUDE.md` | 위를 임포트하고 **이 저장소 사정**(파일 목록·미착수 표)을 덧붙인다 |
 | `.claude/planner-mode.md` | spec 을 어떻게 쓰는가 |
+| `docs/implementation.md` | **설치와 운영** — 남의 저장소에 세우는 절차 · 설정 · 갱신 · 막히는 자리 |
 | `docs/backlog.md` | 확인됐지만 안 고친 것 — 왜 문제이고 어떻게 고치는지 |
 
 ## 상태
@@ -132,7 +133,22 @@ src/                 제품 코드
 큰 것 둘:
 
 - **`spawn` 의 유닉스판이 없다** — Windows 밖에서는 작업 세션을 규약대로 띄울 수 없다
-- **다른 저장소에 설치하는 수단은 있다** — `harness init`·`harness sync`. 다만 아직 발행하지 않았다 (`docs/backlog.md` G)
+- **POSIX 실행권한이 검증되지 않았다** — `.githooks/` 의 실행 비트를 Windows 에서 잴 수 없어 `smoke` 가 `?` 로 찍는다
+
+## 설치하기
+
+```sh
+npm i -D @ksheyon123/harness-engineering
+npx harness init
+git add -A            # 이것까지 해야 설치가 끝난다 — 추적되지 않는 파일은 worktree 사본에 안 간다
+npx harness smoke
+```
+
+그 다음 **Claude Code 를 새로 연다** — 훅은 세션이 시작될 때 읽힌다.
+
+**`npm install` 만으로는 아무것도 안 된다.** 배선은 `harness init` 이 저장소에 실체를 만들어야 생긴다. 절차 전체, 설정(`harness.config.json`), 갱신, 막히는 자리는 여기 있다:
+
+**→ [docs/implementation.md](./docs/implementation.md) — 설치와 운영**
 
 ## 라이선스
 
