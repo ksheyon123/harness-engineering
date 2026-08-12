@@ -55,7 +55,8 @@ describe("path-ownership — 층 1 경로 소유권", () => {
       const { verdict, why } = ask("src/convex-hull.js");
 
       expect(verdict).toBe("deny");
-      expect(why).toContain("spawn.ps1");
+      // 안내하는 명령이 설치본에도 있어야 한다 — `scripts/` 는 A 에 복사되지 않는다.
+      expect(why).toContain("harness spawn");
     });
 
     it("spec 도 막는다", () => {

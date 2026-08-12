@@ -1,9 +1,32 @@
 {
-  "name": "harness-engineering",
+  "name": "@kshyeon123/harness-engineering",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
   "description": "Claude Code 하네스 엔지니어링 — 역할 기반(기획자/개발자/QA) 문서 주도 개발 워크플로우",
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    ".claude/harness.md",
+    ".claude/planner-mode.md",
+    ".claude/agents/",
+    ".claude/hooks/",
+    ".githooks/",
+    "scripts/",
+    "install/",
+    "!**/*.test.mjs"
+  ],
+  "exports": {
+    "./hooks/*": "./.claude/hooks/*",
+    "./githooks/*": "./.githooks/*",
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "harness": "./scripts/harness.mjs"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "test": "vitest run",
     "posttest": "node .githooks/mark-verified.mjs"

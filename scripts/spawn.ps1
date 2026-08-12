@@ -26,10 +26,10 @@
     탭을 띄우지 않고 실행될 명령만 출력한다.
 
 .EXAMPLE
-    scripts/spawn.ps1 "로그인 어떻게 만들까"
+    harness spawn "로그인 어떻게 만들까"
 
 .EXAMPLE
-    scripts/spawn.ps1 -DryRun "이 오타 고쳐줘"
+    harness spawn -DryRun "이 오타 고쳐줘"
 #>
 [CmdletBinding()]
 param(

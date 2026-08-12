@@ -1,4 +1,4 @@
-# harness-engineering
+# @kshyeon123/harness-engineering
 
 역할 기반(기획자 · 개발자 · QA) 문서 주도 개발 하네스. **Claude Code 위에서 돈다.**
 
@@ -64,8 +64,8 @@ claude
 
 **기능을 만들려면** — 작업 세션을 새 탭에 띄운다. 사람의 요구사항 원문을 그대로 넘긴다.
 
-```powershell
-scripts/spawn.ps1 "<요구사항 원문>"
+```sh
+node scripts/harness.mjs spawn "<요구사항 원문>"
 ```
 
 > 지금은 **Windows 전용**이다. 유닉스판은 아직 없다.
@@ -78,18 +78,39 @@ npm test
 
 무엇이 게이트인지는 `package.json` 의 `scripts.test` 가 혼자 정한다. 대상을 바꾸려면 그 스크립트를 고친다.
 
+**설정이 의도대로 읽히는지 확인하려면:**
+
+```sh
+node scripts/harness.mjs doctor
+```
+
+`harness.config.json` 을 검사해 모르는 키·타입 불일치·아무것도 걸지 않는 경로 패턴을 보고한다. 아무것도 막지 않는다 — 오류가 있으면 종료 코드 1 을 준다.
+
+**배선이 실제로 살아 있는지 확인하려면:**
+
+```sh
+node scripts/harness.mjs smoke
+```
+
+`doctor` 가 **값**을 본다면 이건 **배선**을 본다 — 훅 명령이 실재하는 파일을 가리키는지, 그 파일이 돌아 판정을 내놓는지, git 이 그것을 추적하는지(추적되지 않으면 worktree 사본에서 통째로 사라진다).
+
+> **여기서 답할 수 없는 것이 남는다.** 이 명령이 증명하는 것은 *부르면 도는가* 까지고, *Claude Code 가 실제로 부르는가* 는 세션을 띄워야만 안다. 그래서 사람이 세션에서 확인할 목록을 **같이 찍는다** — 릴리스 전에 한 번 훑는 자리다.
+
 ## 저장소 구조
 
 ```
 .claude/
-  CLAUDE.md          하네스 코어 규약 — 모든 세션·서브에이전트에 로드된다
+  harness.md         하네스 코어 규약 — 설치될 때 이 파일이 복사된다
+  CLAUDE.md          위를 임포트하고 이 저장소 사정을 덧붙인다
   planner-mode.md    spec 작성 지침 (task 경계 · 형식 · 인수기준)
   agents/            developer · qa 정의
   hooks/             경로 소유권 · 종료 훅 · 세션 훅
   settings.json      permissions · 훅 배선
   worktrees/         격리된 사본이 쌓이는 곳 (추적 안 함)
 .githooks/           pre-commit · pre-push
-scripts/             spawn.ps1 · reap-worktrees.mjs
+scripts/             harness.mjs · spawn.ps1 · reap-worktrees.mjs · doctor.mjs
+install/             init.mjs · sync.mjs · smoke.mjs — 다른 저장소에 설치하고 갱신하고 검사한다
+harness.config.json  프로젝트마다 달라지는 값 (없으면 기본값 — 이 저장소는 두지 않는다)
 harness/<task>/      spec.md · qa-checklist.md   ← 산출물
 docs/                backlog.md
 src/                 제품 코드
@@ -99,7 +120,8 @@ src/                 제품 코드
 
 | 어디 | 무엇 |
 |---|---|
-| `.claude/CLAUDE.md` | 하네스 규약 전부 — 자리·모드·검증·커밋/push·worktree |
+| `.claude/harness.md` | 하네스 규약 전부 — 자리·모드·검증·커밋/push·worktree |
+| `.claude/CLAUDE.md` | 위를 임포트하고 **이 저장소 사정**(파일 목록·미착수 표)을 덧붙인다 |
 | `.claude/planner-mode.md` | spec 을 어떻게 쓰는가 |
 | `docs/backlog.md` | 확인됐지만 안 고친 것 — 왜 문제이고 어떻게 고치는지 |
 
@@ -110,4 +132,4 @@ src/                 제품 코드
 큰 것 둘:
 
 - **`spawn` 의 유닉스판이 없다** — Windows 밖에서는 작업 세션을 규약대로 띄울 수 없다
-- **다른 저장소에 설치하는 수단이 없다** — 단일 저장소를 전제로 설계돼 있다 (`docs/backlog.md` G)
+- **다른 저장소에 설치하는 수단은 있다** — `harness init`·`harness sync`. 다만 아직 발행하지 않았다 (`docs/backlog.md` G)

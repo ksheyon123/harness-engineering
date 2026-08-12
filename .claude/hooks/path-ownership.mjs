@@ -37,6 +37,7 @@
  */
 
 import { relative, resolve } from "node:path";
+import { matches } from "./glob.mjs";
 import { loadConfig } from "./harness-config.mjs";
 import { emit, readHookInput } from "./hook-kit.mjs";
 
@@ -63,7 +64,7 @@ function rulesFor({ source, harnessFiles, specRoot }) {
   return {
     실행자: {
       deny: [
-        { paths: source, why: "저장소 코드는 작업 세션의 몫이다. `scripts/spawn.ps1 \"<원문>\"` 으로 띄워라 — 오타·리팩터도 마찬가지다." },
+        { paths: source, why: "저장소 코드는 작업 세션의 몫이다. `harness spawn \"<원문>\"` 으로 띄워라 — 오타·리팩터도 마찬가지다." },
         { paths: [spec], why: "spec 과 QA 체크리스트는 작업 세션·qa 의 산출물이다." },
       ],
     },
@@ -157,22 +158,3 @@ function repoRelative({ tool_input: toolInput, cwd }) {
   return rel;
 }
 
-/**
- * `dir/**` · `**\/name` · 정확한 파일명만 쓰는 최소 글롭.
- *
- * **한 번의 스캔으로 바꾼다.** 순차 치환하면 앞선 치환이 만든 정규식 메타문자를 뒤의
- * 치환이 또 건드린다 — `**` → `.*` 로 바꾼 뒤 `*` 를 `[^/]*` 로 바꾸면 `.[^/]*` 가 되어
- * 디렉터리 경계를 못 넘는다.
- */
-function matches(pattern, path) {
-  const source = pattern.replace(
-    /(\*\*\/)|(\*\*)|(\*)|([.+^${}()|[\]\\])/g,
-    (_, dirPrefix, deep, single, special) => {
-      if (dirPrefix) return "(?:.*/)?";
-      if (deep) return ".*";
-      if (single) return "[^/]*";
-      return `\\${special}`;
-    },
-  );
-  return new RegExp(`^${source}$`).test(path);
-}

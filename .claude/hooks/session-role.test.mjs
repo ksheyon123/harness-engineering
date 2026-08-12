@@ -37,7 +37,8 @@ describe("session-role — SessionStart 역할 주입 훅", () => {
     expect(status).toBe(0);
     expect(out.hookEventName).toBe("SessionStart");
     expect(out.additionalContext).toContain("실행자");
-    expect(out.additionalContext).toContain("spawn.ps1");
+    // 안내하는 명령이 설치본에도 있어야 한다 — `scripts/` 는 A 에 복사되지 않는다.
+    expect(out.additionalContext).toContain("harness spawn");
   });
 
   it("work-session 이면 작업 세션으로 선언하고 spec 지침을 가리킨다", () => {
