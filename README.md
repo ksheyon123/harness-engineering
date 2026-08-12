@@ -1,4 +1,4 @@
-# @kshyeon123/harness-engineering
+# @ksheyon123/harness-engineering
 
 역할 기반(기획자 · 개발자 · QA) 문서 주도 개발 하네스. **Claude Code 위에서 돈다.**
 
@@ -133,3 +133,7 @@ src/                 제품 코드
 
 - **`spawn` 의 유닉스판이 없다** — Windows 밖에서는 작업 세션을 규약대로 띄울 수 없다
 - **다른 저장소에 설치하는 수단은 있다** — `harness init`·`harness sync`. 다만 아직 발행하지 않았다 (`docs/backlog.md` G)
+
+## 라이선스
+
+MIT — 전문은 [LICENSE](./LICENSE) 에 있다.
