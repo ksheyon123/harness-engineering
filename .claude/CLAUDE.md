@@ -28,7 +28,7 @@ vitest.config.mjs          테스트 러너 설정
 package.json               scripts.test = "vitest run"  ← 게이트 정의의 단일 출처
 ```
 
-여기에 `scripts/`(`harness.mjs` — CLI 진입점 · `spawn.ps1` — 작업 세션을 새 탭에 띄운다 · `reap-worktrees.mjs` — 회수된 에이전트 사본을 거둔다 · `doctor.mjs` — 설정을 검사해 보고한다)와 `install/`(`init.mjs`·`sync.mjs` — **남의 저장소에 설치하고 갱신한다.** 남의 트리를 고치는 유일한 코드라 운영 도구와 자리를 나눴다)와 `harness/<task>/`(spec · QA 체크리스트), `src/`(제품 코드)가 더 있다. 없는 것: `.claude/rules/`.
+여기에 `scripts/`(`harness.mjs` — CLI 진입점 · `spawn.ps1` — 작업 세션을 새 탭에 띄운다 · `reap-worktrees.mjs` — 회수된 에이전트 사본을 거둔다 · `doctor.mjs` — 설정을 검사해 보고한다)와 `install/`(`init.mjs`·`sync.mjs`·`smoke.mjs` — **남의 저장소에 설치하고 갱신하고 검사한다.** 남의 트리를 고치는 유일한 코드라 운영 도구와 자리를 나눴다)와 `harness/<task>/`(spec · QA 체크리스트), `src/`(제품 코드)가 더 있다. 없는 것: `.claude/rules/`.
 
 ## 미착수 — 이 설계와 실재의 차이
 
@@ -59,6 +59,7 @@ package.json               scripts.test = "vitest run"  ← 게이트 정의의 
 | 11단계를 안 하고 끝난 세션의 사본 | 남는다. **의도한 트레이드오프다** — 남의 사본을 거두려면 판정을 저장소 전역으로 넓혀야 하는데, 그게 병렬 세션을 깨뜨렸다. 쌓인 것은 사람이 지운다 |
 | ~~서브에이전트가 `HARNESS_ROLE` 을 물려받는다~~ | ✅ **풀렸다.** 훅 입력의 `agent_type` 이 변수를 이긴다 |
 | ~~남의 저장소에 설치하는 수단~~ | ✅ **`harness init` 이 있다.** tarball 을 풀어 설치하는 통합 테스트가 층 1·2 와 worktree 해석까지 덮는다 → 남은 것은 **backlog G** |
-| 설치본에서 Claude Code 가 실제로 훅을 부르는지 | **자동 검증 불가.** 훅의 stdin/stdout 계약과 git 훅은 테스트로 덮이지만, `settings.json` 배선을 Claude Code 가 읽고 부르는지는 세션을 띄워야만 안다 — `spawn.ps1` 의 탭과 같은 종류다 |
+| ~~배선이 끊긴 것을 알아챌 수단~~ | ✅ **`harness smoke` 가 있다.** 훅 명령이 실재하는 파일을 가리키는지·그것이 돌아 판정을 내놓는지·git 이 추적하는지를 서 있는 트리에 대고 묻는다. 설치본이 전부 초록인 것을 통합 테스트가 고정한다 |
+| Claude Code 가 그 배선을 **실제로 부르는지** | **여전히 자동 검증 불가.** `smoke` 가 증명하는 것은 *부르면 도는가* 까지다 — 비대화형 `claude -p` 는 `isolation` 도 frontmatter 훅도 안 건다(실측). `smoke` 가 사람이 세션에서 볼 목록을 같이 찍는다 |
 | `node_modules` 를 겨냥한 배선이 worktree 에서 죽는 것 | 실측됐다. `@` 임포트는 프로젝트 루트 밖으로 못 나가고 `${CLAUDE_PROJECT_DIR}` 는 worktree 를 가리킨다 — **둘 다 조용히 실패한다** → **backlog G** |
 | ~~플러그인 에이전트의 `isolation`·`SubagentStop`~~ | ✅ **쟀다. 둘 다 안 걸린다** — `tools:` 화이트리스트만 먹는다. `developer`·`qa` 는 플러그인으로 못 옮긴다 → **backlog G** |

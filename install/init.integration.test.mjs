@@ -220,6 +220,20 @@ describe("설치된 하네스 (tarball → init)", () => {
     expect(out).toContain("다시 쓸 것이 없다");
   });
 
+  it("`harness smoke` 가 설치본에서 끊긴 배선을 하나도 못 찾는다", () => {
+    // 위의 개별 테스트들이 훅을 하나씩 찔러본다면, 이건 **하네스가 아는 배선 전부**를
+    // 한 번에 묻는다 — 새 훅을 만들고 `settings.json` 에 안 걸면 여기서 터진다.
+    const out = execFileSync(
+      process.execPath,
+      [join(A, "node_modules", PKG_NAME, "scripts", "harness.mjs"), "smoke"],
+      { cwd: A, env: cleanEnv(), encoding: "utf8" },
+    );
+
+    expect(out).toContain("배선은 전부 살아 있다");
+    // 증명되지 않은 것도 같이 찍혀야 한다 — 초록만 보고 끝났다고 믿게 두지 않는다.
+    expect(out).toContain("세션에서 사람이 본다");
+  });
+
   it("다시 돌려도 바꿀 것이 없다", () => {
     const out = execFileSync(
       process.execPath,

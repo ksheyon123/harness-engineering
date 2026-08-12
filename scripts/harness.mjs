@@ -35,6 +35,7 @@ const POWERSHELL = { spawn: "spawn.ps1" };
 const COMMANDS = {
   init: "../install/init.mjs",
   sync: "../install/sync.mjs",
+  smoke: "../install/smoke.mjs",
   doctor: "doctor.mjs",
   reap: "reap-worktrees.mjs",
 };
@@ -80,6 +81,7 @@ function usage() {
       "  reap           회수가 끝난 서브에이전트 사본을 거둔다\n" +
       "  doctor         설정과 설치본을 검사해 보고한다\n" +
       "  init           이 저장소에 하네스를 설치한다 (`--dry-run` 으로 먼저 볼 수 있다)\n" +
-      "  sync           설치본의 복사본을 패키지 현재 버전으로 다시 쓴다\n\n",
+      "  sync           설치본의 복사본을 패키지 현재 버전으로 다시 쓴다\n" +
+      "  smoke          배선이 살아 있는지 검사하고, 사람이 볼 것을 찍는다\n\n",
   );
 }

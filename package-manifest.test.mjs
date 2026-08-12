@@ -86,6 +86,8 @@ describe("발행되는 tarball", () => {
   it("설치기가 담긴다", () => {
     // `install/` 이 빠지면 `npm i` 는 되는데 `harness init` 이 죽는다.
     expect(has("install/init.mjs")).toBe(true);
+    expect(has("install/sync.mjs")).toBe(true);
+    expect(has("install/smoke.mjs")).toBe(true);
   });
 
   it("테스트는 담기지 않는다", () => {

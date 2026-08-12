@@ -86,6 +86,16 @@ node scripts/harness.mjs doctor
 
 `harness.config.json` 을 검사해 모르는 키·타입 불일치·아무것도 걸지 않는 경로 패턴을 보고한다. 아무것도 막지 않는다 — 오류가 있으면 종료 코드 1 을 준다.
 
+**배선이 실제로 살아 있는지 확인하려면:**
+
+```sh
+node scripts/harness.mjs smoke
+```
+
+`doctor` 가 **값**을 본다면 이건 **배선**을 본다 — 훅 명령이 실재하는 파일을 가리키는지, 그 파일이 돌아 판정을 내놓는지, git 이 그것을 추적하는지(추적되지 않으면 worktree 사본에서 통째로 사라진다).
+
+> **여기서 답할 수 없는 것이 남는다.** 이 명령이 증명하는 것은 *부르면 도는가* 까지고, *Claude Code 가 실제로 부르는가* 는 세션을 띄워야만 안다. 그래서 사람이 세션에서 확인할 목록을 **같이 찍는다** — 릴리스 전에 한 번 훑는 자리다.
+
 ## 저장소 구조
 
 ```
@@ -99,7 +109,7 @@ node scripts/harness.mjs doctor
   worktrees/         격리된 사본이 쌓이는 곳 (추적 안 함)
 .githooks/           pre-commit · pre-push
 scripts/             harness.mjs · spawn.ps1 · reap-worktrees.mjs · doctor.mjs
-install/             init.mjs · sync.mjs — 다른 저장소에 설치하고 갱신한다
+install/             init.mjs · sync.mjs · smoke.mjs — 다른 저장소에 설치하고 갱신하고 검사한다
 harness.config.json  프로젝트마다 달라지는 값 (없으면 기본값 — 이 저장소는 두지 않는다)
 harness/<task>/      spec.md · qa-checklist.md   ← 산출물
 docs/                backlog.md
