@@ -41,9 +41,39 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# 이 스크립트는 <repo>/scripts/ 에 있다. 어디서 부르든 저장소 루트를 기준으로 연다 —
-# 작업 세션은 논의 구간을 저장소 본체에서 보내야 한다.
-$repo = Split-Path -Parent $PSScriptRoot
+# 작업 세션이 열릴 곳은 **부른 사람이 서 있던 저장소**다. 논의 구간을 저장소 본체에서
+# 보내야 하기 때문이다.
+#
+# **스크립트의 위치로 잡지 않는다.** 한때 `Split-Path -Parent $PSScriptRoot` 였는데,
+# 그건 이 파일이 곧 그 저장소 안에 있을 때만 맞다. npm 의존성으로 설치되면 이 파일은
+# `<남의 저장소>/node_modules/@scope/harness-engineering/scripts/` 에 있어서, 부모는
+# 패키지 폴더지 저장소 루트가 아니다. 그러면 새 탭이 `node_modules` 안에서 열리고
+# **세 가지가 조용히 어긋난다** — claude 가 패키지의 `.claude/CLAUDE.md` 를 프로젝트
+# 지침으로 읽고, `harness/<task>/spec.md` 가 gitignore 된 곳에 쓰이고(재설치에 소멸),
+# `EnterWorktree` 와 게이트가 엉뚱한 트리를 본다.
+#
+# 그래서 git 에 묻는다. `harness.mjs` 가 cwd 를 그대로 물려주므로 여기 `$PWD` 는 사람이
+# 명령을 친 자리다. 다른 하위 명령(`doctor`·`reap`·`init`·`sync`·`smoke`)도 전부 대상
+# 트리를 `process.cwd()` 로 잡는다 — 자기 위치는 패키지를 찾는 데만 쓴다.
+if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+    throw "git 을 PATH 에서 찾지 못했다. 작업 세션을 어디에 열지 정할 수 없다."
+}
+
+# 저장소가 아닐 때 git 은 stderr 에 fatal 을 쓴다. `$ErrorActionPreference = 'Stop'`
+# 아래에서는 그 stderr 자체가 종료 오류로 올라와, 정작 우리가 읽고 싶은 종료 코드에
+# 닿기 전에 죽는다. 그래서 이 호출 동안만 내려두고 판정은 `$LASTEXITCODE` 로 한다.
+$prev = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+$toplevel = & git rev-parse --show-toplevel 2>$null
+$found = $LASTEXITCODE -eq 0
+$ErrorActionPreference = $prev
+
+if (-not $found -or -not $toplevel) {
+    throw "여기는 git 저장소가 아니다($($PWD.Path)). 하네스가 설치된 저장소에서 불러라."
+}
+
+# git 은 슬래시로 답한다. `Resolve-Path` 로 native 표기로 되돌린다.
+$repo = (Resolve-Path -LiteralPath ($toplevel | Select-Object -First 1).Trim()).Path
 
 $seed = (($Request | Where-Object { $_ }) -join ' ').Trim()
 
@@ -78,6 +108,7 @@ $inner = @(
 $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($inner))
 
 if ($DryRun) {
+    Write-Host "repo    : $repo"
     Write-Host "claude  : $claude"
     Write-Host "command :"
     Write-Host $inner

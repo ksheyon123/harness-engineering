@@ -36,7 +36,7 @@ package.json               scripts.test = "vitest run"  ← 게이트 정의의 
 
 | 무엇 | 상태 |
 |---|---|
-| ~~`scripts/spawn.ps1`~~ | ✅ **있다.** `harness spawn` 으로 부른다. `wt` 가 없으면 새 창으로 떨어진다. **탭이 실제로 뜨는지는 자동 검증 불가** — 훅 쪽만 테스트로 덮여 있다 |
+| ~~`scripts/spawn.ps1`~~ | ✅ **있다.** `harness spawn` 으로 부른다. `wt` 가 없으면 새 창으로 떨어진다. **어느 저장소를 겨냥하는지는 `-DryRun` 으로 덮었다**(npm 설치 배치 포함). **탭이 실제로 뜨는지는 여전히 자동 검증 불가** |
 | ~~역할을 진입 시점에 싣는 수단~~ | ✅ **있다.** `HARNESS_ROLE` + `SessionStart` 훅 |
 | `spawn` 의 유닉스판 | 없다. `spawn.ps1` 은 Windows 전용이다 |
 | ~~`.claude/agents/planner.md` 정리~~ | ✅ **끝.** `.claude/planner-mode.md` 로 옮겼고 에이전트 정의는 지웠다 |
