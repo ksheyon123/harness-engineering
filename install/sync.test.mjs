@@ -1,6 +1,7 @@
 import { appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { apply as install } from "./init.mjs";
@@ -22,6 +23,8 @@ function installed() {
   install(dir, fakeGit());
   return dir;
 }
+
+const VERSION = JSON.parse(readFileSync(fileURLToPath(new URL("../package.json", import.meta.url)), "utf8")).version;
 
 const read = (dir, path) => readFileSync(join(dir, path), "utf8");
 const manifestOf = (dir) => parseManifest(read(dir, MANIFEST_PATH));
@@ -45,7 +48,9 @@ describe("sync — 설치본의 복사본을 다시 쓴다", () => {
   it("`init` 이 기록부를 남긴다", () => {
     const manifest = manifestOf(installed());
 
-    expect(manifest.version).toBe("0.1.0");
+    // **패키지에서 읽는다.** 여기 버전을 박아두면 릴리스 때마다 이 테스트가 낡고,
+    // 정작 묻는 것("설치한 버전이 기록되는가")과도 상관없는 이유로 red 가 된다.
+    expect(manifest.version).toBe(VERSION);
     expect(Object.keys(manifest.files)).toContain(".claude/harness.md");
     expect(Object.keys(manifest.files)).toContain(".claude/hooks/verify-green.mjs");
   });

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { PROBES, inspect, report } from "./smoke.mjs";
+import { PROBES, inspect, mainRoot, report, trust } from "./smoke.mjs";
 
 /**
  * `inspect` 의 **판정**을 본다. 배선이 실제로 도는지는 `init.integration.test.mjs` 가
@@ -132,10 +132,16 @@ function cleanEnv() {
 const find = (checks, needle) => checks.find((c) => c.name.includes(needle));
 const dead = (checks) => checks.filter((c) => c.state === "broken").map((c) => c.name);
 
+/**
+ * 신뢰는 저장소 **밖**(`~/.claude.json`)에 있다. 디스크를 읽게 두면 이 파일의 판정이
+ * 검사를 돌리는 기계의 개인 설정에 달리므로, 픽스처가 자기 트리를 신뢰하는 설정을 만들어
+ * 넣는다. 신뢰 판정 자체는 아래 `신뢰` 절이 `trust` 를 직접 불러 덮는다.
+ */
 const look = (options) => {
   const { dir, git } = repo(options);
   try {
-    return inspect(dir, git);
+    const root = mainRoot(dir, git);
+    return inspect(dir, git, { trustConfig: { projects: { [root]: { hasTrustDialogAccepted: true } } } });
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -220,6 +226,64 @@ describe("smoke — 배선이 살아 있는가", () => {
 
       expect(find(checks, "`developer`").state).toBe("broken");
       expect(find(checks, "`developer`").detail).toContain("해석되지 않는다");
+    });
+  });
+
+  describe("신뢰", () => {
+    // 경로는 실제 기록 철자를 흉내 낸다 — 구분자 `/`, 드라이브 문자 포함.
+    const ROOT = "C:/Users/a/projects/x";
+    const config = (projects) => ({ projects });
+    const yes = { hasTrustDialogAccepted: true };
+    const no = { hasTrustDialogAccepted: false };
+
+    it("이 저장소 키가 신뢰돼 있으면 정상이다", () => {
+      expect(trust(ROOT, config({ [ROOT]: yes })).state).toBe("ok");
+    });
+
+    it("조상만 신뢰돼 있으면 끊긴 것이다 — 다이얼로그가 안 떠서 스스로 낫지 않는다", () => {
+      // **이 저장소에서 실제로 난 사고다.** 세션은 멀쩡히 돌고 층 1·2 도 붙는데,
+      // 종료 훅만 등록되지 않아 회수할 커밋이 영영 안 생긴다.
+      const check = trust(ROOT, config({ "C:/Users/a/projects": yes, [ROOT]: no }));
+
+      expect(check.state).toBe("broken");
+      expect(check.detail).toContain("C:/Users/a/projects");
+      expect(check.detail).toContain("hasTrustDialogAccepted");
+    });
+
+    it("엔트리가 아예 없어도 조상이 신뢰돼 있으면 끊긴 것이다", () => {
+      expect(trust(ROOT, config({ "C:/Users/a": yes })).state).toBe("broken");
+    });
+
+    it("조상도 신뢰돼 있지 않으면 모르는 것이다 — 열면 다이얼로그가 뜬다", () => {
+      // 여기서 red 를 내면 **아직 한 번도 안 연 저장소가 전부 빨개진다.**
+      expect(trust(ROOT, config({ [ROOT]: no })).state).toBe("unknown");
+      expect(trust(ROOT, config({})).state).toBe("unknown");
+    });
+
+    it("철자만 다른 키가 신뢰돼 있으면 끊긴 것이다 — 조회는 정확히 일치할 때만 성립한다", () => {
+      const check = trust(ROOT, config({ "c:/users/a/projects/x": yes }));
+
+      expect(check.state).toBe("broken");
+      expect(check.detail).toContain("철자");
+    });
+
+    it("설정을 못 읽으면 모르는 것이다", () => {
+      expect(trust(ROOT, null).state).toBe("unknown");
+    });
+
+    it("worktree 사본 안에서 물어도 본체 루트가 나온다", () => {
+      // 신뢰 키는 본체 하나뿐이다. 사본 경로로 물으면 영원히 `false` 로 보인다.
+      const { dir, git } = repo();
+      try {
+        const copy = join(dir, ".claude", "worktrees", "w");
+        git(["worktree", "add", "-q", "-b", "w", copy]);
+        const inCopy = (args) =>
+          execFileSync("git", args, { cwd: copy, env: cleanEnv(), encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+
+        expect(mainRoot(copy, inCopy)).toBe(mainRoot(dir, git));
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
     });
   });
 

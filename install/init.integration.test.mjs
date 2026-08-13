@@ -232,10 +232,20 @@ describe("설치된 하네스 (tarball → init)", () => {
   it("`harness smoke` 가 설치본에서 끊긴 배선을 하나도 못 찾는다", () => {
     // 위의 개별 테스트들이 훅을 하나씩 찔러본다면, 이건 **하네스가 아는 배선 전부**를
     // 한 번에 묻는다 — 새 훅을 만들고 `settings.json` 에 안 걸면 여기서 터진다.
+    //
+    // 신뢰만은 저장소 밖(`~/.claude.json`)에 있어, 그대로 두면 이 판정이 **검사를 돌리는
+    // 기계의 개인 설정**에 달린다. `CLAUDE_CONFIG_DIR` 로 A 를 신뢰하는 설정을 따로 세워
+    // 넣는다 — 덤으로 설치본에서 그 검사가 초록을 내는 경로까지 함께 밟힌다.
+    const configDir = mkdtempSync(join(tmpdir(), "harness-trust-"));
+    writeFileSync(
+      join(configDir, ".claude.json"),
+      JSON.stringify({ projects: { [A.replace(/\\/g, "/")]: { hasTrustDialogAccepted: true } } }),
+    );
+
     const out = execFileSync(
       process.execPath,
       [join(A, "node_modules", PKG_NAME, "scripts", "harness.mjs"), "smoke"],
-      { cwd: A, env: cleanEnv(), encoding: "utf8" },
+      { cwd: A, env: { ...cleanEnv(), CLAUDE_CONFIG_DIR: configDir }, encoding: "utf8" },
     );
 
     expect(out).toContain("배선은 전부 살아 있다");

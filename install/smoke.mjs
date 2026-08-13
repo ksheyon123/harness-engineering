@@ -25,7 +25,8 @@
 
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { homedir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { loadConfig } from "../.claude/hooks/harness-config.mjs";
@@ -74,7 +75,8 @@ export const PROBES = [
     command: `git branch --list 'worktree-agent-*' --contains <내 spec 커밋 sha>\ngit show <나온 브랜치>`,
     expect:
       "`chore(developer): 산출물을 인계 커밋으로 남긴다` 가 보인다. 브랜치가 base 그대로면 " +
-      "SubagentStop 이 안 돈 것이고, **회수할 것이 없다.**",
+      "SubagentStop 이 안 돈 것이고, **회수할 것이 없다.** 그때는 위의 `신뢰` 판정부터 봐라 — " +
+      "저장소가 신뢰 목록에 없으면 훅은 **실패하는 게 아니라 등록조차 되지 않는다.**",
   },
   {
     name: "층 2 가 검증 안 된 push 를 막는가",
@@ -88,17 +90,20 @@ export const PROBES = [
  *
  * @param {string} tree 검사할 저장소의 최상단
  * @param {(args: string[]) => string} git `tree` 를 겨냥한 git 러너
+ * @param {{trustConfig?: object|null}} [options] `trustConfig` 를 주면 디스크 대신 그것을 읽는다(테스트용).
  * @returns {{checks: {name: string, state: string, detail: string}[]}}
  */
-export function inspect(tree, git) {
+export function inspect(tree, git, options = {}) {
   const config = loadConfig(tree);
   const tracked = trackedSet(tree, git);
   const settings = readJson(join(tree, ".claude/settings.json"));
+  const trustConfig = "trustConfig" in options ? options.trustConfig : readJson(TRUST_CONFIG());
 
   const checks = [
     layerOne(tree, settings, config),
     sessionHook(tree, settings),
     ...exitGates(tree),
+    trust(mainRoot(tree, git), trustConfig),
     layerTwo(tree, git),
     baseRef(settings),
     contract(tree),
@@ -223,6 +228,127 @@ function exitGates(tree) {
     return ok(name, `\`${path}\` → \`${target}\``);
   });
 }
+
+/* ── 신뢰 ─────────────────────────────────────────────────────────────────── */
+
+/**
+ * 저장소가 Claude Code 의 **신뢰 목록에 정확히 등재돼 있는가.**
+ *
+ * ## 왜 이것이 배선 검사인가
+ *
+ * `exitGates` 가 초록이어도 종료 훅이 **한 번도 안 불릴 수 있다.** Claude Code 는 에이전트
+ * frontmatter 의 훅을 등록하기 **전에** 정의 파일이 있는 폴더의 신뢰 여부를 보고, 아니면
+ * 등록 자체를 건너뛴다:
+ *
+ * ```
+ * Skipping frontmatter hooks for agent '<name>': the folder its definition file
+ * came from is not trusted … set projects[<경로>].hasTrustDialogAccepted: true
+ * ```
+ *
+ * 실행 실패가 아니라 **등록 누락**이라 흔적이 아무것도 안 남는다 — 재시도 카운터도,
+ * `systemMessage` 도, 인계 커밋도 없다. 회수할 것이 없는데 이유를 알 길도 없다.
+ *
+ * ## 함정은 신뢰가 두 종류라는 것이다
+ *
+ * **세션 신뢰는 부모 폴더를 타고 올라가고, 훅 등록 신뢰는 그 저장소 키 하나만 본다.**
+ * 그래서 `~/projects` 를 한 번 신뢰해 두면 그 아래 새로 만든 저장소는 전부:
+ *
+ * - 세션은 정상으로 돌고 — 층 1·층 2 도 다 붙는다
+ * - **트러스트 다이얼로그가 안 뜨고** — 뜰 이유가 없다
+ * - 그래서 자기 키는 `false` 로 남고 — **종료 훅만 조용히 빠진다**
+ *
+ * 이 조합이 정확히 이 검사가 있는 이유다. 저장소 안만 봐서는 절대 안 보인다.
+ *
+ * ## 무엇이 broken 이고 무엇이 unknown 인가
+ *
+ * | 이 저장소 키 | 조상 | 판정 | 왜 |
+ * |---|---|---|---|
+ * | 신뢰됨 | — | **ok** | 훅이 등록된다 |
+ * | 아님 | 신뢰됨 | **broken** | 다이얼로그가 안 뜬다 — **스스로 낫지 않는다** |
+ * | 아님 | 아님 | **unknown** | 세션을 열면 다이얼로그가 뜬다. 수락하면 채워진다 |
+ *
+ * 세 번째를 red 로 부르지 않는 이유: 아직 한 번도 안 연 저장소가 전부 빨개진다. 그건
+ * 끊긴 배선이 아니라 **아직 안 지난 관문**이다.
+ */
+export function trust(root, config) {
+  const name = "신뢰 — 종료 훅이 등록될 수 있다";
+
+  if (root === null) return unknown(name, "저장소 루트를 못 읽어 신뢰 여부를 확인하지 못했다.");
+  if (!config || typeof config !== "object") {
+    return unknown(name, `\`${TRUST_CONFIG()}\` 를 못 읽었다 — 신뢰 여부를 확인하지 못했다.`);
+  }
+
+  const projects = config.projects ?? {};
+  const accepted = (key) => projects[key]?.hasTrustDialogAccepted === true;
+
+  if (accepted(root)) return ok(name, `\`${root}\` 가 신뢰 목록에 있다.`);
+
+  // 철자만 다른 키가 신뢰돼 있으면 그것부터 알린다. Claude Code 의 조회는 **정확히 일치**
+  // 라서, 대소문자나 구분자가 다른 키는 있어도 없는 것과 같다 — Windows 에서 실제로 갈린다.
+  const near = Object.keys(projects).find((key) => normalize(key) === normalize(root) && accepted(key));
+  if (near) {
+    return broken(
+      name,
+      `신뢰된 키는 \`${near}\` 인데 이 트리는 \`${root}\` 로 잡힌다 — 조회가 정확히 일치할 때만 ` +
+        `성립하므로 **안 잡힌다.** 그 키를 \`${root}\` 철자로 다시 만들어라.`,
+    );
+  }
+
+  const ancestor = trustedAncestor(root, accepted);
+  if (ancestor) {
+    return broken(
+      name,
+      `\`${root}\` 가 신뢰 목록에 없다. 조상인 \`${ancestor}\` 가 신뢰돼 있어 **세션은 멀쩡히 돌지만**, ` +
+        `에이전트 frontmatter 의 \`SubagentStop\` 은 등록조차 되지 않는다 — 게이트도 인계 커밋도 ` +
+        `없이 끝나고 신호도 안 남는다. 다이얼로그는 조상 때문에 **안 뜨므로** ` +
+        `\`${TRUST_CONFIG()}\` 의 \`projects["${root}"].hasTrustDialogAccepted\` 를 직접 \`true\` 로 둬라.`,
+    );
+  }
+
+  return unknown(
+    name,
+    `\`${root}\` 가 아직 신뢰 목록에 없다 — 여기서 \`claude\` 를 열면 트러스트 다이얼로그가 뜬다. ` +
+      `**수락해야** 종료 훅이 등록된다.`,
+  );
+}
+
+/**
+ * 신뢰 키가 되는 경로 — **본체의 루트**다.
+ *
+ * 링크된 worktree 안에서 물어도 같은 답이 나와야 한다. `--show-toplevel` 은 그 사본을
+ * 가리키므로, 공용 gitdir(`<본체>/.git`)의 부모를 쓴다.
+ */
+export function mainRoot(tree, git) {
+  try {
+    const common = git(["rev-parse", "--path-format=absolute", "--git-common-dir"]).trim();
+    if (common) return toKey(dirname(common));
+  } catch {
+    // 구형 git 은 `--path-format` 을 모른다. 아래로 떨어진다.
+  }
+
+  try {
+    return toKey(git(["rev-parse", "--show-toplevel"]).trim());
+  } catch {
+    return null;
+  }
+}
+
+/** 신뢰가 기록되는 파일. `CLAUDE_CONFIG_DIR` 이 있으면 그 아래다. */
+const TRUST_CONFIG = () => join((process.env.CLAUDE_CONFIG_DIR ?? "").trim() || homedir(), ".claude.json");
+
+/** 신뢰된 조상 폴더. 없으면 `null`. **세션 신뢰가 타고 올라가는 그 길이다.** */
+function trustedAncestor(root, accepted) {
+  let dir = root;
+  while (true) {
+    const parent = dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+    if (accepted(dir)) return dir;
+  }
+}
+
+/** 기록되는 철자에 맞춘다 — 구분자는 `/`, 대소문자는 **건드리지 않는다.** */
+const toKey = (path) => path.replace(/\\/g, "/").replace(/(?!^)\/+$/, "");
 
 /* ── 층 2 ─────────────────────────────────────────────────────────────────── */
 
