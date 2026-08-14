@@ -31,13 +31,22 @@ import { fileURLToPath } from "node:url";
 
 import { loadConfig } from "../.claude/hooks/harness-config.mjs";
 import { cleanEnv } from "../.claude/hooks/hook-kit.mjs";
+import { managedPaths } from "./managed.mjs";
+import { groupByState, trackingStates } from "./tracking.mjs";
 
 const OK = "ok";
-const BROKEN = "broken";
+export const BROKEN = "broken";
 const UNKNOWN = "unknown";
 
 /** `permissionDecision` 이 가질 수 있는 값. 넷 중 하나가 아니면 층 1 이 판정을 못 낸 것이다. */
 const DECISIONS = ["allow", "deny", "ask", "defer"];
+
+/**
+ * 커밋 여부 검사의 표식. **`init` 이 이것만 따로 알아볼 수 있어야 한다** — 갓 설치한
+ * 직후에는 커밋이 없는 것이 정상이라, 그것으로 설치의 종료 코드를 정하면 안 되기
+ * 때문이다(`init.mjs` 의 `verify` 참고). 이름 문자열로 맞추면 문구를 다듬는 순간 끊긴다.
+ */
+export const COMMITTED_CHECK = "committed-for-worktrees";
 
 /**
  * 사람이 세션에서만 확인할 수 있는 것들.
@@ -95,7 +104,7 @@ export const PROBES = [
  */
 export function inspect(tree, git, options = {}) {
   const config = loadConfig(tree);
-  const tracked = trackedSet(tree, git);
+  const states = trackingStates(tree, worktreeCritical(), git);
   const settings = readJson(join(tree, ".claude/settings.json"));
   const trustConfig = "trustConfig" in options ? options.trustConfig : readJson(TRUST_CONFIG());
 
@@ -109,11 +118,26 @@ export function inspect(tree, git, options = {}) {
     contract(tree),
     gateTarget(tree, config),
     gateRecord(tree),
-    ignored(tree),
-    trackedForWorktrees(tree, tracked),
+    ignored(tree, git),
+    runnerExclude(tree),
+    { ...committedForWorktrees(states), id: COMMITTED_CHECK },
   ];
 
   return { checks: checks.filter(Boolean) };
+}
+
+/**
+ * 사본에 반드시 있어야 하는 것.
+ *
+ * **`managedPaths()` 에서 짓는다.** 목록을 여기 또 적으면 `sync` 가 파일을 하나 더 얹을 때
+ * 이 검사만 그것을 모르고 지나간다 — 새로 생긴 파일은 미추적으로 태어나므로, 하필 가장
+ * 필요한 순간에 못 잡는다.
+ *
+ * **기록부(`harness-manifest.json`)는 빠진다.** 사본에서 그것을 읽는 것은 없다 —
+ * `sync`·`doctor` 가 본체에서 볼 뿐이다. 여기 넣으면 이 검사가 자기 이름보다 넓어진다.
+ */
+export function worktreeCritical() {
+  return [...managedPaths(), ".claude/CLAUDE.md", ".claude/settings.json"];
 }
 
 /* ── 층 1 ─────────────────────────────────────────────────────────────────── */
@@ -521,51 +545,93 @@ function gateRecord(tree) {
       );
 }
 
-function ignored(tree) {
+/**
+ * **`.gitignore` 를 글자로 읽지 않는다.** 한때 `.claude/worktrees/` 라는 줄이 있는지만
+ * 봤는데, A 가 `.claude` 를 통째로 무시하면 사본은 실제로 무시되는데도 ✗ 가 떴다.
+ * 무시되는지는 git 에게 물으면 정확히 답한다.
+ */
+function ignored(tree, git) {
   const name = "사본이 커밋에 쓸려 들어가지 않는다";
-  const path = join(tree, ".gitignore");
-  const has =
-    existsSync(path) &&
-    readFileSync(path, "utf8")
-      .split(/\r?\n/)
-      .some((line) => line.trim() === ".claude/worktrees/");
-
-  return has
-    ? ok(name, "`.gitignore` 에 `.claude/worktrees/` 가 있다.")
-    : broken(
-        name,
-        "`.gitignore` 에 `.claude/worktrees/` 가 없다 — `pre-commit` 이 `git add -A` 를 " +
-          "강제하므로 커밋이 **에이전트 사본을 통째로 쓸어 담는다.**",
-      );
+  try {
+    git(["check-ignore", "-q", "--", ".claude/worktrees/"]);
+    return ok(name, "`.claude/worktrees/` 가 무시된다.");
+  } catch {
+    return broken(
+      name,
+      "`.claude/worktrees/` 가 무시되지 않는다 — `pre-commit` 이 `git add -A` 를 " +
+        "강제하므로 커밋이 **에이전트 사본을 통째로 쓸어 담는다.**",
+    );
+  }
 }
 
 /**
- * worktree 사본은 **추적되는 파일만** 본다. 하나라도 빠지면 거기서 그 조각이 사라지는데,
- * 사라지는 자리가 하필 `developer`·`qa` 가 도는 자리다.
+ * 러너 설정에서 아는 것들. 프로젝트마다 파일도 형식도 달라 `init` 이 고칠 수는 없지만,
+ * **넣었는지 묻는 것은 할 수 있다.**
  */
-function trackedForWorktrees(tree, tracked) {
-  const name = "worktree 안에서도 살아남는다 — 필요한 것이 전부 추적된다";
-  if (tracked === null) return unknown(name, "git 을 못 써서 추적 여부를 확인하지 못했다.");
+const RUNNER_CONFIGS = [
+  "vitest.config.mjs", "vitest.config.mts", "vitest.config.js", "vitest.config.ts",
+  "vite.config.mjs", "vite.config.mts", "vite.config.js", "vite.config.ts",
+  "jest.config.mjs", "jest.config.cjs", "jest.config.js", "jest.config.ts",
+];
 
-  const need = [
-    ".claude/CLAUDE.md",
-    ".claude/harness.md",
-    ".claude/planner-mode.md",
-    ".claude/settings.json",
-    ".claude/agents/developer.md",
-    ".claude/agents/qa.md",
-    ".claude/hooks/path-ownership.mjs",
-    ".claude/hooks/session-role.mjs",
-    ".claude/hooks/verify-green.mjs",
-    ".claude/hooks/verify-checklist.mjs",
-    ".githooks/pre-commit",
-    ".githooks/pre-push",
-  ];
+/**
+ * 게이트가 **에이전트 사본의 테스트까지 주워오는지** 묻는다.
+ *
+ * 사본은 저장소 안(`.claude/worktrees/agent-<id>/`)에 있고 소스 트리 전체를 담고 있어서,
+ * 부모에서 돌린 러너의 글로빙에 다시 걸린다(이 저장소 실측: 172 → 344). 느려지는 것으로
+ * 끝나지 않는다 — **재시도 상한을 태우고 red 로 끝난 사본이 남아 있으면, 내 트리에 원인이
+ * 없는 실패를 게이트가 주워온다.**
+ *
+ * 모르는 러너면 `?` 를 낸다. 조용히 초록을 내는 것보다 못 쟀다고 말하는 편이 낫다.
+ */
+function runnerExclude(tree) {
+  const name = "게이트가 에이전트 사본을 다시 세지 않는다";
+  const found = RUNNER_CONFIGS.filter((file) => existsSync(join(tree, file)));
+  const pkg = readJson(join(tree, "package.json"));
 
-  const missing = need.filter((path) => !tracked.has(path));
-  return missing.length === 0
-    ? ok(name, `${need.length}개가 전부 추적된다.`)
-    : broken(name, `추적되지 않는다: \`${missing.join("\` · \`")}\` — 사본에서는 없는 파일이다.`);
+  const sources = found.map((file) => readFileSync(join(tree, file), "utf8"));
+  if (pkg?.jest) {
+    found.push("package.json 의 `jest`");
+    sources.push(JSON.stringify(pkg.jest));
+  }
+
+  if (sources.some((text) => text.includes(".claude/worktrees"))) {
+    return ok(name, `\`${found.join("\` · \`")}\` 가 사본을 제외한다.`);
+  }
+  if (sources.length === 0) {
+    return unknown(
+      name,
+      "아는 러너 설정(vitest·jest)을 못 찾았다 — 게이트가 `**/.claude/worktrees/**` 를 " +
+        "제외하는지 직접 확인해라.",
+    );
+  }
+  return broken(
+    name,
+    `\`${found.join("\` · \`")}\` 에 \`**/.claude/worktrees/**\` 제외가 없다 — 사본의 ` +
+      "테스트가 다시 잡혀 게이트가 배로 돌고, **남의 red 가 내 게이트를 red 로 만든다.**",
+  );
+}
+
+/**
+ * worktree 사본은 **커밋된 것만** 받는다. 하나라도 빠지면 거기서 그 조각이 사라지는데,
+ * 사라지는 자리가 하필 `developer`·`qa` 가 도는 자리다.
+ *
+ * **인덱스가 아니라 `HEAD` 를 본다.** 예전에는 `git ls-files` 로 판정해서, `git add` 만
+ * 하고 커밋을 안 한 상태를 전부 초록으로 통과시켰다 — 사본에는 아무것도 없는데도.
+ */
+function committedForWorktrees(states) {
+  const name = "worktree 안에서도 살아남는다 — 필요한 것이 전부 커밋된다";
+  if (states === null) return unknown(name, "git 을 못 써서 판정하지 못했다.");
+
+  const groups = groupByState(states);
+  if (groups.length === 0) return ok(name, `${states.size}개가 전부 커밋돼 있다.`);
+
+  return broken(
+    name,
+    groups
+      .map((g) => `\`${g.paths.join("\` · \`")}\` — ${g.prescription}`)
+      .join("\n      "),
+  );
 }
 
 /* ── 도구 ─────────────────────────────────────────────────────────────────── */
@@ -628,14 +694,6 @@ function safeMatch(pattern, value) {
     return new RegExp(pattern).test(value);
   } catch {
     return false;
-  }
-}
-
-function trackedSet(tree, git) {
-  try {
-    return new Set(git(["ls-files", "-z"]).split("\0").filter(Boolean));
-  } catch {
-    return null;
   }
 }
 

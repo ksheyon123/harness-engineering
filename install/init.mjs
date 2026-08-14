@@ -39,6 +39,8 @@ import {
   hashOf,
   manifestContents,
 } from "./managed.mjs";
+import { BROKEN, COMMITTED_CHECK, inspect, report as smokeReport } from "./smoke.mjs";
+import { IGNORED, trackingStates } from "./tracking.mjs";
 
 /** 패키지 루트. 이 파일은 `<pkg>/install/` 에 있다. */
 const PKG = fileURLToPath(new URL("..", import.meta.url));
@@ -342,7 +344,37 @@ export function apply(tree, git) {
     }
   }
 
-  return { ...result, applied };
+  return { ...result, applied, staged: forceStage(tree, applied, git) };
+}
+
+/**
+ * **무시되는 경로만** 인덱스에 담는다.
+ *
+ * A 가 `.claude` 를 통째로 `.gitignore` 에 넣어둔 경우가 있다 — 거기 드는 것이 개인 설정
+ * 이라고 본 것이고, 대체로 맞는 판단이다. 그런데 하네스 파일은 개인 것이 아니라 **팀이
+ * 커밋해야 할 규약**이라, 그 판단에 걸리면 `git add -A` 로는 **몇 번을 돌려도** 안 담긴다.
+ * 안 담기면 worktree 사본에 없고, 사본에 없으면 거기서 하네스가 통째로 사라진다.
+ *
+ * **무시되지 않는 것은 건드리지 않는다.** 사람이 칠 `git add -A` 가 알아서 담고, 무엇보다
+ * `package.json` 같은 A 의 파일에는 하네스와 무관한 미커밋 수정이 섞여 있을 수 있다 —
+ * 그것까지 인덱스에 올리는 것은 설치 도구의 몫이 아니다.
+ *
+ * 커밋은 하지 않는다. 인덱스는 되돌릴 수 있지만(`git restore --staged`) 히스토리는 남는다.
+ */
+function forceStage(tree, applied, git) {
+  const paths = applied.filter((s) => s.kind === "file").map((s) => s.path);
+  const states = trackingStates(tree, paths, git);
+  if (states === null) return { forced: [], failed: [] };
+
+  const blocked = paths.filter((path) => states.get(path) === IGNORED);
+  if (blocked.length === 0) return { forced: [], failed: [] };
+
+  try {
+    git(["add", "-f", "--", ...blocked]);
+    return { forced: blocked, failed: [] };
+  } catch {
+    return { forced: [], failed: blocked };
+  }
 }
 
 function makeExecutable(path) {
@@ -382,7 +414,57 @@ function main() {
   }
 
   const result = dryRun ? plan(tree, git) : apply(tree, git);
-  process.exit(report(result, dryRun));
+  const code = report(result, dryRun);
+  if (dryRun || code !== 0) process.exit(code);
+
+  process.exit(verify(tree, git));
+}
+
+/**
+ * 설치가 **자기 성공을 자기가 한 동작으로 판정하지 않게** 한다.
+ *
+ * 예전에는 파일을 썼으면 종료 코드 0 이었다. 그런데 하네스가 실제로 서려면 그 밖에도
+ * 참이어야 하는 것들이 있었고(게이트가 도는가, 러너가 사본을 제외하는가, 훅에 실행권한이
+ * 있는가), 그것들은 전부 **note** 로만 있었다 — 하나도 안 해도 0 이었다. 그래서 마지막에
+ * `smoke` 를 직접 돌린다.
+ *
+ * ## 커밋만은 종료 코드에 넣지 않는다
+ *
+ * `init` 은 남의 저장소에 커밋을 만들지 않는다(그건 설치 도구의 몫이 아니다). 그래서 갓
+ * 설치한 직후에 커밋이 없는 것은 **정상**이고, 그것으로 1 을 내면 종료 코드가 *항상* 1 이
+ * 된다. 항상 같은 값은 아무 정보도 아니다 — 아무도 안 읽는 note 와 똑같아진다.
+ *
+ * 그래서 가른다:
+ *
+ * | 무엇 | 종료 코드 |
+ * |---|---|
+ * | 배선이 깨졌다 — **`init` 이 만든 상태가 잘못됐다** | 1 |
+ * | 커밋만 남았다 — `init` 이 할 수 있는 것은 다 했다 | 0, 대신 남은 것을 찍는다 |
+ *
+ * 커밋을 실제로 **강제**하는 자리는 여기가 아니다. 커밋 안 된 하네스로 작업 세션을 여는
+ * 것을 막아야 하고, 그건 `spawn` 이 할 일이다(`docs/backlog.md` 의 G-4).
+ */
+function verify(tree, git) {
+  process.stdout.write("― 여기까지가 설치다. 아래는 그것이 실제로 서 있는지 묻는다 ―\n");
+
+  const result = inspect(tree, git);
+  smokeReport(result);
+
+  const dead = result.checks.filter((c) => c.state === BROKEN && c.id !== COMMITTED_CHECK);
+  if (dead.length > 0) return 1;
+
+  if (result.checks.some((c) => c.state === BROKEN && c.id === COMMITTED_CHECK)) {
+    process.stdout.write(
+      "설치는 끝났다. **남은 것은 커밋뿐이다.**\n\n" +
+        "  git switch -c chore/harness-install\n" +
+        "  git add -A\n" +
+        "  git commit\n\n" +
+        "커밋하지 않으면 worktree 사본에는 이 파일들이 없고, 하필 거기가 `developer`·`qa` 가\n" +
+        "도는 자리다. 없으면 막히는 게 아니라 **그냥 통과한다.**\n\n",
+    );
+  }
+
+  return 0;
 }
 
 /** `GIT_DIR` 이 상속돼 있으면 `cwd` 를 겨냥한 명령이 다른 저장소를 건드린다. */
@@ -392,7 +474,7 @@ function cleanGitEnv() {
   return env;
 }
 
-export function report({ steps, blockers, notes, applied }, dryRun, write = (s) => process.stdout.write(s)) {
+export function report({ steps, blockers, notes, applied, staged }, dryRun, write = (s) => process.stdout.write(s)) {
   if (blockers.length > 0) {
     write(
       `\n설치를 멈췄다 — 덮어쓰면 안 되는 것이 있다.\n\n` +
@@ -411,6 +493,16 @@ export function report({ steps, blockers, notes, applied }, dryRun, write = (s) 
       (changed.length === 0
         ? "  · 바꿀 것이 없다 — 이미 설치돼 있다.\n"
         : changed.map((s) => `  ${s.state === "create" ? "+" : "~"} ${s.path ?? s.key}\n`).join("")) +
+      (staged?.forced?.length
+        ? `\n\`.gitignore\` 가 막고 있어 인덱스에 강제로 담았다 — ` +
+          `\`git add -A\` 로는 안 담기는 것들이다:\n\n` +
+          staged.forced.map((path) => `  → ${path}\n`).join("")
+        : "") +
+      (staged?.failed?.length
+        ? `\n\`.gitignore\` 가 막고 있는데 담지도 못했다:\n\n` +
+          staged.failed.map((path) => `  ! ${path}\n`).join("") +
+          `\n  \`git add -f -- ${staged.failed.join(" ")}\` 를 직접 쳐라.\n`
+        : "") +
       (manual.length > 0
         ? `\n손이 필요한 것:\n\n${manual.map((s) => `  ! ${s.detail}`).join("\n")}\n`
         : "") +

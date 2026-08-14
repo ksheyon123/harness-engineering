@@ -1,7 +1,8 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { apply, plan } from "./init.mjs";
 
@@ -221,6 +222,71 @@ describe("init — 설치 판정", () => {
       apply(dir, fakeGit());
 
       expect(apply(dir, fakeGit(".githooks")).applied).toEqual([]);
+    });
+  });
+
+  /**
+   * **진짜 git 을 쓴다.** 여기서 묻는 것이 "`.gitignore` 가 막는가" 라서 가짜로는 아무것도
+   * 검증되지 않는다.
+   */
+  describe("무시되는 경로 (진짜 저장소)", () => {
+    const dirs = [];
+
+    afterEach(() => {
+      while (dirs.length) rmSync(dirs.pop(), { recursive: true, force: true });
+    });
+
+    function realRepo(gitignore) {
+      const dir = mkdtempSync(join(tmpdir(), "init-real-"));
+      dirs.push(dir);
+      const git = (args) =>
+        execFileSync("git", args, {
+          cwd: dir,
+          env: Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("GIT_"))),
+          encoding: "utf8",
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+
+      git(["init", "-q", "-b", "main"]);
+      git(["config", "user.email", "a@example.invalid"]);
+      git(["config", "user.name", "a"]);
+      writeFileSync(join(dir, ".gitignore"), gitignore);
+      return { dir, git };
+    }
+
+    it("`.claude` 가 통째로 무시되면 `-f` 로 담는다", () => {
+      // A 가 `.claude` 를 무시한 판단 자체는 옳다 — 거기 든 것은 개인 설정이라고 본 것이다.
+      // 그런데 하네스 파일은 개인 것이 아니라 팀이 커밋해야 할 규약이라, 그 판단에 걸리면
+      // `git add -A` 로는 **몇 번을 돌려도** 안 담기고 사본에서 하네스가 통째로 사라진다.
+      const { dir, git } = realRepo(".claude\nnode_modules\n");
+
+      const { staged } = apply(dir, git);
+
+      expect(staged.failed).toEqual([]);
+      expect(staged.forced).toContain(".claude/hooks/path-ownership.mjs");
+      expect(staged.forced).toContain(".claude/harness.md");
+      // 인덱스에 실제로 들어갔는가 — 보고가 아니라 git 에게 묻는다.
+      expect(git(["ls-files"])).toContain(".claude/harness.md");
+    });
+
+    it("무시되지 않으면 인덱스를 건드리지 않는다", () => {
+      // 사람이 칠 `git add -A` 가 알아서 담는다. `package.json` 같은 A 의 파일에는
+      // 하네스와 무관한 미커밋 수정이 섞여 있을 수 있어, 필요 없는 것까지 올리지 않는다.
+      const { dir, git } = realRepo("node_modules\n");
+
+      const { staged } = apply(dir, git);
+
+      expect(staged).toEqual({ forced: [], failed: [] });
+      expect(git(["ls-files"])).toBe("");
+    });
+
+    it("`.githooks` 만 무시돼도 그것만 담는다", () => {
+      const { dir, git } = realRepo(".githooks\nnode_modules\n");
+
+      const { staged } = apply(dir, git);
+
+      expect(staged.forced).toContain(".githooks/pre-commit");
+      expect(staged.forced.some((p) => p.startsWith(".claude/"))).toBe(false);
     });
   });
 });

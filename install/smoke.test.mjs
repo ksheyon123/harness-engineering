@@ -81,6 +81,8 @@ function repo({ files = {}, drop = [], untrack = [], hooksPath = ".githooks" } =
     ".githooks/pre-push": '#!/bin/sh\nexec node "$(dirname "$0")/pre-push.mjs"\n',
     ".githooks/pre-commit.mjs": "// 판정\n",
     ".githooks/pre-push.mjs": "// 판정\n",
+    // `posttest` 가 부르고 `pre-push` 가 그 기록을 읽는다. 이것도 사본에 있어야 한다.
+    ".githooks/mark-verified.mjs": "// 기록\n",
     ".gitignore": ".claude/worktrees/\nnode_modules\n",
     "package.json": JSON.stringify(
       {
@@ -137,9 +139,10 @@ const dead = (checks) => checks.filter((c) => c.state === "broken").map((c) => c
  * 검사를 돌리는 기계의 개인 설정에 달리므로, 픽스처가 자기 트리를 신뢰하는 설정을 만들어
  * 넣는다. 신뢰 판정 자체는 아래 `신뢰` 절이 `trust` 를 직접 불러 덮는다.
  */
-const look = (options) => {
+const look = (options, after) => {
   const { dir, git } = repo(options);
   try {
+    after?.(dir, git);
     const root = mainRoot(dir, git);
     return inspect(dir, git, { trustConfig: { projects: { [root]: { hasTrustDialogAccepted: true } } } });
   } finally {
@@ -394,6 +397,75 @@ describe("smoke — 배선이 살아 있는가", () => {
 
       expect(check.state).toBe("broken");
       expect(check.detail).toContain("qa.md");
+    });
+
+    it("스테이징만 한 것은 초록이 아니다 — 사본은 커밋된 것만 받는다", () => {
+      // 이 판정의 이전 버전은 `git ls-files`(인덱스)를 봐서 여기서 **초록을 냈다.**
+      // 그동안 사본에는 아무것도 없었고, smoke 가 존재하는 이유가 정확히 그 실패였다.
+      const { checks } = look({ untrack: [".claude/agents/qa.md"] }, (dir, git) => {
+        git(["add", "-f", "--", ".claude/agents/qa.md"]);
+      });
+      const check = find(checks, "worktree 안에서도");
+
+      expect(check.state).toBe("broken");
+      expect(check.detail).toContain("커밋해야");
+    });
+
+    it("`.claude` 를 통째로 무시해도 사본 무시 판정은 초록이다", () => {
+      // 글자로 `.claude/worktrees/` 줄을 찾던 시절에는 여기서 거짓 ✗ 가 났다.
+      // 무시되는지는 git 에게 물으면 정확히 답한다.
+      const { checks } = look({ files: { ".gitignore": ".claude\nnode_modules\n" } });
+
+      expect(find(checks, "사본이 커밋에 쓸려").state).toBe("ok");
+    });
+
+    it("무시되는 경로에는 `git add -A` 가 아니라 `-f` 를 처방한다", () => {
+      // A 가 `.claude` 를 통째로 무시하면 `git add -A` 는 몇 번을 돌려도 못 담는다.
+      // 처방이 하나뿐이면 그 사실을 말할 수가 없다.
+      const { checks } = look({ files: { ".gitignore": ".claude\nnode_modules\n" } });
+      const check = find(checks, "worktree 안에서도");
+
+      expect(check.state).toBe("broken");
+      expect(check.detail).toContain("git add -f");
+    });
+  });
+
+  describe("게이트가 사본을 다시 세지 않는가", () => {
+    const EXCLUDED = 'export default { test: { exclude: ["**/.claude/worktrees/**"] } };\n';
+
+    it("러너가 사본을 제외하면 초록이다", () => {
+      const { checks } = look({ files: { "vitest.config.mjs": EXCLUDED } });
+
+      expect(find(checks, "다시 세지 않는다").state).toBe("ok");
+    });
+
+    it("아는 러너 설정에 제외가 없으면 끊긴 것이다", () => {
+      // 사본의 테스트가 부모 실행에 다시 잡힌다(이 저장소 실측 172 → 344). 그리고 red 로
+      // 끝난 사본이 남아 있으면 **내 트리에 원인이 없는 실패**를 게이트가 주워온다.
+      const { checks } = look({ files: { "vitest.config.mjs": "export default {};\n" } });
+      const check = find(checks, "다시 세지 않는다");
+
+      expect(check.state).toBe("broken");
+      expect(check.detail).toContain(".claude/worktrees");
+    });
+
+    it("`package.json` 의 jest 설정도 본다", () => {
+      const { checks } = look({
+        files: {
+          "package.json": JSON.stringify({
+            name: "a",
+            scripts: { test: "jest", posttest: "node .githooks/mark-verified.mjs" },
+            jest: { testPathIgnorePatterns: ["/node_modules/", "/\\.claude/worktrees/"] },
+          }),
+        },
+      });
+
+      expect(find(checks, "다시 세지 않는다").state).toBe("ok");
+    });
+
+    it("모르는 러너면 판정하지 않는다 — 조용한 초록보다 낫다", () => {
+      // 러너 설정은 프로젝트마다 파일도 형식도 다르다. 못 쟀으면 못 쟀다고 말한다.
+      expect(find(look().checks, "다시 세지 않는다").state).toBe("unknown");
     });
   });
 

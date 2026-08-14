@@ -28,7 +28,7 @@ vitest.config.mjs          테스트 러너 설정
 package.json               scripts.test = "vitest run"  ← 게이트 정의의 단일 출처
 ```
 
-여기에 `scripts/`(`harness.mjs` — CLI 진입점 · `spawn.ps1` — 작업 세션을 새 탭에 띄운다 · `reap-worktrees.mjs` — 회수된 에이전트 사본을 거둔다 · `doctor.mjs` — 설정을 검사해 보고한다)와 `install/`(`init.mjs`·`sync.mjs`·`smoke.mjs` — **남의 저장소에 설치하고 갱신하고 검사한다.** 남의 트리를 고치는 유일한 코드라 운영 도구와 자리를 나눴다)와 `harness/<task>/`(spec · QA 체크리스트), `src/`(제품 코드)가 더 있다. 없는 것: `.claude/rules/`.
+여기에 `scripts/`(`harness.mjs` — CLI 진입점 · `spawn.ps1` — 작업 세션을 새 탭에 띄운다 · `reap-worktrees.mjs` — 회수된 에이전트 사본을 거둔다 · `doctor.mjs` — 설정을 검사해 보고한다)와 `install/`(`init.mjs`·`sync.mjs`·`smoke.mjs` — **남의 저장소에 설치하고 갱신하고 검사한다.** 남의 트리를 고치는 유일한 코드라 운영 도구와 자리를 나눴다. `tracking.mjs` = 파일이 worktree 사본까지 가는가를 다섯 상태로 가르는 판정기, `init`·`smoke` 공용)와 `harness/<task>/`(spec · QA 체크리스트), `src/`(제품 코드)가 더 있다. 없는 것: `.claude/rules/`.
 
 ## 미착수 — 이 설계와 실재의 차이
 
@@ -63,3 +63,10 @@ package.json               scripts.test = "vitest run"  ← 게이트 정의의 
 | Claude Code 가 그 배선을 **실제로 부르는지** | **여전히 자동 검증 불가.** `smoke` 가 증명하는 것은 *부르면 도는가* 까지다 — 비대화형 `claude -p` 는 `isolation` 도 frontmatter 훅도 안 건다(실측). `smoke` 가 사람이 세션에서 볼 목록을 같이 찍는다 |
 | `node_modules` 를 겨냥한 배선이 worktree 에서 죽는 것 | 실측됐다. `@` 임포트는 프로젝트 루트 밖으로 못 나가고 `${CLAUDE_PROJECT_DIR}` 는 worktree 를 가리킨다 — **둘 다 조용히 실패한다** → **backlog G** |
 | ~~플러그인 에이전트의 `isolation`·`SubagentStop`~~ | ✅ **쟀다. 둘 다 안 걸린다** — `tools:` 화이트리스트만 먹는다. `developer`·`qa` 는 플러그인으로 못 옮긴다 → **backlog G** |
+| ~~`smoke` 가 스테이징만 한 것을 초록으로 통과시키는 것~~ | ✅ **닫혔다.** 기준을 인덱스에서 `HEAD` 로 옮겼다(`install/tracking.mjs`). 사본은 커밋된 것만 받는다 |
+| ~~A 가 `.gitignore` 로 `.claude` 를 통째로 무시한 경우~~ | ✅ **감지·처방·조치가 다 붙었다.** `init` 이 무시되는 경로만 `git add -f` 로 담고, `smoke` 가 상태별 처방을 찍는다 |
+| ~~러너 exclude 를 넣었는지 묻는 곳이 없던 것~~ | ✅ **`smoke` 가 묻는다.** vitest·jest 를 알고, 모르는 러너면 `?` 다. **넣어주지는 않는다** — 남의 러너 설정 형식을 추측해 고치지 않는다 |
+| 커밋을 실제로 **강제**하는 자리 | 없다. `init` 은 남의 저장소에 커밋을 만들지 않으므로 못 한다 — **`spawn` 이 할 일**이다(작업 세션을 열기 전에 `smoke` 를 돌린다) → **backlog G-4** |
+| 층 1 의 fail-closed | 없다. manifest 경로가 사본에 없으면 전부 deny 하는 것. **사본에서는 "존재하나" 가 곧 "커밋됐나" 다** → **backlog G-4** |
+| 훅 자체가 안 붙은 미비 | **원리적으로 못 막는다** — 검사기가 자기 부재를 신고할 수 없다. 남는 수단은 규약의 "역할 선언을 못 받았으면 훅이 안 붙은 것" 한 줄뿐이다 |
+| 설치 시 A 의 기존 `.claude/hooks/*`·`agents/*` 와의 이름 충돌 | **조용히 덮는다.** `plan` 이 아는 충돌(`core.hooksPath`·`posttest`·`baseRef`)만 보기 때문이다 → **backlog G-4** |

@@ -174,7 +174,9 @@ npx harness sync
 |---|---|
 | `npm i` 가 404 | 갓 발행된 버전이면 CDN 부정 캐시다. `--prefer-online`, 그래도 안 되면 `npm cache clean --force` |
 | Claude Code 가 하네스를 안 탄다 | `harness init` 을 안 돌렸거나, **세션을 새로 안 열었다**. `.claude/settings.json` 이 있는지부터 봐라 |
-| `smoke` 가 ✗ 하나로 종료코드 1 | 설치 직후라 추적이 안 됐다. `git add -A` |
+| `smoke` 가 `필요한 것이 전부 커밋된다` 로 ✗ | **처방을 그 ✗ 가 직접 찍는다.** `커밋해야` 면 커밋만 하면 되고, `git add -f` 면 그 경로가 `.gitignore` 에 걸린 것이라 `git add -A` 로는 **몇 번을 돌려도** 안 담긴다 |
+| `.gitignore` 에 `.claude` 가 있는 저장소에 설치했다 | `init` 이 그 경로들을 `-f` 로 인덱스에 담아둔다(보고에 찍힌다). **커밋은 사람이 한다** |
+| `init` 이 종료 코드 1 | 배선이 깨진 것이다 — 뒤에 붙은 `smoke` 출력의 ✗ 를 봐라. **커밋만 안 된 것은 1 이 아니다**(그건 0 + 안내다) |
 | 첫 커밋이 막힌다 | 보호 브랜치 직접 커밋이다. **정상 동작** — 브랜치를 자르고 커밋해라 |
 | `init` 이 멈추고 `core.hooksPath` 를 말한다 | husky·lefthook 이 이미 차지했다. 빼앗지 않으므로 사람이 정해야 한다 |
 | `developer` 가 재시도만 태우고 red 로 끝난다 | 게이트가 없거나 안 돈다. `npm test` 를 직접 돌려봐라 — `Missing script: test` 면 `scripts.test` 부터 만든다 |

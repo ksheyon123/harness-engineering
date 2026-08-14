@@ -92,7 +92,7 @@ node scripts/harness.mjs doctor
 node scripts/harness.mjs smoke
 ```
 
-`doctor` 가 **값**을 본다면 이건 **배선**을 본다 — 훅 명령이 실재하는 파일을 가리키는지, 그 파일이 돌아 판정을 내놓는지, git 이 그것을 추적하는지(추적되지 않으면 worktree 사본에서 통째로 사라진다).
+`doctor` 가 **값**을 본다면 이건 **배선**을 본다 — 훅 명령이 실재하는 파일을 가리키는지, 그 파일이 돌아 판정을 내놓는지, 게이트가 에이전트 사본을 다시 세지 않는지, 그리고 **필요한 것이 전부 커밋됐는지**(worktree 사본은 커밋된 것만 받으므로, 안 됐으면 거기서 하네스가 통째로 사라진다).
 
 > **여기서 답할 수 없는 것이 남는다.** 이 명령이 증명하는 것은 *부르면 도는가* 까지고, *Claude Code 가 실제로 부르는가* 는 세션을 띄워야만 안다. 그래서 사람이 세션에서 확인할 목록을 **같이 찍는다** — 릴리스 전에 한 번 훑는 자리다.
 
@@ -110,6 +110,7 @@ node scripts/harness.mjs smoke
 .githooks/           pre-commit · pre-push
 scripts/             harness.mjs · spawn.ps1 · reap-worktrees.mjs · doctor.mjs
 install/             init.mjs · sync.mjs · smoke.mjs — 다른 저장소에 설치하고 갱신하고 검사한다
+                     tracking.mjs — 파일이 worktree 사본까지 가는가 (init · smoke 공용)
 harness.config.json  프로젝트마다 달라지는 값 (없으면 기본값 — 이 저장소는 두지 않는다)
 harness/<task>/      spec.md · qa-checklist.md   ← 산출물
 docs/                implementation.md — 설치와 운영 · backlog.md — 안 고친 것
@@ -139,10 +140,13 @@ src/                 제품 코드
 
 ```sh
 npm i -D @ksheyon123/harness-engineering
-npx harness init
-git add -A            # 이것까지 해야 설치가 끝난다 — 추적되지 않는 파일은 worktree 사본에 안 간다
-npx harness smoke
+npx harness init      # 끝에서 smoke 를 직접 돌고, 배선이 깨졌으면 종료 코드 1 이다
+git switch -c chore/harness-install
+git add -A            # 이것까지 해야 설치가 끝난다 — 커밋 안 된 파일은 worktree 사본에 안 간다
+git commit
 ```
+
+> **`.gitignore` 에 `.claude` 가 있어도 된다.** `init` 이 그 경로들을 `git add -f` 로 인덱스에 담아두고 무엇을 담았는지 찍는다 — `.gitignore` 는 **추적되지 않는** 파일에만 걸리므로 한 번 담기면 그 뒤로는 `git add -A` 가 정상적으로 따라온다.
 
 그 다음 **Claude Code 를 새로 연다** — 훅은 세션이 시작될 때 읽힌다.
 
