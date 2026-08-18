@@ -12,14 +12,17 @@
 | **도는 게이트** | 종료 훅이 `npm test` 를 돌린다. `init` 은 러너를 설치하지 않는다 — [아래](#게이트는-init-이-만들지-않는다) |
 | Windows | **`harness spawn` 만** 그렇다. 나머지는 플랫폼을 안 가린다 — 유닉스판 `spawn` 은 아직 없다 |
 
-## 설치 — 네 단계
+## 설치 — 다섯 단계
 
 ```sh
 npm i -D @ksheyon123/harness-engineering
-npx harness init            # --dry-run 을 먼저 붙여 무엇을 쓸지 볼 수 있다
-git add -A                  # 이것까지 해야 설치가 끝난다 — 아래 참고
-npx harness smoke           # 배선이 살아 있는지 묻는다
+npx harness init                       # --dry-run 을 먼저 붙여 무엇을 쓸지 볼 수 있다
+git switch -c chore/harness-install    # 보호 브랜치에는 직접 커밋이 안 된다
+git add -A
+git commit                             # 이것까지 해야 설치가 끝난다 — 아래 참고
 ```
+
+**`init` 이 끝에서 `smoke` 를 직접 돈다.** 그래서 따로 부를 필요가 없다 — 배선이 깨졌으면 그 자리에서 종료 코드 1 이다. 다만 **커밋만 안 된 것은 1 이 아니다.** `init` 은 남의 저장소에 커밋을 만들지 않으므로 그것으로 실패를 내면 종료 코드가 *항상* 1 이 되고, 항상 같은 값은 아무 정보도 아니다. 커밋한 뒤 `npx harness smoke` 를 한 번 더 돌려 마지막 항목까지 초록인지 본다.
 
 그 다음 **Claude Code 를 새로 연다.** 훅은 세션이 시작될 때 읽히므로, 이미 떠 있는 세션은 `.claude/settings.json` 이 생겨도 집지 않는다.
 
@@ -37,20 +40,27 @@ npx harness smoke           # 배선이 살아 있는지 묻는다
 
 `.claude/settings.json` 이 없으면 훅이 등록될 자리가 없고, `CLAUDE.md` 가 없으면 규약도 안 실린다. **둘 다 `init` 이 만든다.**
 
-### `git add -A` 를 왜 설치 절차에 넣나
+### 커밋까지 왜 설치 절차에 넣나
 
-**worktree 사본에는 추적되는 파일만 간다.** 서브에이전트는 `isolation: worktree` 로 자기 사본에서 도는데, 갓 설치돼 추적되지 않는 훅·규약·에이전트 정의는 그 사본에 **없다.** 없으면 막히는 게 아니라 **그냥 통과한다** — 층 1 이 통째로 사라지는데 아무 신호도 없다.
+**worktree 사본은 커밋된 것만 받는다.** 서브에이전트는 `isolation: worktree` 로 자기 사본에서 도는데, 갓 설치돼 커밋되지 않은 훅·규약·에이전트 정의는 그 사본에 **없다.** 없으면 막히는 게 아니라 **그냥 통과한다** — 층 1 이 통째로 사라지는데 아무 신호도 없다.
 
 `harness smoke` 가 이것을 마지막 항목으로 묻는다. 설치 직후 바로 돌리면 이렇게 나온다:
 
 ```
-  ✗  worktree 안에서도 살아남는다 — 필요한 것이 전부 추적된다
-      추적되지 않는다: `.claude/CLAUDE.md` · `.claude/harness.md` · … — 사본에서는 없는 파일이다.
+  ✗  worktree 안에서도 살아남는다 — 필요한 것이 전부 커밋된다
+      `.claude/CLAUDE.md` · `.claude/harness.md` · … — 아직 안 담겼다 — `git add -A`.
 
 끊긴 배선 1개. 그 자리는 **조용히** 없는 것으로 돈다.
 ```
 
-스테이징하면 초록이 된다. 커밋까지 하는 것이 정석이지만, **판정 기준은 git 이 아는가**이므로 `git add -A` 만으로도 넘어간다.
+**스테이징만으로는 초록이 되지 않는다.** 기준은 인덱스가 아니라 `HEAD` 다 — `git add` 만 하고 커밋을 안 한 상태에서 사본을 떠보면 `.claude` 가 통째로 없다(실측). 상태마다 처방이 다르고, ✗ 가 그것을 직접 찍는다:
+
+| 상태 | 다음에 칠 것 |
+|---|---|
+| 파일이 없다 | `harness init` 부터 |
+| `.gitignore` 가 막는다 | `git add -f -- <경로>` — `git add -A` 로는 **몇 번을 돌려도** 안 담긴다 |
+| 아직 안 담겼다 | `git add -A` |
+| 스테이징까지만 됐다 | **커밋** |
 
 > 첫 커밋에서 `pre-commit` 이 막을 수 있다 — 보호 브랜치(`main`/`dev`/`master`)에 직접 커밋하려 할 때다. **층 2 가 살아 있다는 증거이므로 정상이다.** `git switch -c chore/harness` 로 브랜치를 자르고 커밋해라.
 
@@ -110,7 +120,7 @@ core.hooksPath          `.githooks` 로 설정한다
 2. **층 1 이 도구를 막나** — `"src 아래 아무 파일이나 한 줄 고쳐봐."` → 거부되고 `harness spawn` 안내가 떠야 한다
 3. **`spawn` 이 다른 프로세스를 띄우나** — `harness spawn "..."` → 새 탭에서 `"너는 누구지?"` 에 **작업 세션**이라고 답해야 한다
 4. **서브에이전트가 격리되나** — `developer` 스폰 후 `git worktree list` → `agent-<hex>` 가 하나 늘어야 한다
-5. **종료 훅이 인계 커밋을 찍나** — `git branch --list 'worktree-agent-*' --contains <spec 커밋 sha>` → `chore(developer): …` 이 보여야 한다
+5. **종료 훅이 인계 커밋을 찍나** — `git branch --list 'worktree-agent-*' --contains <spec 커밋 sha>` → `chore(developer): …` 이 보여야 한다. 브랜치가 base 그대로면 `smoke` 의 **신뢰** 판정부터 봐라 — 저장소가 신뢰 목록에 없으면 훅은 실패하는 게 아니라 **등록조차 되지 않는다**
 6. **층 2 가 검증 안 된 push 를 막나** — 게이트를 안 돌린 채 `git push` → 거부돼야 한다
 
 1번이 안 되면 훅이 아예 안 붙은 것이다. **세션을 새로 열었는지부터 확인해라.**
@@ -181,7 +191,8 @@ npx harness sync
 | `init` 이 멈추고 `core.hooksPath` 를 말한다 | husky·lefthook 이 이미 차지했다. 빼앗지 않으므로 사람이 정해야 한다 |
 | `developer` 가 재시도만 태우고 red 로 끝난다 | 게이트가 없거나 안 돈다. `npm test` 를 직접 돌려봐라 — `Missing script: test` 면 `scripts.test` 부터 만든다 |
 | 게이트가 두 배로 돈다 | 러너에서 `**/.claude/worktrees/**` 를 제외 안 했다 |
-| 서브에이전트가 빈 브랜치만 남기고 끝났다 | 승인 프롬프트에서 멈춘 것이다. 멈춤은 종료가 아니라 `SubagentStop` 이 안 돌고, 게이트도 인계 커밋도 없다 |
+| 서브에이전트가 빈 브랜치만 남기고 끝났다 | 원인이 둘이다. **먼저 `smoke` 의 `신뢰` 항목을 봐라**(아래 행). 거기가 초록이면 승인 프롬프트에서 멈춘 것이다 — 멈춤은 종료가 아니라 `SubagentStop` 이 안 돌고, 게이트도 인계 커밋도 없다 |
+| `smoke` 가 `신뢰 — 종료 훅이 등록될 수 있다` 로 ✗ | 저장소가 Claude Code 신뢰 목록에 없어 **frontmatter 훅이 등록조차 안 된다.** 실행 실패가 아니라 등록 누락이라 재시도 카운터도 `systemMessage` 도 안 남는다. **조상 폴더(`~/projects` 등)가 신뢰돼 있으면 다이얼로그가 안 뜨므로 스스로 낫지 않는다** — `~/.claude.json` 의 `projects["<이 저장소>"].hasTrustDialogAccepted` 를 직접 `true` 로 둬라 |
 
 ## 아직 안 되는 것
 

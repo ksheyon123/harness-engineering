@@ -71,7 +71,7 @@ describe("발행되는 tarball", () => {
   });
 
   it("이 저장소의 `CLAUDE.md` 는 담기지 않는다", () => {
-    // 그건 규약이 아니라 **이 저장소 사정**이다 — 파일 목록·미착수 표·backlog 포인터.
+    // 그건 규약이 아니라 **이 저장소 사정**이다 — backlog·measured 포인터.
     // A 로 딸려가면 없는 경로를 가리키는 문서가 된다.
     expect(has(".claude/CLAUDE.md")).toBe(false);
   });

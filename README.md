@@ -2,19 +2,45 @@
 
 역할 기반(기획자 · 개발자 · QA) 문서 주도 개발 하네스. **Claude Code 위에서 돈다.**
 
+## 문서
+
+| 어디 | 무엇 |
+|---|---|
+| **[docs/implementation.md](./docs/implementation.md)** | **설치와 운영** — 절차 · 설정(`harness.config.json`) · 갱신 · 막히는 자리 |
+| [docs/backlog.md](./docs/backlog.md) | 확인됐지만 안 고친 것 — 왜 문제이고 어떻게 고치는지 |
+| [docs/measured.md](./docs/measured.md) | 이미 재본 것 — worktree · 플러그인 · git 의 실제 동작 |
+| [.claude/harness.md](./.claude/harness.md) | 규약 본문 — 자리 · 모드 · 검증 · 커밋/push · worktree |
+| [.claude/planner-mode.md](./.claude/planner-mode.md) | spec 을 어떻게 쓰는가 |
+
+## 설치
+
+요구 사항: Node ≥ 18 · git 저장소 · [Claude Code](https://claude.com/claude-code).
+
+```sh
+npm i -D @ksheyon123/harness-engineering
+npx harness init            # 끝에서 smoke 를 직접 돈다 — 배선이 깨졌으면 종료 코드 1
+git switch -c chore/harness-install
+git add -A                  # 이것까지 해야 끝난다 — 커밋 안 된 파일은 worktree 사본에 안 간다
+git commit
+```
+
+그 다음 **Claude Code 를 새로 연다** — 훅은 세션이 시작될 때 읽힌다.
+
+- **`npm install` 만으로는 아무것도 안 된다.** 배선은 `harness init` 이 저장소에 실체(`.claude/settings.json` · `.githooks/` · 규약)를 만들어야 생긴다.
+- **게이트는 `init` 이 만들지 않는다.** 무엇을 검사할지는 저장소가 정한다 — `package.json` 의 `scripts.test` 가 그 단일 출처다.
+- **`.gitignore` 에 `.claude` 가 있어도 된다.** `init` 이 그 경로를 `git add -f` 로 담고 무엇을 담았는지 찍는다.
+
 ## 무엇을 푸는가
 
-에이전트에게 "이렇게 일해라" 고 적어두는 것만으로는 지켜지지 않는다. 지침은 **컨텍스트일 뿐 강제가 아니다** — 컨텍스트가 길어지면 묻히고, `/clear` 한 번에 사라지고, 애초에 읽었는지 확인할 방법도 없다.
+에이전트에게 "이렇게 일해라" 고 적어두는 것만으로는 지켜지지 않는다. 지침은 **컨텍스트일 뿐 강제가 아니다** — 길어지면 묻히고, `/clear` 한 번에 사라지고, 읽었는지 확인할 방법도 없다.
 
-그래서 이 저장소는 규율로 지키던 것을 **구조로 옮긴다.** 지키지 못하게 하는 대신 **할 수 없게** 만든다:
+그래서 규율로 지키던 것을 **구조로 옮긴다.** 지키지 못하게 하는 대신 **할 수 없게** 만든다:
 
 - 개발자에게 spec 을 고칠 권한을 주지 않는다 — 훅이 그 경로의 쓰기를 거부한다
 - 테스트가 red 인 채로 끝내지 못하게 한다 — 종료 훅이 종료를 막고 실패 로그를 되돌려준다
 - 검증 안 된 커밋을 올리지 못하게 한다 — `pre-push` 가 게이트 통과 기록이 없는 sha 를 막는다
 
 ## 어떻게 도는가
-
-한 작업은 이 순서로 흐른다. **사람은 앞쪽에만 붙어 있는다.**
 
 ```
 사람과 논의  →  spec.md 확정  ─┬─→  개발자: 구현 + 테스트   →  머지
@@ -23,136 +49,47 @@
                                         게이트(green) → push  ←───┘
 ```
 
-**spec 커밋이 경계다.** 그 전은 논의가 본업이고, 그 뒤로는 묻지 않고 끝까지 간다. 그래서 요구사항은 대화가 아니라 **파일로 남는다** — 세션이 닫혀도 근거가 남고, PR 을 보는 사람이 무엇을 만들기로 했는지 읽을 수 있다.
-
-### 자리는 넷
+**spec 커밋이 경계다.** 그 전은 논의가 본업이고, 그 뒤로는 묻지 않고 끝까지 간다. 요구사항은 대화가 아니라 **파일로 남는다.**
 
 | 자리 | 형태 | 사람 | 하는 일 |
 |---|---|:---:|---|
 | **실행자** | 세션 (맨몸 `claude`) | 붙어 있다 | 하네스 자체를 고친다 · 기능 요청은 넘긴다 |
-| **작업 세션** | 세션 (`spawn` 으로 연다) | 앞쪽만 | spec 을 쓰고 → 스폰·머지·게이트·push |
+| **작업 세션** | 세션 (`harness spawn`) | 앞쪽만 | spec 을 쓰고 → 스폰 · 머지 · 게이트 · push |
 | **개발자** | 서브에이전트 · 격리된 사본 | 없다 | 코드 + 테스트 |
 | **QA** | 서브에이전트 · 격리된 사본 | 없다 | spec 인수기준 대 테스트 커버리지 표 |
 
 서브에이전트에는 **셸이 없다.** 게이트도 커밋도 훅이 대신 돈다 — 능력을 주지 않는 것이 규칙을 적어두는 것보다 강하다.
 
-### 막는 것은 네 겹
+막는 것은 네 겹이다: **도구 화이트리스트**(능력 자체를 뺀다) · **worktree 격리**(각자 자기 사본) · **`PreToolUse` 훅**(경로 소유권) · **git 훅**(보호 브랜치 · 부분 스테이징 · 깨진 spec · 미검증 push). 여기에 **종료 훅** 둘이 더 있다 — 겹이 *못 하게* 막는다면, 종료 훅은 **빈손이거나 깨진 상태로 못 끝내게** 막는다.
 
-| 겹 | 무엇을 막나 |
+## 명령
+
+| 명령 | 언제 |
 |---|---|
-| 도구 화이트리스트 | 능력 자체의 제거 — 서브에이전트에 셸이 없다 |
-| worktree 격리 | 각자 자기 사본에서 돈다. 같은 브랜치의 이중 체크아웃을 git 이 거부한다 |
-| `PreToolUse` 훅 | 경로 소유권 — 자리마다 만질 수 있는 곳이 정해진다 |
-| git 훅 | 보호 브랜치 직접 커밋 · 부분 스테이징 · 깨진 spec 형식 · 미검증 push |
+| `harness spawn "<사람의 원문>"` | 기능 요청이 왔을 때. 작업 세션을 새 탭에 띄운다 (**Windows 전용**) |
+| `harness reap` | 한 task 의 push 직후, `ExitWorktree` **전에**. 회수가 끝난 사본을 거둔다 |
+| `harness doctor` | 설정(`harness.config.json`)의 **값**이 의심될 때 |
+| `harness smoke` | **배선**이 끊겼는지 의심될 때 — 훅이 실재하는 파일을 가리키는지 · 돌아 판정을 내놓는지 · 전부 커밋됐는지 |
+| `harness sync` | 패키지를 올린 뒤. 저장소에 복사된 규약·에이전트 정의를 다시 쓴다 |
 
-여기에 **종료 훅**이 둘 더 있다. 겹들이 *못 하게* 막는다면, 종료 훅은 **빈손이거나 깨진 상태로 못 끝내게** 막는다.
+> `smoke` 가 증명하는 것은 *부르면 도는가* 까지다. *Claude Code 가 실제로 부르는가* 는 세션을 띄워야만 안다 — 그래서 사람이 확인할 목록을 같이 찍는다.
 
-## 시작하기
+## 아직 안 되는 것
 
-요구 사항: Node 20+, git, [Claude Code](https://claude.com/claude-code).
+- **`spawn` 의 유닉스판이 없다.** Windows 밖에서는 작업 세션을 규약대로 띄울 수 없다
+- **POSIX 실행권한이 검증되지 않았다.** `.githooks/` 의 실행 비트를 Windows 에서 잴 수 없어 `smoke` 가 `?` 로 찍는다
+
+나머지는 [docs/backlog.md](./docs/backlog.md) 에 근거와 함께 있다 — 추측인 항목은 추측이라고 표시돼 있다.
+
+## 이 저장소에서 개발하려면
 
 ```sh
 npm install
 git config core.hooksPath .githooks   # 층 2 를 붙인다
+npm test                              # 게이트
 ```
 
-**하네스를 고치러 왔다면** — 맨몸으로 연다. 이 세션이 실행자다.
-
-```sh
-claude
-```
-
-**기능을 만들려면** — 작업 세션을 새 탭에 띄운다. 사람의 요구사항 원문을 그대로 넘긴다.
-
-```sh
-node scripts/harness.mjs spawn "<요구사항 원문>"
-```
-
-> 지금은 **Windows 전용**이다. 유닉스판은 아직 없다.
-
-**게이트를 돌리려면:**
-
-```sh
-npm test
-```
-
-무엇이 게이트인지는 `package.json` 의 `scripts.test` 가 혼자 정한다. 대상을 바꾸려면 그 스크립트를 고친다.
-
-**설정이 의도대로 읽히는지 확인하려면:**
-
-```sh
-node scripts/harness.mjs doctor
-```
-
-`harness.config.json` 을 검사해 모르는 키·타입 불일치·아무것도 걸지 않는 경로 패턴을 보고한다. 아무것도 막지 않는다 — 오류가 있으면 종료 코드 1 을 준다.
-
-**배선이 실제로 살아 있는지 확인하려면:**
-
-```sh
-node scripts/harness.mjs smoke
-```
-
-`doctor` 가 **값**을 본다면 이건 **배선**을 본다 — 훅 명령이 실재하는 파일을 가리키는지, 그 파일이 돌아 판정을 내놓는지, 게이트가 에이전트 사본을 다시 세지 않는지, 그리고 **필요한 것이 전부 커밋됐는지**(worktree 사본은 커밋된 것만 받으므로, 안 됐으면 거기서 하네스가 통째로 사라진다).
-
-> **여기서 답할 수 없는 것이 남는다.** 이 명령이 증명하는 것은 *부르면 도는가* 까지고, *Claude Code 가 실제로 부르는가* 는 세션을 띄워야만 안다. 그래서 사람이 세션에서 확인할 목록을 **같이 찍는다** — 릴리스 전에 한 번 훑는 자리다.
-
-## 저장소 구조
-
-```
-.claude/
-  harness.md         하네스 코어 규약 — 설치될 때 이 파일이 복사된다
-  CLAUDE.md          위를 임포트하고 이 저장소 사정을 덧붙인다
-  planner-mode.md    spec 작성 지침 (task 경계 · 형식 · 인수기준)
-  agents/            developer · qa 정의
-  hooks/             경로 소유권 · 종료 훅 · 세션 훅
-  settings.json      permissions · 훅 배선
-  worktrees/         격리된 사본이 쌓이는 곳 (추적 안 함)
-.githooks/           pre-commit · pre-push
-scripts/             harness.mjs · spawn.ps1 · reap-worktrees.mjs · doctor.mjs
-install/             init.mjs · sync.mjs · smoke.mjs — 다른 저장소에 설치하고 갱신하고 검사한다
-                     tracking.mjs — 파일이 worktree 사본까지 가는가 (init · smoke 공용)
-harness.config.json  프로젝트마다 달라지는 값 (없으면 기본값 — 이 저장소는 두지 않는다)
-harness/<task>/      spec.md · qa-checklist.md   ← 산출물
-docs/                implementation.md — 설치와 운영 · backlog.md — 안 고친 것
-src/                 제품 코드
-```
-
-## 읽을 것
-
-| 어디 | 무엇 |
-|---|---|
-| `.claude/harness.md` | 하네스 규약 전부 — 자리·모드·검증·커밋/push·worktree |
-| `.claude/CLAUDE.md` | 위를 임포트하고 **이 저장소 사정**(파일 목록·미착수 표)을 덧붙인다 |
-| `.claude/planner-mode.md` | spec 을 어떻게 쓰는가 |
-| `docs/implementation.md` | **설치와 운영** — 남의 저장소에 세우는 절차 · 설정 · 갱신 · 막히는 자리 |
-| `docs/backlog.md` | 확인됐지만 안 고친 것 — 왜 문제이고 어떻게 고치는지 |
-
-## 상태
-
-**하네스 자체가 아직 만들어지는 중이다.** 네 겹은 다 섰고 종료 훅도 돈다. 남은 것과 알려진 구멍은 `docs/backlog.md` 에 근거와 함께 적혀 있다 — 추측인 항목은 추측이라고 표시돼 있다.
-
-큰 것 둘:
-
-- **`spawn` 의 유닉스판이 없다** — Windows 밖에서는 작업 세션을 규약대로 띄울 수 없다
-- **POSIX 실행권한이 검증되지 않았다** — `.githooks/` 의 실행 비트를 Windows 에서 잴 수 없어 `smoke` 가 `?` 로 찍는다
-
-## 설치하기
-
-```sh
-npm i -D @ksheyon123/harness-engineering
-npx harness init      # 끝에서 smoke 를 직접 돌고, 배선이 깨졌으면 종료 코드 1 이다
-git switch -c chore/harness-install
-git add -A            # 이것까지 해야 설치가 끝난다 — 커밋 안 된 파일은 worktree 사본에 안 간다
-git commit
-```
-
-> **`.gitignore` 에 `.claude` 가 있어도 된다.** `init` 이 그 경로들을 `git add -f` 로 인덱스에 담아두고 무엇을 담았는지 찍는다 — `.gitignore` 는 **추적되지 않는** 파일에만 걸리므로 한 번 담기면 그 뒤로는 `git add -A` 가 정상적으로 따라온다.
-
-그 다음 **Claude Code 를 새로 연다** — 훅은 세션이 시작될 때 읽힌다.
-
-**`npm install` 만으로는 아무것도 안 된다.** 배선은 `harness init` 이 저장소에 실체를 만들어야 생긴다. 절차 전체, 설정(`harness.config.json`), 갱신, 막히는 자리는 여기 있다:
-
-**→ [docs/implementation.md](./docs/implementation.md) — 설치와 운영**
+하네스를 고치는 것은 **실행자**(맨몸 `claude`)의 일이다. 손대기 전에 [docs/backlog.md](./docs/backlog.md) 와 [docs/measured.md](./docs/measured.md) 를 읽어라 — [.claude/CLAUDE.md](./.claude/CLAUDE.md) 가 그 둘을 가리킨다.
 
 ## 라이선스
 
