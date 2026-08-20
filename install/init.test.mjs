@@ -1,7 +1,8 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { apply, plan } from "./init.mjs";
@@ -123,6 +124,115 @@ describe("init — 설치 판정", () => {
 
       expect(step(plan(dir, fakeGit(".githooks")), ".claude/settings.json").state).toBe("same");
       expect(JSON.parse(first).hooks.PreToolUse).toHaveLength(1);
+    });
+  });
+
+  /**
+   * 한때 이 판정이 문자열 비교(`current === ".githooks"`)였다. 그래서 **하네스가 심으려는
+   * 바로 그 디렉터리를 절대경로로 적어 둔 저장소가 설치를 거부당했고**, 같은 값을 `smoke`
+   * 는 정상이라고 했다 — 같은 저장소를 두 명령이 반대로 읽었다.
+   */
+  describe("`core.hooksPath` 는 표기가 아니라 가리키는 곳으로 판정한다", () => {
+    const hooks = (result) => result.steps.concat(result.blockers).find((s) => s.kind === "config");
+
+    /** `.githooks` 가 실재하든 안 하든 판정은 같다 — 없으면 곧 우리가 만든다. */
+    for (const [label, files] of [
+      ["`.githooks` 가 아직 없다", {}],
+      ["`.githooks` 가 이미 있다", { ".githooks/pre-commit": "#!/bin/sh\n" }],
+    ]) {
+      describe(label, () => {
+        it("설정되지 않았으면 우리가 심는다", () => {
+          const result = plan(tree(files), fakeGit());
+
+          expect(result.blockers).toEqual([]);
+          expect(hooks(result).state).toBe("set");
+        });
+
+        it.each([".githooks", "./.githooks"])("`%s` 는 같은 곳이라 건드릴 것이 없다", (value) => {
+          const result = plan(tree(files), fakeGit(value));
+
+          expect(result.blockers).toEqual([]);
+          expect(hooks(result).state).toBe("same");
+        });
+
+        it("절대경로로 우리 `.githooks` 를 가리키는 것도 같은 곳이다", () => {
+          const dir = tree(files);
+          const result = plan(dir, fakeGit(join(dir, ".githooks")));
+
+          expect(result.blockers).toEqual([]);
+          expect(hooks(result).state).toBe("same");
+        });
+
+        it("남의 곳을 가리키면 멈춘다", () => {
+          const result = plan(tree(files), fakeGit(".husky/_"));
+
+          expect(result.blockers).toHaveLength(1);
+          expect(hooks(result).state).toBe("conflict");
+        });
+      });
+    }
+
+    it("`.husky/_` 가 실재해도 안 해도 충돌이다 — 없다는 것은 안 쓴다는 뜻이 아니다", () => {
+      // husky 는 `prepare` 가 `npm install` 때 `.husky` 를 되살린다.
+      for (const dir of [tree(), tree({ ".husky/_/pre-commit": "#!/bin/sh\n" })]) {
+        expect(plan(dir, fakeGit(".husky/_")).blockers, dir).toHaveLength(1);
+      }
+    });
+
+    it("절대경로면 `git config` 로 다시 쓰지 않는다 — A 가 고른 표기를 뒤집지 않는다", () => {
+      // 상대 `.githooks` 는 링크된 worktree 안에서 **그 사본의** 훅을 부르고 절대경로는
+      // 본체 것을 부른다. 두 표기는 같은 뜻이 아니라, 고른 쪽을 설치 도구가 뒤집을 수 없다.
+      const dir = tree();
+      const git = fakeGit(join(dir, ".githooks"));
+
+      apply(dir, git);
+
+      expect(git.calls.filter((a) => a[0] === "config" && a[1] === "--local" && a[2] === "core.hooksPath")).toEqual([]);
+    });
+
+    it("판정식은 저장소에 한 번만 있다", () => {
+      // 이번 버그의 원인은 규칙이 틀린 것이 아니라 **두 곳에 따로 적혀 어긋난 것**이다.
+      const dir = fileURLToPath(new URL(".", import.meta.url));
+      const hits = readdirSync(dir)
+        .filter((name) => name.endsWith(".mjs") && !name.endsWith(".test.mjs"))
+        .flatMap((name) =>
+          readFileSync(join(dir, name), "utf8")
+            .split(/\r?\n/)
+            .filter((line) => line.includes("resolve(") && line.includes(".githooks"))
+            .map((line) => `${name}: ${line.trim()}`),
+        );
+
+      expect(hits).toHaveLength(1);
+      expect(hits[0].startsWith("smoke.mjs:"), hits.join("\n")).toBe(true);
+    });
+  });
+
+  describe("충돌 메시지는 단정하지 않고 처방한다", () => {
+    const detail = (dir) => plan(dir, fakeGit(".husky/_")).blockers[0].detail;
+
+    it("현재 값을 그대로 보여준다", () => {
+      expect(detail(tree())).toContain(".husky/_");
+    });
+
+    it("무엇을 해야 풀리는지 말한다", () => {
+      expect(detail(tree())).toContain("harness init");
+    });
+
+    it("확인하지 않은 사실을 단정하지 않는다", () => {
+      // 막힌 저장소에는 `.husky` 도 `.githooks` 도 없었다. 그 사람은 없는 husky 를 찾으러 갔다.
+      expect(detail(tree())).not.toContain("쓰고 있을 것이다");
+    });
+
+    it("가리키는 디렉터리의 실재 여부를 찍지 않는다", () => {
+      // 판정에 안 쓰기로 한 사실을 출력하면 읽는 사람이 그것을 근거로 행동한다.
+      expect(detail(tree({ ".husky/_/pre-commit": "#!/bin/sh\n" }))).toBe(detail(tree()));
+    });
+
+    it("충돌이 아니면 아예 만들어지지 않는다", () => {
+      const dir = tree();
+      for (const value of [null, ".githooks", "./.githooks", join(dir, ".githooks")]) {
+        expect(plan(dir, fakeGit(value)).blockers, `${value}`).toEqual([]);
+      }
     });
   });
 
@@ -288,5 +398,42 @@ describe("init — 설치 판정", () => {
       expect(staged.forced).toContain(".githooks/pre-commit");
       expect(staged.forced.some((p) => p.startsWith(".claude/"))).toBe(false);
     });
+  });
+});
+
+/**
+ * 그 문서는 **남의 저장소에 하네스를 세우는 절차**다. 거기 적힌 충돌 조건이 코드보다 좁으면
+ * 읽는 사람은 자기 저장소가 왜 막혔는지 문서에서 답을 못 찾는다. 낡은 사본은 없는 것보다 나쁘다.
+ */
+describe("`docs/implementation.md` 가 판정과 같은 것을 말한다", () => {
+  const doc = readFileSync(new URL("../docs/implementation.md", import.meta.url), "utf8");
+  const row = (needle) => doc.split(/\r?\n/).find((line) => line.startsWith("|") && line.includes(needle));
+
+  it("husky·lefthook 을 충돌의 조건으로 적지 않는다", () => {
+    expect(doc).not.toContain("husky·lefthook 을 가리킨다");
+    expect(doc).not.toContain("husky·lefthook 이 이미 차지했다");
+  });
+
+  it("충돌 조건을 가리키는 곳으로 적는다", () => {
+    const conflict = row("빼앗으면 A 의 기존 훅");
+
+    expect(conflict).toBeDefined();
+    expect(conflict).toContain("가리키는 곳");
+    expect(conflict).toContain("`.githooks`");
+  });
+
+  it("절대경로로 우리 `.githooks` 를 가리키는 것은 충돌이 아님을 명시한다", () => {
+    expect(row("빼앗으면 A 의 기존 훅")).toContain("충돌이 아니다");
+  });
+
+  it("트러블슈팅 행의 처방이 `init` 이 찍는 것과 같다", () => {
+    const trouble = row("`init` 이 멈추고 `core.hooksPath`");
+    const detail = plan(tree(), fakeGit(".husky/_")).blockers[0].detail;
+
+    expect(trouble).toBeDefined();
+    for (const needle of ["harness init", "git config --local --unset core.hooksPath", "이어 붙"]) {
+      expect(trouble, needle).toContain(needle);
+      expect(detail, needle).toContain(needle);
+    }
   });
 });

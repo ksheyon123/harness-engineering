@@ -376,6 +376,30 @@ const toKey = (path) => path.replace(/\\/g, "/").replace(/(?!^)\/+$/, "");
 
 /* ── 층 2 ─────────────────────────────────────────────────────────────────── */
 
+/**
+ * `core.hooksPath` 의 값이 `<tree>/.githooks` 를 가리키는가.
+ *
+ * **상대·절대 둘 다 정상이다.** `init` 은 `.githooks` 를 심고 이 저장소는 절대경로를
+ * 쓴다(그래야 링크된 worktree 에서 커밋해도 본체의 훅이 불린다). 물어야 할 것은 표기가
+ * 아니라 **어디를 가리키는가** 다.
+ *
+ * **판정의 집은 여기 하나다.** 예전에는 이 식이 `smoke` 의 층 2 와 `init` 의
+ * `hooksPathStep` 두 곳에 따로 적혀 있었고, 한쪽만 고쳐진 탓에 **같은 저장소를 두 명령이
+ * 반대로 읽었다** — `init` 은 절대경로를 "남의 것" 이라며 설치를 멈추고, `smoke` 는 같은
+ * 값을 정상이라고 했다. 그래서 부르는 쪽이 둘이어도 식은 하나여야 한다.
+ *
+ * **디렉터리 실재 여부는 묻지 않는다.** `<tree>/.githooks` 가 아직 없어도 곧 우리가 만들고,
+ * `.husky/_` 가 지금 없어도 husky 의 `prepare` 가 `npm install` 때 되살린다 — "없다" 는
+ * "안 쓴다" 가 아니다.
+ *
+ * @param {string} tree 저장소 최상단
+ * @param {string} value `core.hooksPath` 에 적힌 값
+ */
+export function pointsAtGithooks(tree, value) {
+  if (!value) return false;
+  return normalize(resolve(tree, value)) === normalize(join(tree, ".githooks"));
+}
+
 function layerTwo(tree, git) {
   const name = "층 2 — git 훅이 붙어 있다";
 
@@ -390,10 +414,7 @@ function layerTwo(tree, git) {
     return broken(name, "`core.hooksPath` 가 설정되지 않았다 — `.githooks/` 는 아무것도 아닌 디렉터리다.");
   }
 
-  // **상대·절대 둘 다 정상이다.** `init` 은 `.githooks` 를 심고 이 저장소는 절대경로를
-  // 쓴다(그래야 링크된 worktree 에서 커밋해도 본체의 훅이 불린다). 물어야 할 것은 표기가
-  // 아니라 **어디를 가리키는가** 다.
-  if (normalize(resolve(tree, hooksPath)) !== normalize(join(tree, ".githooks"))) {
+  if (!pointsAtGithooks(tree, hooksPath)) {
     return broken(name, `\`core.hooksPath\` 가 \`${hooksPath}\` 다 — 이 하네스의 훅은 안 불린다.`);
   }
 

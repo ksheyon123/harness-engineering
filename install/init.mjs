@@ -39,7 +39,7 @@ import {
   hashOf,
   manifestContents,
 } from "./managed.mjs";
-import { BROKEN, COMMITTED_CHECK, inspect, report as smokeReport } from "./smoke.mjs";
+import { BROKEN, COMMITTED_CHECK, inspect, pointsAtGithooks, report as smokeReport } from "./smoke.mjs";
 import { IGNORED, trackingStates } from "./tracking.mjs";
 
 /** 패키지 루트. 이 파일은 `<pkg>/install/` 에 있다. */
@@ -246,8 +246,11 @@ function packageJson(tree) {
 /**
  * `core.hooksPath` 를 `.githooks` 로. **이미 다른 곳을 가리키면 멈춘다.**
  *
- * husky·lefthook 이 같은 설정을 차지한다. 빼앗으면 A 의 기존 훅이 통째로 죽는데
- * 아무 신호도 없다.
+ * 충돌의 기준은 **표기가 아니라 가리키는 곳**이다 — 판정은 `smoke` 의 `pointsAtGithooks`
+ * 하나가 내린다. A 가 `<A>/.githooks` 를 절대경로로 적어뒀다면 그것은 우리 자신을 가리키는
+ * 것이라 충돌이 아니고, **그때 표기를 `.githooks` 로 되돌려 쓰지도 않는다**: 두 표기는 같은
+ * 뜻이 아니다(상대는 링크된 worktree 안에서 *그 사본의* 훅을 부르고, 절대는 본체 것을
+ * 부른다). 둘 다 성립하므로 A 가 골라 둔 쪽을 설치 도구가 뒤집을 근거가 없다.
  */
 function hooksPathStep(tree, git) {
   const want = ".githooks";
@@ -259,7 +262,11 @@ function hooksPathStep(tree, git) {
   }
 
   if (!current) return { kind: "config", key: "core.hooksPath", value: want, state: "set" };
-  if (current === want) return { kind: "config", key: "core.hooksPath", value: want, state: "same" };
+
+  // `state: "same"` 인 step 은 `apply` 가 건너뛴다 — A 의 표기가 그대로 남는다.
+  if (pointsAtGithooks(tree, current)) {
+    return { kind: "config", key: "core.hooksPath", value: want, state: "same" };
+  }
 
   return {
     kind: "config",
@@ -267,8 +274,10 @@ function hooksPathStep(tree, git) {
     value: want,
     state: "conflict",
     detail:
-      `\`core.hooksPath\` 가 이미 \`${current}\` 를 가리킨다(husky·lefthook 을 쓰고 있을 것이다). ` +
-      `빼앗으면 그쪽 훅이 통째로 죽는다 — 사람이 정해야 한다.`,
+      `\`core.hooksPath\` 가 \`${current}\` 를 가리킨다 — \`${want}\` 가 아니라 그쪽 훅이 불린다. ` +
+      `husky·lefthook 처럼 같은 설정을 쓰는 것이 있을 수 있다. 빼앗으면 그쪽 훅이 통째로 죽는데 ` +
+      `아무 신호도 없다 — 그쪽 훅에서 하네스의 \`${want}/\` 훅을 직접 이어 붙이거나, 그쪽을 ` +
+      `걷어내고 \`git config --local --unset core.hooksPath\` 한 뒤 \`harness init\` 을 다시 돌려라.`,
   };
 }
 

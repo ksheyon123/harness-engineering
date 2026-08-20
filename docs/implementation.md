@@ -107,7 +107,7 @@ core.hooksPath          `.githooks` 로 설정한다
 
 | 상황 | 어떻게 되나 |
 |---|---|
-| `core.hooksPath` 가 husky·lefthook 을 가리킨다 | **멈춘다.** 빼앗으면 A 의 기존 훅이 통째로 죽는데 아무도 모른다 |
+| `core.hooksPath` 가 `<A>/.githooks` **아닌 곳**을 가리킨다 | **멈춘다.** 빼앗으면 A 의 기존 훅이 통째로 죽는데 아무도 모른다. 묻는 것은 표기가 아니라 **가리키는 곳**이라, 절대경로로 우리 `.githooks` 를 가리키는 것은 **충돌이 아니다** — 그 표기를 그대로 둔다 |
 | `posttest` 에 이미 다른 것이 걸려 있다 | 배선하지 않고 알린다 — 직접 이어 붙여야 한다 |
 | A 에 `CLAUDE.md` 가 이미 있다 | 덮지 않고 `@harness.md` 한 줄만 앞에 붙인다 |
 | `settings.json` 이 이미 있다 | 지우지 않고 훅 항목을 **더한다** |
@@ -188,7 +188,7 @@ npx harness sync
 | `.gitignore` 에 `.claude` 가 있는 저장소에 설치했다 | `init` 이 그 경로들을 `-f` 로 인덱스에 담아둔다(보고에 찍힌다). **커밋은 사람이 한다** |
 | `init` 이 종료 코드 1 | 배선이 깨진 것이다 — 뒤에 붙은 `smoke` 출력의 ✗ 를 봐라. **커밋만 안 된 것은 1 이 아니다**(그건 0 + 안내다) |
 | 첫 커밋이 막힌다 | 보호 브랜치 직접 커밋이다. **정상 동작** — 브랜치를 자르고 커밋해라 |
-| `init` 이 멈추고 `core.hooksPath` 를 말한다 | husky·lefthook 이 이미 차지했다. 빼앗지 않으므로 사람이 정해야 한다 |
+| `init` 이 멈추고 `core.hooksPath` 를 말한다 | 그 값이 `<A>/.githooks` 아닌 곳을 가리킨다(husky·lefthook 이 흔한 경우다). 빼앗지 않으므로 사람이 정한다 — 그쪽 훅에서 하네스의 `.githooks/` 훅을 직접 이어 붙이거나, 그쪽을 걷어내고 `git config --local --unset core.hooksPath` 한 뒤 `harness init` 을 다시 돌려라. **절대경로로 우리 `.githooks` 를 가리키는 것은 여기 해당하지 않는다** |
 | `developer` 가 재시도만 태우고 red 로 끝난다 | 게이트가 없거나 안 돈다. `npm test` 를 직접 돌려봐라 — `Missing script: test` 면 `scripts.test` 부터 만든다 |
 | 게이트가 두 배로 돈다 | 러너에서 `**/.claude/worktrees/**` 를 제외 안 했다 |
 | 서브에이전트가 빈 브랜치만 남기고 끝났다 | 원인이 둘이다. **먼저 `smoke` 의 `신뢰` 항목을 봐라**(아래 행). 거기가 초록이면 승인 프롬프트에서 멈춘 것이다 — 멈춤은 종료가 아니라 `SubagentStop` 이 안 돌고, 게이트도 인계 커밋도 없다 |
