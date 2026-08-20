@@ -20,6 +20,7 @@
     ".claude/harness.md",
     ".claude/planner-mode.md",
     ".claude/planner/",
+    ".claude/skills/",
     ".claude/agents/",
     ".claude/hooks/",
     ".githooks/",

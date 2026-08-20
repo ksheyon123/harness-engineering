@@ -57,6 +57,9 @@ describe("path-ownership — 층 1 경로 소유권", () => {
       expect(verdict).toBe("deny");
       // 안내하는 명령이 설치본에도 있어야 한다 — `scripts/` 는 A 에 복사되지 않는다.
       expect(why).toContain("harness spawn");
+      // 그 명령을 부르는 스킬도 배달된다(`managed.mjs` 의 VERBATIM). 이름이 어긋나면
+      // 막다른 안내가 된다 — 막으면서 갈 곳을 잘못 가리키는 것이 안 막는 것보다 나쁘다.
+      expect(why).toContain("/task");
     });
 
     it("spec 도 막는다", () => {
@@ -74,6 +77,8 @@ describe("path-ownership — 층 1 경로 소유권", () => {
 
       expect(verdict).toBe("deny");
       expect(why).toContain("실행자 자리");
+      // 막기만 하고 갈 곳을 안 알려주면, 여기까지 온 세션은 이미 spec 을 쓴 뒤다.
+      expect(why).toContain("/harness-fix");
     });
 
     it("게이트 정의도 막는다", () => {

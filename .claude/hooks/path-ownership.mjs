@@ -64,13 +64,13 @@ function rulesFor({ source, harnessFiles, specRoot }) {
   return {
     실행자: {
       deny: [
-        { paths: source, why: "저장소 코드는 작업 세션의 몫이다. `harness spawn \"<원문>\"` 으로 띄워라 — 오타·리팩터도 마찬가지다." },
+        { paths: source, why: "저장소 코드는 작업 세션의 몫이다. `/task <원문>` 으로 넘겨라(그 스킬이 `harness spawn` 을 부른다) — 오타·리팩터도 마찬가지다." },
         { paths: [spec], why: "spec 과 QA 체크리스트는 작업 세션·qa 의 산출물이다." },
       ],
     },
     "작업 세션": {
       deny: [
-        { paths: harnessFiles, why: "하네스는 실행자 자리다. 맨몸 `claude` 세션에서 고쳐라." },
+        { paths: harnessFiles, why: "하네스는 실행자 자리다. 맨몸 `claude` 세션에서 `/harness-fix` 로 고쳐라 — 여기서는 spec 을 써도 구현할 자리가 없다." },
       ],
       ask: [
         { paths: source, why: "소스는 역할이 자기 사본에서 고치고 너는 커밋·머지만 한다. 머지 충돌을 푸는 경우라면 사람이 승인해야 한다." },

@@ -52,6 +52,12 @@ export const VERBATIM = [
   // 작업 세션이 시작할 때 물고 들어가는 문서(`session-role` 이 붙인다). **디렉터리가 곧
   // 스위치라** A 가 지우면 안 물고 바꾸면 그대로 돈다 — 기록부가 'A 가 손댔다' 를 구분해 준다.
   { from: ".claude/planner/grilling.md", to: ".claude/planner/grilling.md" },
+  // 사람이 요청의 영역을 명시하는 빠른 길. **선언이지 강제가 아니다** — 붙어 있으면 실행자가
+  // 라우팅을 판정할 필요가 없고, 없으면 규약의 기준으로 판단한다. 스킬을 고른 이유는
+  // 사람이 직접 치기 때문이다: 부르는 시점이 곧 필요한 시점이라, `planner/` 를 스킬로 못
+  // 하게 만들었던 지연 로딩이 여기서는 오히려 원하는 성질이 된다.
+  { from: ".claude/skills/harness-fix/SKILL.md", to: ".claude/skills/harness-fix/SKILL.md" },
+  { from: ".claude/skills/task/SKILL.md", to: ".claude/skills/task/SKILL.md" },
   // 규약 본문. A 의 `CLAUDE.md` 가 `@harness.md` 로 끌어온다 — 루트 안이라 worktree 에서도
   // 임포트가 풀린다(밖으로 나가는 것만 막힌다).
   //

@@ -60,6 +60,10 @@ describe("session-role — SessionStart 역할 주입 훅", () => {
     expect(out.additionalContext).toContain("실행자");
     // 안내하는 명령이 설치본에도 있어야 한다 — `scripts/` 는 A 에 복사되지 않는다.
     expect(out.additionalContext).toContain("harness spawn");
+    // 라우팅의 두 출구를 이름으로 못 박는다. 이 주입문이 하네스 요청을 넘기라고 말하면
+    // 작업 세션은 spec 까지 쓰고 층 1 에 막힌다 — 실측으로 그렇게 샜다.
+    expect(out.additionalContext).toContain("/task");
+    expect(out.additionalContext).toContain("/harness-fix");
   });
 
   it("work-session 이면 작업 세션으로 선언하고 spec 지침을 가리킨다", () => {
@@ -67,6 +71,9 @@ describe("session-role — SessionStart 역할 주입 훅", () => {
 
     expect(out.additionalContext).toContain("작업 세션");
     expect(out.additionalContext).toContain("기획자 모드로 시작한다");
+    // 잘못 열린 탭이 **논의를 시작하기 전에** 되돌아갈 수 있어야 한다. 층 1 도 같은
+    // 출구를 알려주지만, 거기까지 가면 이미 spec 을 쓴 뒤다.
+    expect(out.additionalContext).toContain("/harness-fix");
     // 형식 지침이 CLAUDE.md 에 없으므로, 경로를 알려주지 않으면 찾을 방법이 없다.
     expect(out.additionalContext).toContain(".claude/planner-mode.md");
   });

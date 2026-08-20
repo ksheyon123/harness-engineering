@@ -74,6 +74,9 @@ function repo({ files = {}, drop = [], untrack = [], hooksPath = ".githooks" } =
     ".claude/planner-mode.md": "# 지침\n",
     // 작업 세션이 시작할 때 물고 들어가는 문서. 추적되지 않으면 사본에서 사라진다.
     ".claude/planner/grilling.md": "# 논의 지침\n",
+    // 라우팅 스킬. 훅과 층 1 의 안내가 이름으로 부르므로, 없으면 없는 곳을 가리킨다.
+    ".claude/skills/harness-fix/SKILL.md": "# 하네스 수정\n",
+    ".claude/skills/task/SKILL.md": "# 작업 세션으로 넘긴다\n",
     ".claude/agents/developer.md": agent("developer", "verify-green.mjs"),
     ".claude/agents/qa.md": agent("qa", "verify-checklist.mjs"),
     ".claude/hooks/path-ownership.mjs": PATH_OWNERSHIP,

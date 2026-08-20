@@ -12,6 +12,7 @@
 | [.claude/harness.md](./.claude/harness.md) | 규약 본문 — 자리 · 모드 · 검증 · 커밋/push · worktree |
 | [.claude/planner-mode.md](./.claude/planner-mode.md) | 기획자 모드 — 논의 · 격리 진입 · spec 을 어떻게 쓰는가 |
 | [.claude/planner/](./.claude/planner/) | 논의 방식 — 작업 세션이 물고 시작한다. **디렉터리가 곧 스위치다** |
+| [.claude/skills/](./.claude/skills/) | `/harness-fix` · `/task` — 사람이 요청의 영역을 명시하는 빠른 길 |
 
 ## 설치
 

@@ -92,6 +92,7 @@ npm 이 아닌 게이트(`make check` 등)는 `?` 로 찍고 넘어간다. **없
 .claude/harness.md      규약 본문
 .claude/planner-mode.md 기획자 모드 — 논의 · 격리 진입 · spec 작성
 .claude/planner/        논의 방식 — 작업 세션에 자동 주입된다. 갈아끼워도 된다
+.claude/skills/         /harness-fix · /task — 라우팅을 사람이 명시하는 빠른 길
 .claude/CLAUDE.md       위를 @harness.md 로 끌어온다
 .claude/settings.json   훅 등록 + worktree.baseRef=head
 .claude/harness-manifest.json  설치 기록부 — 버전과 내용 해시

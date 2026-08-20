@@ -70,6 +70,13 @@ describe("발행되는 tarball", () => {
     expect(has(".claude/planner-mode.md")).toBe(true);
   });
 
+  it("라우팅 스킬이 담긴다", () => {
+    // 훅과 층 1 의 안내가 이 둘을 이름으로 부른다. 안 담기면 **막으면서 없는 곳을
+    // 가리키는** 상태가 된다 — 안 막는 것보다 나쁘다.
+    expect(has(".claude/skills/harness-fix/SKILL.md")).toBe(true);
+    expect(has(".claude/skills/task/SKILL.md")).toBe(true);
+  });
+
   it("이 저장소의 `CLAUDE.md` 는 담기지 않는다", () => {
     // 그건 규약이 아니라 **이 저장소 사정**이다 — backlog·measured 포인터.
     // A 로 딸려가면 없는 경로를 가리키는 문서가 된다.
