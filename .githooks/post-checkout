@@ -1,0 +1,12 @@
+#!/bin/sh
+# `git worktree add` 가 **새 사본 안에서** 부르는 진입점. 판정은 옆의 post-checkout.mjs 에
+# 있다 — pre-commit·pre-push 와 같은 구조다(git 이 훅을 셸로 부르기 때문).
+#
+# `$0` 기준으로 찾는다. core.hooksPath 가 절대경로라 어느 트리에서 불려도 이 파일이
+# 잡히는데, 그때 cwd 는 갓 만들어진 사본이다. 상대경로로 쓰면 아직 아무것도 없는 그
+# 사본 쪽을 가리킨다.
+#
+# **인자를 그대로 넘긴다.** git 이 `<old-ref> <new-ref> <branch-flag>` 를 주고, `$1` 이
+# 전부 0 인 것이 **새 사본이라는 유일한 표식**이다 — 잃으면 평범한 브랜치 전환과
+# 구별할 수단이 사라진다.
+exec node "$(dirname "$0")/post-checkout.mjs" "$@"

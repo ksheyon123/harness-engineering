@@ -92,6 +92,29 @@ export const PROBES = [
     command: `git commit --allow-empty -m "chore: smoke"  후  git push`,
     expect: "게이트 기록이 없다며 거부된다. 그냥 올라가면 `pre-push` 나 `posttest` 배선이 죽은 것이다.",
   },
+  // 아래 둘은 **미추적 설치의 전제**를 잰다. `post-checkout` 이 Claude Code 가 만드는
+  // 사본에서도 불려야 커밋 없이 하네스를 심을 수 있다. 순수 git 에서 도는 것은 실측했지만
+  // (`docs/measured.md`), Claude Code 가 그 경로를 타는지는 세션에서만 안다.
+  //
+  // **두 경로를 따로 판정한다.** 서로 다를 수 있어서다 — 한쪽만 돌면 그쪽만 심긴다.
+  {
+    name: "`EnterWorktree` 의 사본에서 `post-checkout` 이 도는가",
+    command:
+      `작업 세션에서 EnterWorktree 를 한 뒤 본체에서:\n` +
+      `cat .claude/post-checkout-trace.log`,
+    expect:
+      "`cwd=` 가 `.claude/worktrees/<task>` 인 줄이 하나 늘어 있다. 안 늘면 Claude Code 가 " +
+      "`git worktree add` 를 안 쓰는 것이고, **미추적 설치는 이 경로로 성립하지 않는다.**",
+  },
+  {
+    name: "서브에이전트 사본에서 `post-checkout` 이 도는가",
+    command:
+      `작업 세션에서 developer 를 하나 스폰한 뒤 본체에서:\n` +
+      `cat .claude/post-checkout-trace.log`,
+    expect:
+      "`cwd=` 가 `.claude/worktrees/agent-<hex>` 인 줄이 하나 늘어 있다. 위 항목이 초록인데 " +
+      "이것만 비면 두 경로가 갈린 것이다 — 역할의 사본에만 하네스가 안 심긴다.",
+  },
 ];
 
 /**
