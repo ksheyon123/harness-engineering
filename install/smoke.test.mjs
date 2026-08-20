@@ -71,6 +71,8 @@ function repo({ files = {}, drop = [], untrack = [], hooksPath = ".githooks" } =
     ".claude/CLAUDE.md": "@harness.md\n",
     ".claude/harness.md": "# 규약\n",
     ".claude/planner-mode.md": "# 지침\n",
+    // 작업 세션이 시작할 때 물고 들어가는 문서. 추적되지 않으면 사본에서 사라진다.
+    ".claude/planner/grilling.md": "# 논의 지침\n",
     ".claude/agents/developer.md": agent("developer", "verify-green.mjs"),
     ".claude/agents/qa.md": agent("qa", "verify-checklist.mjs"),
     ".claude/hooks/path-ownership.mjs": PATH_OWNERSHIP,

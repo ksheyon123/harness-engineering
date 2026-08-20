@@ -19,6 +19,7 @@
   "files": [
     ".claude/harness.md",
     ".claude/planner-mode.md",
+    ".claude/planner/",
     ".claude/agents/",
     ".claude/hooks/",
     ".githooks/",

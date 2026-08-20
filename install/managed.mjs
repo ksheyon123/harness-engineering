@@ -49,6 +49,9 @@ export const VERBATIM = [
   { from: ".claude/agents/developer.md", to: ".claude/agents/developer.md" },
   { from: ".claude/agents/qa.md", to: ".claude/agents/qa.md" },
   { from: ".claude/planner-mode.md", to: ".claude/planner-mode.md" },
+  // 작업 세션이 시작할 때 물고 들어가는 문서(`session-role` 이 붙인다). **디렉터리가 곧
+  // 스위치라** A 가 지우면 안 물고 바꾸면 그대로 돈다 — 기록부가 'A 가 손댔다' 를 구분해 준다.
+  { from: ".claude/planner/grilling.md", to: ".claude/planner/grilling.md" },
   // 규약 본문. A 의 `CLAUDE.md` 가 `@harness.md` 로 끌어온다 — 루트 안이라 worktree 에서도
   // 임포트가 풀린다(밖으로 나가는 것만 막힌다).
   //
