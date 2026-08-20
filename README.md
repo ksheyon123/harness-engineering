@@ -10,7 +10,8 @@
 | [docs/backlog.md](./docs/backlog.md) | 확인됐지만 안 고친 것 — 왜 문제이고 어떻게 고치는지 |
 | [docs/measured.md](./docs/measured.md) | 이미 재본 것 — worktree · 플러그인 · git 의 실제 동작 |
 | [.claude/harness.md](./.claude/harness.md) | 규약 본문 — 자리 · 모드 · 검증 · 커밋/push · worktree |
-| [.claude/planner-mode.md](./.claude/planner-mode.md) | spec 을 어떻게 쓰는가 |
+| [.claude/planner-mode.md](./.claude/planner-mode.md) | 기획자 모드 — 논의 · 격리 진입 · spec 을 어떻게 쓰는가 |
+| [.claude/planner/](./.claude/planner/) | 논의 방식 — 작업 세션이 물고 시작한다. **디렉터리가 곧 스위치다** |
 
 ## 설치
 
