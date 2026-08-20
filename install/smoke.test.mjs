@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { PROBES, inspect, mainRoot, report, trust } from "./smoke.mjs";
+import { pointsAtGithooks } from "./smoke.mjs";
 
 /**
  * `inspect` 의 **판정**을 본다. 배선이 실제로 도는지는 `init.integration.test.mjs` 가
@@ -499,5 +500,25 @@ describe("smoke — 배선이 살아 있는가", () => {
       expect(probe.command.trim(), probe.name).not.toBe("");
       expect(probe.expect.trim(), probe.name).not.toBe("");
     }
+  });
+});
+
+/**
+ * 층 2 와 `init` 이 **같은 식**을 쓰게 하려고 밖으로 낸 판정. 파일을 만들지 않는다 —
+ * 실재 여부를 묻지 않는 것이 이 함수의 계약이라, 디스크가 필요 없는 것 자체가 검증이다.
+ */
+describe("`pointsAtGithooks`", () => {
+  const tree = process.platform === "win32" ? "C:\\repo" : "/repo";
+
+  it.each([".githooks", "./.githooks", ".githooks/", join(tree, ".githooks")])("`%s` 는 우리 자리다", (value) => {
+    expect(pointsAtGithooks(tree, value)).toBe(true);
+  });
+
+  it.each([".husky/_", ".husky", "hooks", join(tree, ".husky", "_")])("`%s` 는 남의 자리다", (value) => {
+    expect(pointsAtGithooks(tree, value)).toBe(false);
+  });
+
+  it("빈 값은 아무 곳도 가리키지 않는다", () => {
+    expect(pointsAtGithooks(tree, "")).toBe(false);
   });
 });

@@ -35,10 +35,21 @@ const PKG_NAME = JSON.parse(readFileSync(join(REPO, "package.json"), "utf8")).na
 /** 설치가 끝난 A. 만드는 데 몇 초 걸리므로 한 번만 만들고 모두가 공유한다. */
 let A;
 
-/** `GIT_` 를 씻은 env. 상속된 `GIT_DIR` 은 임시 저장소를 겨냥한 명령을 이 저장소로 돌린다. */
+/**
+ * `GIT_` 와 `HARNESS_` 를 둘 다 씻은 env.
+ *
+ * - 상속된 `GIT_DIR` 은 임시 저장소를 겨냥한 명령을 이 저장소로 돌린다.
+ * - 상속된 `HARNESS_ROLE` 은 **자리 판정을 통째로 뒤집는다.** 층 1 은 `agent_type` 이
+ *   없을 때 그 변수를 보므로(미설정 = 실행자), 씻지 않으면 아래 '실행자' 케이스가
+ *   **게이트를 누가 돌렸는지에 따라** 답이 달라진다 — 작업 세션이나 그 서브에이전트
+ *   안에서 돌리면 `work-session` 을 물려받아 `deny` 여야 할 자리가 `ask` 가 된다.
+ *   `path-ownership.test.mjs` 의 `baseEnv` 와 같은 규율이다.
+ */
 function cleanEnv() {
   const env = { ...process.env };
-  for (const key of Object.keys(env)) if (key.startsWith("GIT_")) delete env[key];
+  for (const key of Object.keys(env)) {
+    if (key.startsWith("GIT_") || key.startsWith("HARNESS_")) delete env[key];
+  }
   return env;
 }
 
