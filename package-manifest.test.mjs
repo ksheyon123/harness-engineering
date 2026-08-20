@@ -54,6 +54,10 @@ describe("발행되는 tarball", () => {
       "pre-commit.mjs",
       "pre-push",
       "pre-push.mjs",
+      // 셸 껍데기와 판정 모듈이 **둘 다** 있어야 한다. 껍데기만 담기면 git 이 훅을
+      // 부르고 그 자리에서 모듈 없음으로 죽는다.
+      "post-checkout",
+      "post-checkout.mjs",
       "mark-verified.mjs",
       "verified-marker.mjs",
     ]) {

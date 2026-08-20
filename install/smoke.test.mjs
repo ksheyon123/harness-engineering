@@ -87,6 +87,10 @@ function repo({ files = {}, drop = [], untrack = [], hooksPath = ".githooks" } =
     ".githooks/pre-push": '#!/bin/sh\nexec node "$(dirname "$0")/pre-push.mjs"\n',
     ".githooks/pre-commit.mjs": "// 판정\n",
     ".githooks/pre-push.mjs": "// 판정\n",
+    // `git worktree add` 가 새 사본 안에서 부른다. 사본에 하네스를 심을 자리라, 정작
+    // 그 훅이 사본에 없으면 안 된다 — 그래서 여기도 생존 목록에 든다.
+    ".githooks/post-checkout": '#!/bin/sh\nexec node "$(dirname "$0")/post-checkout.mjs" "$@"\n',
+    ".githooks/post-checkout.mjs": "// 판정\n",
     // `posttest` 가 부르고 `pre-push` 가 그 기록을 읽는다. 이것도 사본에 있어야 한다.
     ".githooks/mark-verified.mjs": "// 기록\n",
     ".gitignore": ".claude/worktrees/\nnode_modules\n",

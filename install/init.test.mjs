@@ -87,10 +87,23 @@ describe("init — 설치 판정", () => {
       expect(step(plan(dir, fakeGit()), ".claude/CLAUDE.md").state).toBe("same");
     });
 
-    it("`.gitignore` 에 줄이 있으면 또 넣지 않는다", () => {
-      const dir = tree({ ".gitignore": "node_modules\n.claude/worktrees/\n" });
+    it("`.gitignore` 에 줄이 다 있으면 또 넣지 않는다", () => {
+      const dir = tree({
+        ".gitignore": "node_modules\n.claude/worktrees/\n.claude/post-checkout-trace.log\n",
+      });
 
       expect(step(plan(dir, fakeGit()), ".gitignore").state).toBe("same");
+    });
+
+    it("`.gitignore` 에 일부만 있으면 **없는 줄만** 더한다", () => {
+      // 줄이 늘어날 때마다 먼저 설치한 저장소가 그 줄을 못 받으면, 그 파일은
+      // `pre-commit` 의 `git add -A` 에 잡혀 다음 커밋에 딸려 들어간다.
+      const dir = tree({ ".gitignore": "node_modules\n.claude/worktrees/\n" });
+      const s = step(plan(dir, fakeGit()), ".gitignore");
+
+      expect(s.state).toBe("update");
+      expect(s.contents).toContain(".claude/post-checkout-trace.log");
+      expect(s.contents.match(/^\.claude\/worktrees\/$/gm)).toHaveLength(1);
     });
 
     it("`.gitignore` 가 없으면 만든다 — 없으면 커밋이 사본을 쓸어 담는다", () => {
@@ -98,6 +111,7 @@ describe("init — 설치 판정", () => {
 
       expect(s.state).toBe("create");
       expect(s.contents).toContain(".claude/worktrees/");
+      expect(s.contents).toContain(".claude/post-checkout-trace.log");
     });
 
     it("`settings.json` 의 기존 훅을 지우지 않고 더한다", () => {

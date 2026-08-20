@@ -54,8 +54,20 @@ const PKG_VERSION = JSON.parse(readFileSync(join(PKG, "package.json"), "utf8")).
 /** A 의 `.claude/CLAUDE.md` 가 반드시 품어야 할 한 줄. */
 const IMPORT_LINE = "@harness.md";
 
-/** `.gitignore` 에 없으면 재앙인 줄 — `pre-commit` 이 `git add -A` 를 강제하기 때문이다. */
-const IGNORE_LINE = ".claude/worktrees/";
+/**
+ * `.gitignore` 에 없으면 재앙인 줄들 — `pre-commit` 이 `git add -A` 를 강제하므로,
+ * 무시되지 않는 것은 **다음 커밋에 반드시 딸려 들어간다.**
+ *
+ * A 가 `.claude` 를 통째로 무시하면 이 줄들은 군더더기가 된다. 그래도 적는다 — 무시하지
+ * **않는** A 가 더 흔하고(이 저장소가 그렇다), 남는 한 줄이 치르는 값은 없다.
+ */
+const IGNORE_LINES = [
+  { line: ".claude/worktrees/", why: "에이전트 사본. 추적되면 커밋이 통째로 쓸어 담는다." },
+  {
+    line: ".claude/post-checkout-trace.log",
+    why: "post-checkout 이 남기는 발동 흔적. 사본이 만들어질 때마다 자라는 로컬 기록이다.",
+  },
+];
 
 /** 게이트가 green 인 sha 를 기록하는 자리. `pre-push` 가 그 기록을 읽는다. */
 const POSTTEST = "node .githooks/mark-verified.mjs";
@@ -196,17 +208,19 @@ function gitignore(tree) {
   const path = ".gitignore";
   const full = join(tree, path);
   const current = existsSync(full) ? readFileSync(full, "utf8") : "";
+  const present = new Set(current.split(/\r?\n/).map((line) => line.trim()));
 
-  if (current.split(/\r?\n/).some((line) => line.trim() === IGNORE_LINE)) {
-    return { kind: "file", path, contents: current, state: "same" };
-  }
+  // **없는 것만 더한다.** 하나가 이미 있다고 나머지를 건너뛰면, 줄이 늘어날 때마다
+  // 먼저 설치한 저장소가 그 줄을 영원히 못 받는다.
+  const missing = IGNORE_LINES.filter((entry) => !present.has(entry.line));
+  if (missing.length === 0) return { kind: "file", path, contents: current, state: "same" };
 
   const prefix = current && !current.endsWith("\n") ? "\n" : "";
   return {
     kind: "file",
     path,
     contents:
-      `${current}${prefix}\n# 에이전트 사본. 추적되면 커밋이 통째로 쓸어 담는다.\n${IGNORE_LINE}\n`,
+      current + prefix + missing.map((entry) => `\n# ${entry.why}\n${entry.line}\n`).join(""),
     state: current ? "update" : "create",
   };
 }

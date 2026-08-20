@@ -40,12 +40,25 @@ export const HOOK_SHIMS = [
 ];
 
 /** `.githooks/` 쪽 shim. 셸 진입점이 `$(dirname "$0")/<이름>.mjs` 를 부른다. */
-export const GITHOOK_SHIMS = ["pre-commit.mjs", "pre-push.mjs", "mark-verified.mjs"];
+export const GITHOOK_SHIMS = [
+  "pre-commit.mjs",
+  "pre-push.mjs",
+  "post-checkout.mjs",
+  "mark-verified.mjs",
+];
 
 /** 그대로 복사할 것. 셸 진입점은 git 이 직접 실행하므로 shim 이 될 수 없다. */
 export const VERBATIM = [
   { from: ".githooks/pre-commit", to: ".githooks/pre-commit", exec: true },
   { from: ".githooks/pre-push", to: ".githooks/pre-push", exec: true },
+  // **아직 흔적만 남긴다.** 여기 있는 이유는 그 흔적이 A 에서 필요해서가 아니라, 이 훅이
+  // 곧 **사본에 하네스를 심는 자리**가 되기 때문이다(미추적 설치). 심기가 붙는 시점에
+  // 배달 경로까지 같이 새로 만들면, 심기가 안 도는 원인이 '훅이 안 불린다' 인지 '훅이
+  // A 에 없다' 인지 구별할 수 없다 — 배선을 먼저 세우고 내용은 나중에 채운다.
+  //
+  // 지금 붙여도 A 가 깨지지 않는다: `$1`(old-ref)이 전부 0 인 호출에만 반응하므로
+  // 평범한 `git checkout` 은 아무것도 하지 않는다.
+  { from: ".githooks/post-checkout", to: ".githooks/post-checkout", exec: true },
   { from: ".claude/agents/developer.md", to: ".claude/agents/developer.md" },
   { from: ".claude/agents/qa.md", to: ".claude/agents/qa.md" },
   { from: ".claude/planner-mode.md", to: ".claude/planner-mode.md" },
