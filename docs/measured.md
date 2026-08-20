@@ -45,4 +45,7 @@
 | `git check-ignore` 가 추적 중인 파일을 무시된 것으로 치나 | **아니다.** 종료 코드 1(=무시 안 됨)을 낸다. 위 성질과 일관된다 |
 | `git check-ignore` 의 `-z` | **`--stdin` 하고만 된다** (`fatal: -z only makes sense with --stdin`). 경로를 인자로 줄 때는 줄 단위로 읽어야 한다 |
 | 통짜 `.claude` 무시가 `.claude/worktrees/` 도 덮나 | **덮는다.** 그래서 `.gitignore` 에서 그 **글자**를 찾던 검사는 거짓 경보였다 |
+| **`EnterWorktree` 가 `post-checkout` 을 부르나** | **부른다.** 대화형 세션에서 실측 — 흔적에 `cwd`·`toplevel` 이 새 사본, `main` 이 본체로 정확히 잡혔다. **Claude Code 의 작업 세션 사본은 git 의 worktree 생성 경로를 탄다** |
+| 그때 훅이 본체 경로를 알 수 있나 | **안다.** `git worktree list --porcelain` 첫 줄이 사본 안에서도 본체를 가리킨다. 단 자식 git 은 `GIT_` 를 씻고 불러야 한다 — 훅은 `git worktree add` 안에서 도는 자식이라 `GIT_DIR` 이 이미 심겨 있다 |
+| **서브에이전트 격리(`isolation: worktree`)가 `post-checkout` 을 부르나** | **아직 못 쟀다.** 실행자는 `developer` 를 스폰하지 않는다 — 작업 세션에서 확인해야 한다. `harness smoke` 가 그 항목을 찍는다 |
 | `core.hooksPath` 를 절대경로로 두는 것 | **정상이다.** git 이 워킹트리 최상단 기준으로 푸므로 상대 `.githooks` 는 **링크된 worktree 안에서 그 사본의 훅**을 부른다. 이 저장소는 절대경로라 본체 것이 불린다 — 둘 다 성립하므로 `smoke` 는 표기가 아니라 **가리키는 곳**을 본다 |
