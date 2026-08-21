@@ -28,9 +28,9 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { matches } from "../.claude/hooks/glob.mjs";
-import { CONFIG_FILE, DEFAULTS, loadConfig } from "../.claude/hooks/harness-config.mjs";
+import { CONFIG_FILE, CONFIG_PATHS, DEFAULTS, findConfig, loadConfig } from "../.claude/hooks/harness-config.mjs";
 import { cleanEnv } from "../.claude/hooks/hook-kit.mjs";
-import { MANIFEST_PATH, parseManifest } from "../install/managed.mjs";
+import { MANIFEST_PATH, managedPaths, parseManifest } from "../install/managed.mjs";
 
 /** 경로 패턴을 쓰는 키. 저장소에 실제로 걸리는지 확인할 수 있는 것들이다. */
 const PATH_KEYS = ["source", "harnessFiles"];
@@ -39,24 +39,27 @@ const PATH_KEYS = ["source", "harnessFiles"];
 const PKG_ROOT = fileURLToPath(new URL("..", import.meta.url));
 
 export function diagnose(baseDir) {
-  const notes = [...installNotes(baseDir)];
-  const path = join(baseDir, CONFIG_FILE);
+  const notes = [...installNotes(baseDir), ...ignoreLeak(baseDir)];
+  const found = findConfig(baseDir);
 
-  if (!existsSync(path)) {
+  if (!found) {
     notes.push({
       level: "info",
       text:
-        `\`${CONFIG_FILE}\` 이 없다 — 기본값으로 돈다. ` +
+        `\`${CONFIG_PATHS[0]}\` 이 없다 — 기본값으로 돈다. ` +
         `이 저장소는 기본값이 곧 설정이라 정상이다.`,
     });
     return notes;
   }
 
+  notes.push(...configLocation(baseDir, found));
+  const { path, relative } = found;
+
   let text;
   try {
     text = readFileSync(path, "utf8");
   } catch (error) {
-    return [{ level: "error", text: `\`${CONFIG_FILE}\` 을 읽을 수 없다 — ${error.message}` }];
+    return [{ level: "error", text: `\`${relative}\` 을 읽을 수 없다 — ${error.message}` }];
   }
 
   let raw;
@@ -67,7 +70,7 @@ export function diagnose(baseDir) {
       {
         level: "error",
         text:
-          `\`${CONFIG_FILE}\` 이 JSON 이 아니다 — ${error.message}\n` +
+          `\`${relative}\` 이 JSON 이 아니다 — ${error.message}\n` +
           `    파일 전체가 무시되고 **모든 값이 기본값으로 돈다.**`,
       },
     ];
@@ -77,7 +80,7 @@ export function diagnose(baseDir) {
     return [
       {
         level: "error",
-        text: `\`${CONFIG_FILE}\` 의 최상위가 객체가 아니다 — 파일 전체가 무시된다.`,
+        text: `\`${relative}\` 의 최상위가 객체가 아니다 — 파일 전체가 무시된다.`,
       },
     ];
   }
@@ -85,6 +88,96 @@ export function diagnose(baseDir) {
   notes.push(...keyProblems(raw));
   notes.push(...pathProblems(loadConfig(baseDir), baseDir));
   return notes;
+}
+
+/**
+ * 설정이 어디 있는가. **읽은 자리를 반드시 찍는다** — 자리가 둘이 된 뒤로는 "설정이 있다"
+ * 만으로는 어느 것이 먹었는지 알 수 없고, 그 모호함이 정확히 이 검사가 막으려는 것이다.
+ */
+function configLocation(baseDir, found) {
+  const notes = [{ level: "info", text: `설정을 \`${found.relative}\` 에서 읽었다.` }];
+
+  const shadowed = found.relative !== CONFIG_FILE && existsSync(join(baseDir, CONFIG_FILE));
+  if (shadowed) {
+    notes.push({
+      level: "warning",
+      text:
+        `루트의 \`${CONFIG_FILE}\` 은 **읽히지 않는다** — \`${CONFIG_PATHS[0]}\` 이 이긴다. ` +
+        `둘을 두면 어느 쪽을 고쳤는지 헷갈린다. 루트 것을 지워라.`,
+    });
+  }
+
+  if (found.legacy) {
+    notes.push({
+      level: "warning",
+      text:
+        `설정이 루트에 있다 — \`${CONFIG_PATHS[0]}\` 으로 옮겨라. 하네스가 만드는 것이 ` +
+        `한 접두어 아래 모여 있어야 \`.gitignore\` 한 줄로 커밋 여부를 정할 수 있다. ` +
+        `지금은 이 파일만 그 결정 밖에 있다.`,
+    });
+  }
+
+  return notes;
+}
+
+/**
+ * **A 의 무시 결정이 하네스 경로 일부에만 걸려 있는가.**
+ *
+ * ## 왜 보고만 하나
+ *
+ * 커밋할지 말지는 **A 가 정한다**(3번에서 확정한 원칙). 그래서 하네스는 `.gitignore` 를
+ * 대신 쓰지도, `.git/info/exclude` 에 몰래 적지도 않는다. 할 수 있는 것은 **결정이 새고
+ * 있다고 말해 주는 것**뿐이다.
+ *
+ * ## 왜 이것이 문제인가
+ *
+ * `pre-commit` 이 `git add -A`(전체 스테이징)를 강제한다. 그래서 무시되지 **않은** 하네스
+ * 파일은 다음 커밋에 **반드시** 딸려 들어간다 — A 가 `.claude/` 를 무시해 두고도
+ * `.githooks/` 는 커밋하게 되는 식이다. 결정이 반쪽만 적용된다.
+ *
+ * ## 왜 `smoke` 가 아니라 여기인가
+ *
+ * `smoke` 는 *배선이 사는가*를 판정한다(ok/broken). 이건 배선이 죽는 문제가 아니다 —
+ * 커밋되든 안 되든 하네스는 돈다. 어긋나는 것은 **A 의 의도**이고, 그것을 판정할 자격은
+ * 우리에게 없다. 보고하고 넘긴다.
+ *
+ * **전부 무시되거나 전부 안 되면 조용하다.** 그건 일관된 결정이다.
+ */
+function ignoreLeak(baseDir) {
+  const paths = managedPaths().filter((path) => existsSync(join(baseDir, path)));
+  if (paths.length === 0) return [];
+
+  let ignored;
+  try {
+    // 걸리는 것이 하나도 없으면 종료 코드 1 이라 던진다 — **오류가 아니라 답이다.**
+    ignored = new Set(
+      execFileSync("git", ["check-ignore", "--", ...paths], {
+        cwd: baseDir,
+        env: cleanEnv(),
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      })
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean),
+    );
+  } catch {
+    ignored = new Set();
+  }
+
+  const loose = paths.filter((path) => !ignored.has(path));
+  if (ignored.size === 0 || loose.length === 0) return [];
+
+  return [
+    {
+      level: "warning",
+      text:
+        `하네스 경로 중 **일부만** 무시된다 — ${ignored.size}개는 무시되고 ${loose.length}개는 아니다.\n` +
+        `    안 되는 것: \`${loose.slice(0, 4).join("` · `")}\`${loose.length > 4 ? ` 외 ${loose.length - 4}개` : ""}\n` +
+        `    \`pre-commit\` 이 \`git add -A\` 를 강제하므로 **다음 커밋에 딸려 들어간다.**\n` +
+        `    의도한 것이면 그대로 두고, 아니면 \`.gitignore\` 에 직접 적어라.`,
+    },
+  ];
 }
 
 /**

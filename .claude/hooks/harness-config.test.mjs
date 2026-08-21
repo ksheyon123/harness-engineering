@@ -1,9 +1,9 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { CONFIG_FILE, DEFAULTS, loadConfig } from "./harness-config.mjs";
+import { CONFIG_FILE, CONFIG_PATHS, DEFAULTS, findConfig, loadConfig } from "./harness-config.mjs";
 
 /** 설정 파일 하나만 든 임시 트리. `content` 가 `null` 이면 파일을 만들지 않는다. */
 function tree(content) {
@@ -87,5 +87,59 @@ describe("harness-config — 프로젝트마다 달라지는 값의 단일 출�
     config.source.push("망가뜨리기");
 
     expect(loadConfig(tree(null)).source).toEqual(["src/**"]);
+  });
+});
+
+/**
+ * 설정의 집이 루트에서 `.claude/` 로 옮겨졌다. 하네스가 만드는 것이 **한 접두어 아래**
+ * 모여 있어야 A 가 `.gitignore` 에 쓴 한 줄로 커밋 여부를 정할 수 있다.
+ *
+ * 루트도 계속 읽는다 — 안 읽으면 기존 설치가 **조용히 기본값으로 돌아가고**, 남의
+ * 저장소에서 기본값은 곧 틀린 값이다.
+ */
+describe("설정의 자리 — `.claude/` 우선, 루트 폴백", () => {
+  /** 원하는 자리에 설정을 놓은 임시 트리. */
+  function at(places) {
+    const dir = mkdtempSync(join(tmpdir(), "harness-config-where-"));
+    for (const [relative, content] of Object.entries(places)) {
+      const full = join(dir, relative);
+      mkdirSync(dirname(full), { recursive: true });
+      writeFileSync(full, JSON.stringify(content));
+    }
+    return dir;
+  }
+
+  it("`.claude/harness.config.json` 을 읽는다", () => {
+    const dir = at({ ".claude/harness.config.json": { specRoot: "새자리" } });
+
+    expect(findConfig(dir).relative).toBe(".claude/harness.config.json");
+    expect(loadConfig(dir).specRoot).toBe("새자리");
+  });
+
+  it("루트에만 있으면 그것을 읽는다 — 기존 설치가 조용히 기본값으로 돌아가면 안 된다", () => {
+    const dir = at({ "harness.config.json": { specRoot: "옛자리" } });
+
+    expect(findConfig(dir).relative).toBe("harness.config.json");
+    expect(findConfig(dir).legacy).toBe(true);
+    expect(loadConfig(dir).specRoot).toBe("옛자리");
+  });
+
+  it("둘 다 있으면 `.claude/` 쪽이 이긴다", () => {
+    const dir = at({
+      ".claude/harness.config.json": { specRoot: "새자리" },
+      "harness.config.json": { specRoot: "옛자리" },
+    });
+
+    expect(findConfig(dir).legacy).toBe(false);
+    expect(loadConfig(dir).specRoot).toBe("새자리");
+  });
+
+  it("아무 데도 없으면 `null` 이다", () => {
+    expect(findConfig(at({}))).toBeNull();
+  });
+
+  it("경로는 `/` 로 적힌다 — 그대로 사람에게 찍히는 값이다", () => {
+    // `join` 으로 지으면 Windows 에서 `.claude\…` 가 되어 문서·메시지와 어긋난다.
+    for (const path of CONFIG_PATHS) expect(path).not.toContain("\\");
   });
 });
