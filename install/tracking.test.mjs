@@ -8,9 +8,11 @@ import {
   COMMITTED,
   IGNORED,
   MISSING,
+  PRESCRIPTION,
   STAGED,
   UNTRACKED,
   groupByState,
+  reaches,
   trackingStates,
 } from "./tracking.mjs";
 
@@ -135,7 +137,42 @@ describe("tracking — 사본까지 가는가", () => {
     // 커밋된 것은 빠지고, 급한 것(고쳐야 담기는 것)이 앞에 온다.
     expect(groups.map((g) => g.state)).toEqual([IGNORED, UNTRACKED]);
     expect(groups[0].paths).toEqual([".claude/harness.md"]);
-    expect(groups[0].prescription).toContain("git add -f");
     expect(groups[1].prescription).toContain("git add -A");
+  });
+
+  it("무시되는 것에 `git add -f` 를 처방하지 않는다", () => {
+    // A 가 `.claude/` 를 무시한 판단을 설치 도구가 뒤집을 일이 아니다. 뚫지 않아도 되는
+    // 이유는 도달 경로가 둘이 됐기 때문이다 — 커밋이거나, `post-checkout` 의 심기거나.
+    expect(PRESCRIPTION[IGNORED]).not.toContain("git add -f");
+    expect(PRESCRIPTION[IGNORED]).toContain("post-checkout");
+  });
+
+  describe("도달 판정 — 길이 둘이다", () => {
+    it("커밋돼 있으면 심기와 무관하게 도달한다", () => {
+      expect(reaches(COMMITTED, false)).toBe(true);
+      expect(reaches(COMMITTED, true)).toBe(true);
+    });
+
+    it("심기가 있으면 디스크에 있는 것은 전부 도달한다", () => {
+      // 심기는 본체의 **워킹트리**에서 복사하므로 git 상태를 묻지 않는다.
+      for (const state of [IGNORED, UNTRACKED, STAGED]) {
+        expect(reaches(state, true), state).toBe(true);
+        expect(reaches(state, false), state).toBe(false);
+      }
+    });
+
+    it("없는 것은 심기가 있어도 도달하지 못한다", () => {
+      expect(reaches(MISSING, true)).toBe(false);
+    });
+
+    it("심기가 있으면 묶음에 `MISSING` 만 남는다", () => {
+      const { dir, git, write } = repo();
+      write("untracked.md", "c\n");
+      write(".claude/harness.md", "d\n");
+
+      const states = trackingStates(dir, ["untracked.md", ".claude/harness.md", "없다.md"], git);
+
+      expect(groupByState(states, true).map((g) => g.state)).toEqual([MISSING]);
+    });
   });
 });

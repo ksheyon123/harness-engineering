@@ -28,7 +28,7 @@
 
 import { execFileSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -40,7 +40,6 @@ import {
   manifestContents,
 } from "./managed.mjs";
 import { BROKEN, COMMITTED_CHECK, inspect, pointsAtGithooks, report as smokeReport } from "./smoke.mjs";
-import { IGNORED, trackingStates } from "./tracking.mjs";
 
 /** 패키지 루트. 이 파일은 `<pkg>/install/` 에 있다. */
 const PKG = fileURLToPath(new URL("..", import.meta.url));
@@ -132,15 +131,16 @@ export function plan(tree, git) {
   // 여기 적힌 순서가 곧 해야 할 순서다. 앞의 둘은 **안 하면 하네스가 안 도는 것**이고,
   // 이 명령이 끝나는 시점 말고는 말해줄 자리가 없다 — 방금 그 파일들을 쓴 것이 우리다.
 
-  // 커밋하지 않으면 worktree 사본에 아무것도 안 간다. git 이 커밋된 것만 체크아웃하기
-  // 때문이고, 하필 그 사본이 `developer`·`qa` 와 작업 세션이 실제로 일하는 자리다.
-  // **여기서 파일을 쓰기만 하고 커밋하지 않는 것은 의도다** — 남의 저장소에 커밋을
-  // 만드는 것은 설치 도구의 몫이 아니다. 대신 반드시 말해준다.
+  // 사본에 도달하는 길이 둘이라, 어느 쪽으로 갈지는 **A 가 정한다.** 설치 도구가 커밋을
+  // 만들지도(남의 히스토리다) 무시 규칙을 뚫지도(`git add -f`) 않는 이유가 같다.
+  // 다만 **둘 중 하나는 반드시 참이어야 하고**, 아니면 사본에서 하네스가 통째로 사라진다.
   notes.push(
-    "**커밋해라.** 추적되지 않으면 worktree 사본에는 이 파일들이 없다 — 규약도 층 1 도 " +
-      "에이전트 정의도 거기서 통째로 사라진다. 보호 브랜치 직접 커밋은 `pre-commit` 이 " +
-      "막으므로 브랜치를 자르고 거기서 담아라 — `git switch -c chore/harness-install` · " +
-      "`git add -A` · `git commit`.",
+    "**사본에 도달할 길을 하나 고르라.** 하네스를 팀 규약으로 본다면 커밋해라 — " +
+      "`git switch -c chore/harness-install` · `git add -A` · `git commit` " +
+      "(보호 브랜치 직접 커밋은 `pre-commit` 이 막는다). 개인 도구로 본다면 커밋하지 " +
+      "말고 `.gitignore` 에 둬라 — 방금 배선한 `post-checkout` 이 사본이 만들어질 때마다 " +
+      "심는다. **둘 다 아니면** 규약도 층 1 도 에이전트 정의도 사본에서 사라진다. " +
+      "`harness smoke` 가 어느 쪽으로 도달하는지 판정한다.",
   );
 
   // 게이트를 여기서 만들지 않는 것도 같은 이유다 — 무엇을 검사할지는 A 가 정한다.
@@ -258,16 +258,27 @@ function packageJson(tree) {
 }
 
 /**
- * `core.hooksPath` 를 `.githooks` 로. **이미 다른 곳을 가리키면 멈춘다.**
+ * `core.hooksPath` 를 **절대경로**로. **이미 다른 곳을 가리키면 멈춘다.**
  *
  * 충돌의 기준은 **표기가 아니라 가리키는 곳**이다 — 판정은 `smoke` 의 `pointsAtGithooks`
  * 하나가 내린다. A 가 `<A>/.githooks` 를 절대경로로 적어뒀다면 그것은 우리 자신을 가리키는
- * 것이라 충돌이 아니고, **그때 표기를 `.githooks` 로 되돌려 쓰지도 않는다**: 두 표기는 같은
- * 뜻이 아니다(상대는 링크된 worktree 안에서 *그 사본의* 훅을 부르고, 절대는 본체 것을
- * 부른다). 둘 다 성립하므로 A 가 골라 둔 쪽을 설치 도구가 뒤집을 근거가 없다.
+ * 것이라 충돌이 아니다.
+ *
+ * ## 왜 상대값(`.githooks`)을 쓰지 않는가 — 실측으로 뒤집혔다
+ *
+ * 한때 여기서 `.githooks` 를 심었고, A 가 절대경로를 골라 뒀으면 "둘 다 성립하니 A 의
+ * 표기를 뒤집지 않는다" 고 두었다. **둘 다 성립하지 않는다.**
+ *
+ * git 은 `core.hooksPath` 를 **각 워킹트리 최상단 기준**으로 푼다. 그래서 상대값은 갓
+ * 만들어진 사본 안에서 **그 사본의** `.githooks/` 를 가리키는데, 커밋되지 않은 저장소에는
+ * 거기 아무것도 없다 — 훅이 실패하는 게 아니라 **아예 안 불린다.** 그러면 `post-checkout`
+ * 의 심기가 돌지 않고, 심기가 돌지 않으니 사본에 `.githooks/` 가 생기지도 않는다. 순환이다.
+ *
+ * **절대경로가 그 순환을 끊는다** — 어느 사본에서 불려도 본체의 훅이 잡힌다(실측).
+ * `.githooks/` 를 커밋하는 저장소라면 상대값도 돌지만, 절대값은 **양쪽 다** 돈다.
  */
 function hooksPathStep(tree, git) {
-  const want = ".githooks";
+  const want = join(tree, ".githooks");
   let current = null;
   try {
     current = git(["config", "--local", "--get", "core.hooksPath"]).trim();
@@ -277,9 +288,23 @@ function hooksPathStep(tree, git) {
 
   if (!current) return { kind: "config", key: "core.hooksPath", value: want, state: "set" };
 
-  // `state: "same"` 인 step 은 `apply` 가 건너뛴다 — A 의 표기가 그대로 남는다.
-  if (pointsAtGithooks(tree, current)) {
+  // 이미 절대경로로 우리를 가리킨다 — 건드릴 것이 없다.
+  // `state: "same"` 인 step 은 `apply` 가 건너뛴다.
+  if (pointsAtGithooks(tree, current) && isAbsolute(current)) {
     return { kind: "config", key: "core.hooksPath", value: want, state: "same" };
+  }
+
+  // 우리를 가리키긴 하는데 상대값이다. 본체에서는 멀쩡히 돌아서 **사본에서만** 죽는다.
+  if (pointsAtGithooks(tree, current)) {
+    return {
+      kind: "config",
+      key: "core.hooksPath",
+      value: want,
+      state: "set",
+      detail:
+        `\`${current}\` 는 우리 자리를 가리키지만 **상대값이라 사본 안에서 사본의 \`.githooks/\` 를 ` +
+        `찾는다.** 절대경로로 다시 쓴다.`,
+    };
   }
 
   return {
@@ -287,10 +312,12 @@ function hooksPathStep(tree, git) {
     key: "core.hooksPath",
     value: want,
     state: "conflict",
+    // **절대경로를 문구에 넣지 않는다.** 이 메시지가 말하려는 것은 "우리 자리" 지 특정
+    // 문자열이 아니고, 넣으면 같은 상황의 메시지가 저장소마다 달라진다.
     detail:
-      `\`core.hooksPath\` 가 \`${current}\` 를 가리킨다 — \`${want}\` 가 아니라 그쪽 훅이 불린다. ` +
+      `\`core.hooksPath\` 가 \`${current}\` 를 가리킨다 — \`.githooks\` 가 아니라 그쪽 훅이 불린다. ` +
       `husky·lefthook 처럼 같은 설정을 쓰는 것이 있을 수 있다. 빼앗으면 그쪽 훅이 통째로 죽는데 ` +
-      `아무 신호도 없다 — 그쪽 훅에서 하네스의 \`${want}/\` 훅을 직접 이어 붙이거나, 그쪽을 ` +
+      `아무 신호도 없다 — 그쪽 훅에서 하네스의 \`.githooks/\` 훅을 직접 이어 붙이거나, 그쪽을 ` +
       `걷어내고 \`git config --local --unset core.hooksPath\` 한 뒤 \`harness init\` 을 다시 돌려라.`,
   };
 }
@@ -367,37 +394,11 @@ export function apply(tree, git) {
     }
   }
 
-  return { ...result, applied, staged: forceStage(tree, applied, git) };
-}
-
-/**
- * **무시되는 경로만** 인덱스에 담는다.
- *
- * A 가 `.claude` 를 통째로 `.gitignore` 에 넣어둔 경우가 있다 — 거기 드는 것이 개인 설정
- * 이라고 본 것이고, 대체로 맞는 판단이다. 그런데 하네스 파일은 개인 것이 아니라 **팀이
- * 커밋해야 할 규약**이라, 그 판단에 걸리면 `git add -A` 로는 **몇 번을 돌려도** 안 담긴다.
- * 안 담기면 worktree 사본에 없고, 사본에 없으면 거기서 하네스가 통째로 사라진다.
- *
- * **무시되지 않는 것은 건드리지 않는다.** 사람이 칠 `git add -A` 가 알아서 담고, 무엇보다
- * `package.json` 같은 A 의 파일에는 하네스와 무관한 미커밋 수정이 섞여 있을 수 있다 —
- * 그것까지 인덱스에 올리는 것은 설치 도구의 몫이 아니다.
- *
- * 커밋은 하지 않는다. 인덱스는 되돌릴 수 있지만(`git restore --staged`) 히스토리는 남는다.
- */
-function forceStage(tree, applied, git) {
-  const paths = applied.filter((s) => s.kind === "file").map((s) => s.path);
-  const states = trackingStates(tree, paths, git);
-  if (states === null) return { forced: [], failed: [] };
-
-  const blocked = paths.filter((path) => states.get(path) === IGNORED);
-  if (blocked.length === 0) return { forced: [], failed: [] };
-
-  try {
-    git(["add", "-f", "--", ...blocked]);
-    return { forced: blocked, failed: [] };
-  } catch {
-    return { forced: [], failed: blocked };
-  }
+  // **인덱스를 건드리지 않는다.** 한때 여기서 무시되는 경로를 `git add -f` 로 뚫어 담았다.
+  // 그때는 사본에 도달하는 길이 커밋 하나뿐이었기 때문이고, 지금은 `post-checkout` 이
+  // 커밋 없이 심는다. A 가 `.claude/` 를 무시한 것은 그것을 **개인 설정**으로 본 판단이라
+  // (개발자마다 다른 하네스를 쓴다) 설치 도구가 뒤집을 일이 아니었다.
+  return { ...result, applied };
 }
 
 function makeExecutable(path) {
@@ -451,7 +452,7 @@ function main() {
  * 있는가), 그것들은 전부 **note** 로만 있었다 — 하나도 안 해도 0 이었다. 그래서 마지막에
  * `smoke` 를 직접 돌린다.
  *
- * ## 커밋만은 종료 코드에 넣지 않는다
+ * ## 도달만은 종료 코드에 넣지 않는다
  *
  * `init` 은 남의 저장소에 커밋을 만들지 않는다(그건 설치 도구의 몫이 아니다). 그래서 갓
  * 설치한 직후에 커밋이 없는 것은 **정상**이고, 그것으로 1 을 내면 종료 코드가 *항상* 1 이
@@ -462,10 +463,11 @@ function main() {
  * | 무엇 | 종료 코드 |
  * |---|---|
  * | 배선이 깨졌다 — **`init` 이 만든 상태가 잘못됐다** | 1 |
- * | 커밋만 남았다 — `init` 이 할 수 있는 것은 다 했다 | 0, 대신 남은 것을 찍는다 |
+ * | 도달만 남았다 — `init` 이 할 수 있는 것은 다 했다 | 0, 대신 남은 것을 찍는다 |
  *
- * 커밋을 실제로 **강제**하는 자리는 여기가 아니다. 커밋 안 된 하네스로 작업 세션을 여는
- * 것을 막아야 하고, 그건 `spawn` 이 할 일이다(`docs/backlog.md` 의 G-4).
+ * **심기가 배선되면 이 자리는 대개 초록이다.** `post-checkout` 이 커밋 없이 사본에
+ * 넣어 주므로, 커밋을 안 하기로 한 저장소도 정상 경로가 된다. 빨간불이 남는 것은
+ * 도달할 길이 **둘 다 없을 때**뿐이다.
  */
 function verify(tree, git) {
   process.stdout.write("― 여기까지가 설치다. 아래는 그것이 실제로 서 있는지 묻는다 ―\n");
@@ -478,11 +480,15 @@ function verify(tree, git) {
 
   if (result.checks.some((c) => c.state === BROKEN && c.id === COMMITTED_CHECK)) {
     process.stdout.write(
-      "설치는 끝났다. **남은 것은 커밋뿐이다.**\n\n" +
-        "  git switch -c chore/harness-install\n" +
-        "  git add -A\n" +
-        "  git commit\n\n" +
-        "커밋하지 않으면 worktree 사본에는 이 파일들이 없고, 하필 거기가 `developer`·`qa` 가\n" +
+      "설치는 끝났다. **남은 것은 사본에 도달할 길 하나다.**\n\n" +
+        "  (가) 커밋한다 — 하네스를 팀 규약으로 본다면\n" +
+        "      git switch -c chore/harness-install\n" +
+        "      git add -A\n" +
+        "      git commit\n\n" +
+        "  (나) 심기를 세운다 — 개인 도구로 본다면 커밋하지 않고 `.gitignore` 에 둔다.\n" +
+        "      `core.hooksPath` 와 `.githooks/post-checkout` 이 서 있으면 사본이\n" +
+        "      만들어질 때마다 심긴다. 위 판정에 무엇이 빠졌는지 적혀 있다.\n\n" +
+        "둘 다 없으면 worktree 사본에 이 파일들이 없고, 하필 거기가 `developer`·`qa` 가\n" +
         "도는 자리다. 없으면 막히는 게 아니라 **그냥 통과한다.**\n\n",
     );
   }
@@ -497,7 +503,7 @@ function cleanGitEnv() {
   return env;
 }
 
-export function report({ steps, blockers, notes, applied, staged }, dryRun, write = (s) => process.stdout.write(s)) {
+export function report({ steps, blockers, notes, applied }, dryRun, write = (s) => process.stdout.write(s)) {
   if (blockers.length > 0) {
     write(
       `\n설치를 멈췄다 — 덮어쓰면 안 되는 것이 있다.\n\n` +
@@ -516,16 +522,6 @@ export function report({ steps, blockers, notes, applied, staged }, dryRun, writ
       (changed.length === 0
         ? "  · 바꿀 것이 없다 — 이미 설치돼 있다.\n"
         : changed.map((s) => `  ${s.state === "create" ? "+" : "~"} ${s.path ?? s.key}\n`).join("")) +
-      (staged?.forced?.length
-        ? `\n\`.gitignore\` 가 막고 있어 인덱스에 강제로 담았다 — ` +
-          `\`git add -A\` 로는 안 담기는 것들이다:\n\n` +
-          staged.forced.map((path) => `  → ${path}\n`).join("")
-        : "") +
-      (staged?.failed?.length
-        ? `\n\`.gitignore\` 가 막고 있는데 담지도 못했다:\n\n` +
-          staged.failed.map((path) => `  ! ${path}\n`).join("") +
-          `\n  \`git add -f -- ${staged.failed.join(" ")}\` 를 직접 쳐라.\n`
-        : "") +
       (manual.length > 0
         ? `\n손이 필요한 것:\n\n${manual.map((s) => `  ! ${s.detail}`).join("\n")}\n`
         : "") +

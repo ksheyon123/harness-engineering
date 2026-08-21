@@ -66,7 +66,7 @@ describe("init — 설치 판정", () => {
     const git = fakeGit();
     apply(dir, git);
 
-    const again = plan(dir, fakeGit(".githooks"));
+    const again = plan(dir, fakeGit(join(dir, ".githooks")));
 
     expect(again.steps.filter((s) => s.state && s.state !== "same")).toEqual([]);
   });
@@ -162,14 +162,22 @@ describe("init — 설치 판정", () => {
           expect(hooks(result).state).toBe("set");
         });
 
-        it.each([".githooks", "./.githooks"])("`%s` 는 같은 곳이라 건드릴 것이 없다", (value) => {
-          const result = plan(tree(files), fakeGit(value));
+        it.each([".githooks", "./.githooks"])(
+          "`%s` 는 우리 자리이지만 **상대값이라 절대경로로 다시 쓴다**",
+          (value) => {
+            // 충돌은 아니다 — 가리키는 곳은 우리 자리다. 그런데 git 은 이 값을 **각
+            // 워킹트리 최상단 기준**으로 풀어서, 사본 안에서는 사본의 `.githooks/` 를
+            // 찾는다. 미추적 설치에서는 거기 아무것도 없어 훅이 **안 불린다.**
+            const dir = tree(files);
+            const result = plan(dir, fakeGit(value));
 
-          expect(result.blockers).toEqual([]);
-          expect(hooks(result).state).toBe("same");
-        });
+            expect(result.blockers).toEqual([]);
+            expect(hooks(result).state).toBe("set");
+            expect(hooks(result).value).toBe(join(dir, ".githooks"));
+          },
+        );
 
-        it("절대경로로 우리 `.githooks` 를 가리키는 것도 같은 곳이다", () => {
+        it("절대경로로 우리 `.githooks` 를 가리키면 건드릴 것이 없다", () => {
           const dir = tree(files);
           const result = plan(dir, fakeGit(join(dir, ".githooks")));
 
@@ -193,9 +201,7 @@ describe("init — 설치 판정", () => {
       }
     });
 
-    it("절대경로면 `git config` 로 다시 쓰지 않는다 — A 가 고른 표기를 뒤집지 않는다", () => {
-      // 상대 `.githooks` 는 링크된 worktree 안에서 **그 사본의** 훅을 부르고 절대경로는
-      // 본체 것을 부른다. 두 표기는 같은 뜻이 아니라, 고른 쪽을 설치 도구가 뒤집을 수 없다.
+    it("이미 절대경로면 `git config` 를 다시 부르지 않는다", () => {
       const dir = tree();
       const git = fakeGit(join(dir, ".githooks"));
 
@@ -334,18 +340,21 @@ describe("init — 설치 판정", () => {
       }
     });
 
-    it("`core.hooksPath` 를 설정한다", () => {
+    it("`core.hooksPath` 를 **절대경로로** 설정한다", () => {
+      // 상대값이면 사본 안에서 사본의 `.githooks/` 를 찾아 훅이 안 불린다 — 그러면
+      // 심기가 안 돌고, 심기가 안 도니 사본에 `.githooks/` 가 생기지도 않는다. 순환이다.
+      const dir = tree();
       const git = fakeGit();
-      apply(tree(), git);
+      apply(dir, git);
 
-      expect(git.calls).toContainEqual(["config", "--local", "core.hooksPath", ".githooks"]);
+      expect(git.calls).toContainEqual(["config", "--local", "core.hooksPath", join(dir, ".githooks")]);
     });
 
     it("이미 설치돼 있으면 다시 쓰지 않는다", () => {
       const dir = tree();
       apply(dir, fakeGit());
 
-      expect(apply(dir, fakeGit(".githooks")).applied).toEqual([]);
+      expect(apply(dir, fakeGit(join(dir, ".githooks"))).applied).toEqual([]);
     });
   });
 
@@ -378,39 +387,41 @@ describe("init — 설치 판정", () => {
       return { dir, git };
     }
 
-    it("`.claude` 가 통째로 무시되면 `-f` 로 담는다", () => {
-      // A 가 `.claude` 를 무시한 판단 자체는 옳다 — 거기 든 것은 개인 설정이라고 본 것이다.
-      // 그런데 하네스 파일은 개인 것이 아니라 팀이 커밋해야 할 규약이라, 그 판단에 걸리면
-      // `git add -A` 로는 **몇 번을 돌려도** 안 담기고 사본에서 하네스가 통째로 사라진다.
+    it("`.claude` 가 통째로 무시돼도 뚫지 않는다", () => {
+      // A 가 `.claude` 를 무시한 것은 거기 든 것을 **개인 설정**으로 본 판단이다
+      // (개발자마다 다른 하네스를 쓴다). 한때 설치기가 `git add -f` 로 그것을 뚫었는데,
+      // 사본에 도달하는 길이 커밋 하나뿐이던 시절의 얘기다 — 지금은 심기가 데려간다.
       const { dir, git } = realRepo(".claude\nnode_modules\n");
 
-      const { staged } = apply(dir, git);
+      apply(dir, git);
 
-      expect(staged.failed).toEqual([]);
-      expect(staged.forced).toContain(".claude/hooks/path-ownership.mjs");
-      expect(staged.forced).toContain(".claude/harness.md");
-      // 인덱스에 실제로 들어갔는가 — 보고가 아니라 git 에게 묻는다.
-      expect(git(["ls-files"])).toContain(".claude/harness.md");
+      expect(git(["ls-files"])).toBe("");
+      expect(git(["diff", "--cached", "--name-only"])).toBe("");
     });
 
-    it("무시되지 않으면 인덱스를 건드리지 않는다", () => {
+    it("무시되지 않아도 인덱스를 건드리지 않는다", () => {
       // 사람이 칠 `git add -A` 가 알아서 담는다. `package.json` 같은 A 의 파일에는
       // 하네스와 무관한 미커밋 수정이 섞여 있을 수 있어, 필요 없는 것까지 올리지 않는다.
       const { dir, git } = realRepo("node_modules\n");
 
-      const { staged } = apply(dir, git);
+      apply(dir, git);
 
-      expect(staged).toEqual({ forced: [], failed: [] });
       expect(git(["ls-files"])).toBe("");
+      expect(git(["diff", "--cached", "--name-only"])).toBe("");
     });
 
-    it("`.githooks` 만 무시돼도 그것만 담는다", () => {
+    it("`.githooks` 만 무시돼도 마찬가지다", () => {
       const { dir, git } = realRepo(".githooks\nnode_modules\n");
 
-      const { staged } = apply(dir, git);
+      apply(dir, git);
 
-      expect(staged.forced).toContain(".githooks/pre-commit");
-      expect(staged.forced.some((p) => p.startsWith(".claude/"))).toBe(false);
+      expect(git(["diff", "--cached", "--name-only"])).toBe("");
+    });
+
+    it("`staged` 를 더는 보고하지 않는다 — 인덱스를 만지지 않으니 보고할 것이 없다", () => {
+      const { dir, git } = realRepo(".claude\n");
+
+      expect(apply(dir, git).staged).toBeUndefined();
     });
   });
 });

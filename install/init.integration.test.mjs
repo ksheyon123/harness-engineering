@@ -195,6 +195,27 @@ describe("설치된 하네스 (tarball → init)", () => {
     expect(verdict.hookSpecificOutput.permissionDecision).toBe("deny");
   });
 
+  it("**설치본의 shim 을 타고도** `post-checkout` 이 실제로 판정까지 간다", () => {
+    // 위 테스트가 만든 사본에서 이 훅이 돌았어야 한다.
+    //
+    // 한때 훅 본체에 `process.argv[1] === import.meta.url` main 가드를 씌웠다가 여기서
+    // 통째로 죽었다. 설치본에서 shim(`A/.githooks/post-checkout.mjs`)과 실제 모듈
+    // (`node_modules/…/post-checkout.mjs`)은 **서로 다른 파일**이라 두 값이 안 맞고,
+    // 훅은 **불리는데 아무것도 안 하고 0 으로 끝났다.** 종료 코드도 stderr 도 멀쩡했다.
+    //
+    // 단위 테스트는 판정 함수를 직접 불러서 이 실패를 구조적으로 못 잡는다 — shim 을
+    // 타야만 드러난다. 그래서 이 자리다.
+    const trace = join(A, ".claude/post-checkout-trace.log");
+    expect(existsSync(trace), "흔적이 없다 — 훅이 안 불렸거나 아무것도 안 했다").toBe(true);
+
+    const last = readFileSync(trace, "utf8").trim().split(/\r?\n/).pop() ?? "";
+    const count = (key) => Number(/** @type {string} */ (last.split("\t").find((f) => f.startsWith(`${key}=`)))?.slice(key.length + 1));
+
+    expect(last).toContain("failed=0");
+    // 심었든 이미 있었든, **목록을 훑기는 했다**는 뜻이다. 0/0 이면 판정이 안 돈 것이다.
+    expect(count("planted") + count("present")).toBeGreaterThan(0);
+  });
+
   it("`harness doctor` 가 설치본에서 돈다", () => {
     const out = execFileSync(
       process.execPath,

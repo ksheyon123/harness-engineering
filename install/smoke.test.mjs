@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { PROBES, inspect, mainRoot, report, trust } from "./smoke.mjs";
+import { PROBES, inspect, mainRoot, plantingWired, report, trust } from "./smoke.mjs";
 import { pointsAtGithooks } from "./smoke.mjs";
 
 /**
@@ -400,19 +400,38 @@ describe("smoke — 배선이 살아 있는가", () => {
       expect(find(checks, "게이트 기록").state).toBe("broken");
     });
 
-    it("추적되지 않는 파일은 worktree 사본에서 사라진다", () => {
+    it("`.claude` 를 통째로 무시해도 사본 무시 판정은 초록이다", () => {
+      // 글자로 `.claude/worktrees/` 줄을 찾던 시절에는 여기서 거짓 ✗ 가 났다.
+      // 무시되는지는 git 에게 물으면 정확히 답한다.
+      const { checks } = look({ files: { ".gitignore": ".claude\nnode_modules\n" } });
+
+      expect(find(checks, "사본이 커밋에 쓸려").state).toBe("ok");
+    });
+  });
+
+  /**
+   * 사본에 도달하는 길이 둘이다 — 커밋되어 있거나, `post-checkout` 이 심어 주거나.
+   *
+   * **심기를 끄는 방법으로 `core.hooksPath` 를 남의 곳으로 돌린다.** 훅 파일을 지우면
+   * 그것 자체가 `managedPaths()` 의 결손이 되어 다른 이유로도 빨개지므로, 재려는 것 하나만
+   * 남기려면 배선 쪽을 끊어야 한다.
+   */
+  describe("사본에 도달하는가", () => {
+    const NO_PLANTING = { hooksPath: ".husky/_" };
+
+    it("심기가 없으면 추적되지 않는 파일은 사본에서 사라진다", () => {
       // 파일은 디스크에 있다. 그래서 **여기서는 멀쩡해 보이고 사본에서만 없다.**
-      const { checks } = look({ untrack: [".claude/agents/qa.md"] });
+      const { checks } = look({ ...NO_PLANTING, untrack: [".claude/agents/qa.md"] });
       const check = find(checks, "worktree 안에서도");
 
       expect(check.state).toBe("broken");
       expect(check.detail).toContain("qa.md");
     });
 
-    it("스테이징만 한 것은 초록이 아니다 — 사본은 커밋된 것만 받는다", () => {
+    it("심기가 없으면 스테이징만 한 것도 초록이 아니다 — 사본은 커밋된 것만 받는다", () => {
       // 이 판정의 이전 버전은 `git ls-files`(인덱스)를 봐서 여기서 **초록을 냈다.**
       // 그동안 사본에는 아무것도 없었고, smoke 가 존재하는 이유가 정확히 그 실패였다.
-      const { checks } = look({ untrack: [".claude/agents/qa.md"] }, (dir, git) => {
+      const { checks } = look({ ...NO_PLANTING, untrack: [".claude/agents/qa.md"] }, (dir, git) => {
         git(["add", "-f", "--", ".claude/agents/qa.md"]);
       });
       const check = find(checks, "worktree 안에서도");
@@ -421,22 +440,50 @@ describe("smoke — 배선이 살아 있는가", () => {
       expect(check.detail).toContain("커밋해야");
     });
 
-    it("`.claude` 를 통째로 무시해도 사본 무시 판정은 초록이다", () => {
-      // 글자로 `.claude/worktrees/` 줄을 찾던 시절에는 여기서 거짓 ✗ 가 났다.
-      // 무시되는지는 git 에게 물으면 정확히 답한다.
-      const { checks } = look({ files: { ".gitignore": ".claude\nnode_modules\n" } });
-
-      expect(find(checks, "사본이 커밋에 쓸려").state).toBe("ok");
-    });
-
-    it("무시되는 경로에는 `git add -A` 가 아니라 `-f` 를 처방한다", () => {
-      // A 가 `.claude` 를 통째로 무시하면 `git add -A` 는 몇 번을 돌려도 못 담는다.
-      // 처방이 하나뿐이면 그 사실을 말할 수가 없다.
-      const { checks } = look({ files: { ".gitignore": ".claude\nnode_modules\n" } });
+    it("심기가 없으면 무시되는 것이 결함이고, 그 사실을 말해 준다", () => {
+      const { checks } = look({ ...NO_PLANTING, files: { ".gitignore": ".claude\nnode_modules\n" } });
       const check = find(checks, "worktree 안에서도");
 
       expect(check.state).toBe("broken");
-      expect(check.detail).toContain("git add -f");
+      expect(check.detail).toContain("심기가 배선돼 있지 않다");
+    });
+
+    it("**심기가 있으면 무시돼도 초록이다** — 미추적 설치가 성립하는 지점이다", () => {
+      // 이 한 줄이 이 task 의 목적이다. 예전에는 이 상태가 **항상 빨간불**이라
+      // 아무 정보도 아니었고, 그래서 설치기가 `git add -f` 로 뚫었다.
+      const { checks } = look({ files: { ".gitignore": ".claude\nnode_modules\n" } });
+      const check = find(checks, "worktree 안에서도");
+
+      expect(check.state).toBe("ok");
+      expect(check.detail).toContain("post-checkout");
+    });
+
+    it("심기가 있어도 파일 자체가 없으면 도달하지 못한다", () => {
+      // 심기는 본체의 워킹트리에서 복사한다 — **없는 것은 못 데려간다.**
+      const { checks } = look({ drop: [".claude/agents/qa.md"] });
+      const check = find(checks, "worktree 안에서도");
+
+      expect(check.state).toBe("broken");
+      expect(check.detail).toContain("qa.md");
+    });
+
+    it("`core.hooksPath` 가 남의 곳이면 훅이 있어도 심기로 안 쳐준다", () => {
+      // 파일은 있는데 안 불린다. 존재만 보면 **조용한 초록**이 된다.
+      const { dir, git } = repo({ hooksPath: ".husky/_" });
+      try {
+        expect(plantingWired(dir, git).ok).toBe(false);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    it("훅이 서 있으면 심는다고 판정한다", () => {
+      const { dir, git } = repo();
+      try {
+        expect(plantingWired(dir, git).ok).toBe(true);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
     });
   });
 

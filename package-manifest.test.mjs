@@ -58,6 +58,8 @@ describe("발행되는 tarball", () => {
       // 부르고 그 자리에서 모듈 없음으로 죽는다.
       "post-checkout",
       "post-checkout.mjs",
+      // 판정 모듈. shim 은 훅 본체만 임포트하고, 훅 본체가 이것을 부른다.
+      "plant.mjs",
       "mark-verified.mjs",
       "verified-marker.mjs",
     ]) {

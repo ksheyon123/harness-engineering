@@ -26,13 +26,13 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { loadConfig } from "../.claude/hooks/harness-config.mjs";
 import { cleanEnv } from "../.claude/hooks/hook-kit.mjs";
 import { managedPaths } from "./managed.mjs";
-import { groupByState, trackingStates } from "./tracking.mjs";
+import { COMMITTED, groupByState, trackingStates } from "./tracking.mjs";
 
 const OK = "ok";
 export const BROKEN = "broken";
@@ -145,7 +145,7 @@ export function inspect(tree, git, options = {}) {
     gateRecord(tree),
     ignored(tree, git),
     runnerExclude(tree),
-    { ...committedForWorktrees(states), id: COMMITTED_CHECK },
+    { ...reachesWorktrees(states, plantingWired(tree, git)), id: COMMITTED_CHECK },
   ];
 
   return { checks: checks.filter(Boolean) };
@@ -659,24 +659,100 @@ function runnerExclude(tree) {
 }
 
 /**
- * worktree 사본은 **커밋된 것만** 받는다. 하나라도 빠지면 거기서 그 조각이 사라지는데,
- * 사라지는 자리가 하필 `developer`·`qa` 가 도는 자리다.
+ * **심기가 배선돼 있는가** — `git worktree add` 가 새 사본에 하네스를 넣어 주는가.
+ *
+ * 존재만 보면 안 된다. 네 가지가 다 참이어야 한다:
+ *
+ * | 묻는 것 | 아니면 |
+ * |---|---|
+ * | `core.hooksPath` 가 우리 `.githooks` 를 가리키나 | 그쪽 훅이 불린다 |
+ * | `.githooks/post-checkout` 이 있나 | 부를 것이 없다 |
+ * | 그 판정 모듈이 불러와지나 | 훅이 그 자리에서 죽는다 |
+ * | **갓 만들어진 사본 안에서 그 훅이 잡히나** | 아래 |
+ *
+ * ## 마지막 줄이 이 함수의 급소다
+ *
+ * 훅은 **새 사본 안에서** 불리고, git 은 `core.hooksPath` 를 **각 워킹트리 최상단
+ * 기준**으로 푼다. 그래서 상대값(`.githooks`)은 사본 안에서 *그 사본의* `.githooks/` 를
+ * 가리키는데, 커밋되지 않은 저장소에는 거기 아무것도 없다 — **훅이 안 불린다.**
+ *
+ * 실측으로 잡았다. 본체에서 보면 `.githooks/post-checkout` 이 멀쩡히 있고 `hooksPath`
+ * 도 우리를 가리키므로 앞의 셋이 전부 통과하는데, 정작 사본에는 아무것도 안 심겼다.
+ * **본체만 봐서는 절대 안 보이는 실패다.**
+ *
+ * 그래서 사본에서 훅에 닿는 길 둘을 확인한다 — 절대경로이거나(어디서 불려도 본체 것을
+ * 잡는다), 상대값이라면 `.githooks/` 가 **커밋돼 있거나**(사본이 자기 것을 받는다).
+ *
+ * @returns {{ok: boolean, why: string}}
+ */
+export function plantingWired(tree, git) {
+  let hooksPath;
+  try {
+    hooksPath = git(["config", "--local", "--get", "core.hooksPath"]).trim();
+  } catch {
+    hooksPath = "";
+  }
+
+  if (!pointsAtGithooks(tree, hooksPath)) {
+    return { ok: false, why: `\`core.hooksPath\` 가 \`${hooksPath || "(없음)"}\` 라 이 훅은 안 불린다` };
+  }
+  if (!existsSync(join(tree, ".githooks/post-checkout"))) {
+    return { ok: false, why: "`.githooks/post-checkout` 이 없다" };
+  }
+
+  const loaded = loads(tree, ".githooks/post-checkout.mjs");
+  if (!loaded.ok) return { ok: false, why: `\`.githooks/post-checkout.mjs\` — ${loaded.why}` };
+
+  if (!isAbsolute(hooksPath) && !committedGithooks(tree, git)) {
+    return {
+      ok: false,
+      why:
+        `\`core.hooksPath\` 가 \`${hooksPath}\` (상대값)인데 \`.githooks/\` 가 커밋돼 있지 않다 — ` +
+        `git 은 이 값을 **각 워킹트리 최상단 기준**으로 풀므로 사본 안에서는 사본의 ` +
+        `\`.githooks/\` 를 찾고, 거기엔 아무것도 없다. 훅이 실패하는 게 아니라 **안 불린다.** ` +
+        `\`git config --local core.hooksPath "${join(tree, ".githooks")}"\` 로 절대경로를 심어라`,
+    };
+  }
+
+  return { ok: true, why: "`post-checkout` 이 사본이 만들어질 때 심는다" };
+}
+
+/** 상대 `hooksPath` 가 사본에서 성립하려면 훅 자체가 사본에 있어야 한다 — 즉 커밋돼야 한다. */
+function committedGithooks(tree, git) {
+  const needed = [".githooks/post-checkout", ".githooks/post-checkout.mjs"];
+  const states = trackingStates(tree, needed, git);
+  return states !== null && needed.every((path) => states.get(path) === COMMITTED);
+}
+
+/**
+ * **사본에 도달하는가.**
+ *
+ * 한때 이 검사가 "커밋됐는가" 였다. 도달 수단이 커밋 하나뿐이던 시절의 대용품이고,
+ * `.claude/` 를 무시하는 저장소에서는 **항상 빨간불**이라 아무 정보도 아니었다.
+ *
+ * 이제 길이 둘이다:
+ *
+ * | 경로 | 무엇이 데려가나 |
+ * |---|---|
+ * | 커밋되어 있다 | git — 사본은 `HEAD` 에서 만들어진다 |
+ * | 심기가 배선돼 있다 | `post-checkout` — 본체 디스크에서 복사하므로 git 상태를 안 묻는다 |
  *
  * **인덱스가 아니라 `HEAD` 를 본다.** 예전에는 `git ls-files` 로 판정해서, `git add` 만
  * 하고 커밋을 안 한 상태를 전부 초록으로 통과시켰다 — 사본에는 아무것도 없는데도.
  */
-function committedForWorktrees(states) {
-  const name = "worktree 안에서도 살아남는다 — 필요한 것이 전부 커밋된다";
+function reachesWorktrees(states, planting) {
+  const name = "worktree 안에서도 살아남는다 — 필요한 것이 사본에 도달한다";
   if (states === null) return unknown(name, "git 을 못 써서 판정하지 못했다.");
 
-  const groups = groupByState(states);
-  if (groups.length === 0) return ok(name, `${states.size}개가 전부 커밋돼 있다.`);
+  const groups = groupByState(states, planting.ok);
+  if (groups.length === 0) {
+    return ok(name, planting.ok ? `${states.size}개가 도달한다 — ${planting.why}.` : `${states.size}개가 전부 커밋돼 있다.`);
+  }
 
   return broken(
     name,
-    groups
-      .map((g) => `\`${g.paths.join("\` · \`")}\` — ${g.prescription}`)
-      .join("\n      "),
+    (planting.ok ? "" : `심기가 배선돼 있지 않다(${planting.why}) — 커밋만이 길이다.\n      `) +
+      groups.map((g) => `\`${g.paths.join("\` · \`")}\` — ${g.prescription}`).join("\n      "),
   );
 }
 

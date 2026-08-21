@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { managedPaths } from "../install/managed.mjs";
-import { plant, plantList } from "./post-checkout.mjs";
+import { plant, plantList } from "./plant.mjs";
 
 const HOOKS = dirname(fileURLToPath(import.meta.url));
 const HOOK = join(HOOKS, "post-checkout.mjs");

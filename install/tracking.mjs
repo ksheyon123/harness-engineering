@@ -41,17 +41,50 @@ export const STAGED = "staged";
 /** `HEAD` 에 있다. 사본이 이것을 받는다 — 여기만 통과다. */
 export const COMMITTED = "committed";
 
-/** 상태별로 사람이 다음에 칠 것. `null` 이면 할 일이 없다. */
+/**
+ * 상태별로 사람이 다음에 칠 것. `null` 이면 할 일이 없다.
+ *
+ * **`IGNORED` 에 더는 `git add -f` 를 처방하지 않는다.** A 가 `.claude/` 를 무시한 것은
+ * 거기 든 것을 **개인 설정**으로 본 판단이고(개발자마다 다른 하네스를 쓴다), 그 판단
+ * 자체가 옳다. 설치 도구가 그것을 뚫고 팀 파일을 심는 것은 설치 도구의 몫이 아니었다.
+ *
+ * 뚫지 않아도 되는 이유는 **도달 경로가 둘이 됐기 때문**이다 — 아래 `reaches` 를 봐라.
+ */
 export const PRESCRIPTION = {
   [MISSING]: "파일이 없다 — `harness init` 부터 돌려라.",
-  [IGNORED]: "`.gitignore` 가 막아 `git add -A` 로는 안 담긴다 — `git add -f -- <경로>`.",
-  [UNTRACKED]: "아직 안 담겼다 — `git add -A`.",
+  [IGNORED]:
+    "`.gitignore` 가 막아 `git add -A` 로는 안 담긴다. **뚫지 마라** — `post-checkout` 을 " +
+    "배선하면(`harness init`) 커밋 없이 사본에 심긴다.",
+  [UNTRACKED]: "아직 안 담겼다 — `git add -A` 로 담아 커밋하거나, `post-checkout` 을 배선해라.",
   [STAGED]: "스테이징까지만 됐다 — **커밋해야** 사본에 간다.",
   [COMMITTED]: null,
 };
 
 /** 보고 순서. 급한 것(고쳐야 담기는 것)부터. */
 export const ORDER = [MISSING, IGNORED, UNTRACKED, STAGED];
+
+/**
+ * **사본에 도달하는가.** 물어야 할 것은 처음부터 이것이었다 — "커밋됐는가" 는 도달 수단이
+ * 하나뿐이던 시절의 대용품이다.
+ *
+ * 도달 경로가 둘이다:
+ *
+ * | 경로 | 조건 |
+ * |---|---|
+ * | git 이 데려간다 | `HEAD` 에 있다 — 사본은 커밋된 것만 받는다 |
+ * | `post-checkout` 이 심는다 | 배선돼 있고, 그 파일이 **본체 디스크에 있다** |
+ *
+ * 두 번째가 git 상태를 묻지 않는 것이 요점이다. 심기는 본체의 워킹트리에서 복사하므로
+ * 무시됐든 미추적이든 스테이징만 됐든 똑같이 데려간다. **없는 것만 못 데려간다.**
+ *
+ * @param {string} state `trackingStates` 가 낸 상태
+ * @param {boolean} planting `post-checkout` 심기가 배선돼 있는가
+ */
+export function reaches(state, planting) {
+  if (state === COMMITTED) return true;
+  if (state === MISSING) return false;
+  return planting;
+}
 
 /**
  * 경로마다 상태를 낸다.
@@ -79,11 +112,16 @@ export function trackingStates(tree, paths, git) {
   return states;
 }
 
-/** 상태별로 묶는다. 보고가 경로 하나하나가 아니라 **처방 단위**로 나가야 읽힌다. */
-export function groupByState(states) {
+/**
+ * 상태별로 묶는다. 보고가 경로 하나하나가 아니라 **처방 단위**로 나가야 읽힌다.
+ *
+ * **도달하는 것은 묶지 않는다.** `planting` 이 참이면 디스크에 있는 것은 전부 도달하므로
+ * `MISSING` 만 남는다 — 미추적 설치에서 무시 상태를 결함으로 부르지 않게 하는 것이 이 인자다.
+ */
+export function groupByState(states, planting = false) {
   const groups = new Map();
   for (const [path, state] of states) {
-    if (state === COMMITTED) continue;
+    if (reaches(state, planting)) continue;
     if (!groups.has(state)) groups.set(state, []);
     groups.get(state).push(path);
   }
