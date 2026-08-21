@@ -50,3 +50,6 @@
 | **서브에이전트 격리(`isolation: worktree`)가 `post-checkout` 을 부르나** | **부른다.** 작업 세션에서 `developer` 를 스폰해 실측 — 흔적에 `cwd=…\worktrees\agent-<hex>` 가 잡혔고, `new-ref` 가 그 세션의 spec 커밋이었다(`worktree.baseRef: "head"` 와 일치) |
 | 그래서 **두 경로가 다 도나** | **돈다.** `EnterWorktree` 와 서브에이전트 격리가 **둘 다** `post-checkout` 을 부른다 — 한쪽만 돌면 그쪽 사본에만 하네스가 심기므로 따로 쟀다. **커밋 없이 사본에 심는다는 전제가 성립한다** |
 | `core.hooksPath` 를 절대경로로 두는 것 | **정상이다.** git 이 워킹트리 최상단 기준으로 푸므로 상대 `.githooks` 는 **링크된 worktree 안에서 그 사본의 훅**을 부른다. 이 저장소는 절대경로라 본체 것이 불린다 — 둘 다 성립하므로 `smoke` 는 표기가 아니라 **가리키는 곳**을 본다 |
+| **저장소 *밖* 사본에서 shim 이 해석되나** | **안 된다.** `ERR_MODULE_NOT_FOUND` — bare specifier 는 임포트하는 파일에서 위로 올라가며 `node_modules/` 를 찾는데, 그 길이 A 를 안 지난다. **심기는 성공하고**(`planted=20 failed=0`) 파일도 다 있는데 훅만 죽는다 |
+| 그때 `harness smoke` 가 잡나 | **못 잡는다.** `loads()` 가 **본체 기준**으로 해석을 확인하므로 언제나 초록이다 — 사본에서만 죽는 것을 본체에서 묻고 있다 |
+| 그래서 사본 위치는 | **규약이 고정한다.** `.claude/worktrees/` 이고 만드는 것은 Claude Code 다 — "사람도 세션도 직접 만들지 않는다"(`harness.md`). 위 둘은 그 규약을 어겼을 때 무슨 일이 나는지를 잰 것이고, **shim 방식이 그 규약에 의존한다**는 뜻이다 |
