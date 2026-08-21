@@ -35,11 +35,55 @@
  * 아니라 **통과**가 되고, 층 1 이 통째로 사라지는데 아무 신호도 없다.
  */
 
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-/** 설정 파일 이름. 저장소 최상단에 둔다. */
+/** 설정 파일 이름. */
 export const CONFIG_FILE = "harness.config.json";
+
+/**
+ * 설정이 살 수 있는 자리. **앞의 것이 이긴다.**
+ *
+ * ## 왜 `.claude/` 로 옮겼나
+ *
+ * 하네스가 만드는 것이 **한 접두어 아래 모여 있어야** A 가 `.gitignore` 에 쓴 한 줄이
+ * 전부를 덮는다. 루트에 흩어져 있으면 A 의 결정이 샌다 — `.claude/` 는 무시하기로 했는데
+ * 루트의 설정 파일만 `git add -A` 에 잡혀 커밋되는 식이다.
+ *
+ * **A 대신 무시 규칙을 써 주는 것이 아니다.** 커밋 여부는 A 가 자기 `.gitignore` 에 자기
+ * 손으로 정한다. 하네스가 할 수 있는 것은 **결정할 대상을 한 덩어리로 만드는 것**뿐이다.
+ *
+ * ## 루트를 계속 읽는 이유
+ *
+ * 이미 설치된 저장소가 루트에 파일을 갖고 있다. 그것을 안 읽으면 **조용히 기본값으로
+ * 돌아간다** — 남의 저장소에서 기본값은 곧 틀린 값이라, `specRoot` 하나가 어긋나면 층 1 이
+ * 엉뚱한 경로를 지키고 아무도 이유를 모른다. 그래서 읽어 주고, `doctor` 가 옮기라고 말한다.
+ */
+/*
+ * **구분자는 `/` 로 고정한다.** 이 값들은 파일을 찾는 데도 쓰이지만 그대로 사람에게
+ * 찍히기도 한다 — `join` 으로 지으면 Windows 에서 `.claude\…` 가 되어 문서·메시지의
+ * 나머지와 어긋난다. `join(baseDir, "a/b")` 는 어느 플랫폼에서든 정상이다.
+ */
+export const CONFIG_PATHS = Object.freeze([`.claude/${CONFIG_FILE}`, CONFIG_FILE]);
+
+/**
+ * 설정 파일이 실제로 있는 자리. 없으면 `null`.
+ *
+ * **부르는 쪽이 경로를 조립하지 않게 한다.** 한때 `join(baseDir, CONFIG_FILE)` 이
+ * `loadConfig` 와 `doctor` 두 곳에 따로 적혀 있었는데, 자리가 둘로 늘어나는 순간 그런
+ * 사본은 반드시 어긋난다 — 로더는 새 자리를 읽는데 `doctor` 는 옛 자리를 보고 "없다"고
+ * 말하는 식이다.
+ *
+ * @param {string} baseDir 설정을 찾을 트리의 최상단
+ * @returns {{path: string, relative: string, legacy: boolean} | null}
+ */
+export function findConfig(baseDir) {
+  for (const relative of CONFIG_PATHS) {
+    const path = join(baseDir, relative);
+    if (existsSync(path)) return { path, relative, legacy: relative === CONFIG_FILE };
+  }
+  return null;
+}
 
 /**
  * 이 저장소의 현재 동작. 설정이 없을 때 쓰인다.
@@ -80,7 +124,7 @@ function defaults() {
 }
 
 /**
- * `<baseDir>/harness.config.json` 을 읽는다. 없거나 깨졌으면 기본값.
+ * 설정을 읽는다. 없거나 깨졌으면 기본값. 자리는 `CONFIG_PATHS` 가 정한다.
  *
  * 키 단위로 채운다 — 일부만 적은 설정도 나머지는 기본값으로 돈다. 타입이 어긋난 값은
  * **그 키만** 버린다. 설정 하나 틀렸다고 전부 기본값으로 되돌리면 어디가 틀렸는지
@@ -90,10 +134,12 @@ function defaults() {
  */
 export function loadConfig(baseDir) {
   const fallback = defaults();
+  const found = findConfig(baseDir);
+  if (!found) return fallback;
 
   let raw;
   try {
-    raw = JSON.parse(readFileSync(join(baseDir, CONFIG_FILE), "utf8"));
+    raw = JSON.parse(readFileSync(found.path, "utf8"));
   } catch {
     return fallback;
   }

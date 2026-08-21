@@ -31,6 +31,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "n
 import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { CONFIG_PATHS } from "../.claude/hooks/harness-config.mjs";
 import {
   GITHOOK_SHIMS,
   HOOK_SHIMS,
@@ -159,8 +160,10 @@ export function plan(tree, git) {
       "에이전트 사본의 테스트가 다시 잡혀 게이트가 배로 돈다.",
   );
   notes.push(
-    "`harness.config.json` 은 만들지 않았다 — 없으면 기본값으로 돈다. " +
-      "`harness doctor` 가 이 프로젝트에 안 맞는 값을 짚어준다.",
+    `\`${CONFIG_PATHS[0]}\` 은 만들지 않았다 — 없으면 기본값으로 돈다. ` +
+      "`harness doctor` 가 이 프로젝트에 안 맞는 값을 짚어준다. " +
+      "**루트가 아니라 `.claude/` 아래다** — 하네스가 만드는 것이 한 접두어 아래 모여 있어야 " +
+      "`.gitignore` 한 줄로 커밋 여부를 정할 수 있다.",
   );
 
   return { steps, blockers, notes };
