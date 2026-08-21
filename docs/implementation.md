@@ -101,7 +101,7 @@ package.json            `posttest` 를 배선한다
 core.hooksPath          `.githooks` 로 설정한다
 ```
 
-**`.claude/hooks/` 에 놓이는 것은 한 줄짜리 shim 이다.** 본체는 패키지 안에 산다. 실측으로 확정된 것 둘 때문이다 — `CLAUDE.md` 의 `@` 임포트는 프로젝트 루트 밖으로 못 나가고, `${CLAUDE_PROJECT_DIR}` 는 worktree 안에서 **worktree 루트**를 가리킨다. 그래서 `node_modules` 를 직접 겨냥한 배선은 사본에서 조용히 죽는다. shim 은 추적되므로 사본에도 복사되고, node 의 상향 해석이 `A/node_modules` 까지 올라가 본체를 찾는다.
+**`.claude/hooks/` 에 놓이는 것은 한 줄짜리 shim 이다.** 본체는 패키지 안에 산다. 실측으로 확정된 것 둘 때문이다 — `CLAUDE.md` 의 `@` 임포트는 프로젝트 루트 밖으로 못 나가고, `${CLAUDE_PROJECT_DIR}` 는 worktree 안에서 **worktree 루트**를 가리킨다. 그래서 `node_modules` 를 직접 겨냥한 배선은 사본에서 조용히 죽는다. shim 은 사본에도 있어야 하고(커밋되어 있거나 `post-checkout` 이 심거나 — **어느 쪽인지는 A 가 정한다**), 거기서 node 의 상향 해석이 `A/node_modules` 까지 올라가 본체를 찾는다.
 
 ### 있는 것을 빼앗지 않는다
 

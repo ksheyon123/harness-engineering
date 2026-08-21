@@ -18,12 +18,16 @@
 
 **근거 2 — 진짜 비용은 설치 절차다.** `settings.json` 병합, `core.hooksPath` 점유(husky·lefthook 과 충돌), `posttest` 배선, 러너의 `**/.claude/worktrees/**` 제외, `.gitignore` 의 `.claude/worktrees/`. 마지막 것은 특히 위험하다 — **`pre-commit` 이 `git add -A` 를 강제**하므로 무시되지 않으면 작업 세션의 커밋이 에이전트 사본을 통째로 쓸어 담는다.
 
-**근거 3 — 이게 설계를 가른다. worktree 는 추적되는 파일만 본다.** 실측(아래 표):
+**근거 3 — 이게 설계를 가른다. worktree 사본에는 실체가 있어야 한다.** 실측(아래 표):
 
 - `CLAUDE.md` 의 `@` 임포트는 **프로젝트 루트 밖으로 못 나간다.** worktree 세션에서는 worktree 자신이 프로젝트 루트라, `node_modules` 의 문서가 **조용히 안 실린다**
 - `${CLAUDE_PROJECT_DIR}` 는 worktree 안에서 **worktree 루트**를 가리킨다. 거기엔 `node_modules` 가 없으므로 `${CLAUDE_PROJECT_DIR}/node_modules/...` 로 배선한 훅은 **전부 ENOENT** 로 죽는다 — 층 1 도, 종료 게이트도, 인계 커밋도. 그것도 **조용히**
 
-즉 `npm install` 만으로는 하네스가 서지 않는다. **설치는 두 단계**다: `npm i -D` 로 기계를 배달하고, `npx harness init` 이 A 의 트리에 추적되는 실체를 만든다.
+즉 `npm install` 만으로는 하네스가 서지 않는다. **설치는 두 단계**다: `npm i -D` 로 기계를 배달하고, `npx harness init` 이 A 의 트리에 실체를 만든다.
+
+> **`npm i -D` 자체는 아무 문제도 아니다.** `devDependencies` 는 개발 도구가 들어갈 자리고 빌드에 끼지 않는다. 그리고 그 한 줄이 하네스를 세우는 것도 아니다 — 세우는 것은 `init` 이다.
+>
+> 그 실체가 **커밋될지는 A 가 정한다.** `.gitignore` 에 넣어 개인 도구로 쓰면 `post-checkout` 이 사본에 심어 주고, 팀 규약으로 보면 커밋해서 git 이 데려간다. 설치 도구는 어느 쪽도 강요하지 않고 무시 규칙을 뚫지도 않는다.
 
 **어떻게 — 순서가 있다.**
 
@@ -61,7 +65,7 @@
    - **다섯 상태 판정** — `install/tracking.mjs`. `MISSING`·`IGNORED`·`UNTRACKED`·`STAGED`·`COMMITTED`. 있다/없다 둘로 보면 처방이 `git add -A` 하나뿐인데, 무시되는 경로에는 그게 **틀린 처방**이다. `git ls-tree -r HEAD` 와 `git check-ignore` 두 질의로 가른다. **`init`·`smoke` 가 같은 코드를 쓴다**
    - **기준을 인덱스에서 `HEAD` 로** — 위 거짓 초록이 닫혔다
    - **`ignored()` 를 `git check-ignore` 로** — 글자 매칭이 내던 거짓 경보가 사라졌다
-   - **`apply` 가 무시되는 경로만 `git add -f` 로 담는다** — 무시되지 않는 것은 안 건드린다(A 의 `package.json` 에는 하네스와 무관한 미커밋 수정이 섞여 있을 수 있다). **커밋은 하지 않는다** — 인덱스는 되돌릴 수 있지만 히스토리는 남는다
+   - ~~**`apply` 가 무시되는 경로만 `git add -f` 로 담는다**~~ — **뒤집혔다.** 사본에 도달하는 길이 커밋 하나뿐이던 시절의 처방이었다. `post-checkout` 심기가 두 번째 길을 열면서 제거했다 — 하네스 파일을 커밋할지는 **A 가 정하고**, 설치 도구는 인덱스를 아예 만지지 않는다
    - **`init` 이 끝에서 `smoke` 를 직접 돈다** — note 였던 것들이 이제 종료 코드로 말한다
    - **러너 exclude 검사** — `**/.claude/worktrees/**` 를 넣었는지 `smoke` 가 묻는다. vitest·jest 를 알고, 모르는 러너면 `?` 를 낸다(조용한 초록보다 낫다). **`init` 이 대신 넣어주지는 않는다** — 러너 설정은 파일도 형식도 프로젝트마다 달라, 추측해서 고치는 것은 `core.hooksPath` 를 husky 한테서 빼앗는 것과 같은 종류의 위험이다
    - **사본 생존 목록을 `managedPaths()` 에서 짓는다** — 목록을 손으로 적으면 `sync` 가 파일을 하나 더 얹을 때 이 검사만 그걸 모른다. 새 파일은 미추적으로 태어나므로 하필 가장 필요한 순간에 못 잡는다

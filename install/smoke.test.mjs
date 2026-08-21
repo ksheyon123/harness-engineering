@@ -448,7 +448,7 @@ describe("smoke — 배선이 살아 있는가", () => {
       expect(check.detail).toContain("심기가 배선돼 있지 않다");
     });
 
-    it("**심기가 있으면 무시돼도 초록이다** — 미추적 설치가 성립하는 지점이다", () => {
+    it("**심기가 있으면 무시돼도 초록이다** — 커밋 없이도 사본이 하네스를 갖는다", () => {
       // 이 한 줄이 이 task 의 목적이다. 예전에는 이 상태가 **항상 빨간불**이라
       // 아무 정보도 아니었고, 그래서 설치기가 `git add -f` 로 뚫었다.
       const { checks } = look({ files: { ".gitignore": ".claude\nnode_modules\n" } });

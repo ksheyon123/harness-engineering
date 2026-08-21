@@ -25,7 +25,13 @@
 
 import { createHash } from "node:crypto";
 
-/** 기록부. A 의 저장소에 추적된다 — 어느 버전이 깔려 있는지가 히스토리에 남는다. */
+/**
+ * 기록부. 어느 버전이 깔려 있는지를 여기서만 알 수 있다.
+ *
+ * **추적될지는 A 가 정한다.** 하네스 파일이 그렇듯 이것도 A 의 `.gitignore` 에 달려 있고,
+ * 설치 도구가 정하지 않는다. 커밋하는 저장소라면 버전이 히스토리에 남고, 아니라면 로컬
+ * 파일로 남는다 — 어느 쪽이든 `sync`·`doctor` 가 읽는 것은 같다.
+ */
 export const MANIFEST_PATH = ".claude/harness-manifest.json";
 
 /**
@@ -52,7 +58,7 @@ export const VERBATIM = [
   { from: ".githooks/pre-commit", to: ".githooks/pre-commit", exec: true },
   { from: ".githooks/pre-push", to: ".githooks/pre-push", exec: true },
   // **아직 흔적만 남긴다.** 여기 있는 이유는 그 흔적이 A 에서 필요해서가 아니라, 이 훅이
-  // 곧 **사본에 하네스를 심는 자리**가 되기 때문이다(미추적 설치). 심기가 붙는 시점에
+  // 곧 **사본에 하네스를 심는 자리**가 되기 때문이다. 심기가 붙는 시점에
   // 배달 경로까지 같이 새로 만들면, 심기가 안 도는 원인이 '훅이 안 불린다' 인지 '훅이
   // A 에 없다' 인지 구별할 수 없다 — 배선을 먼저 세우고 내용은 나중에 채운다.
   //

@@ -116,7 +116,9 @@ export function trackingStates(tree, paths, git) {
  * 상태별로 묶는다. 보고가 경로 하나하나가 아니라 **처방 단위**로 나가야 읽힌다.
  *
  * **도달하는 것은 묶지 않는다.** `planting` 이 참이면 디스크에 있는 것은 전부 도달하므로
- * `MISSING` 만 남는다 — 미추적 설치에서 무시 상태를 결함으로 부르지 않게 하는 것이 이 인자다.
+ * `MISSING` 만 남는다 — 하네스를 **커밋하지 않기로 한 저장소**에서 무시 상태를 결함으로
+ * 부르지 않게 하는 것이 이 인자다. 무시할지는 A 가 정한 것이고, 그 결정 위에서도 하네스는
+ * 선다.
  */
 export function groupByState(states, planting = false) {
   const groups = new Map();

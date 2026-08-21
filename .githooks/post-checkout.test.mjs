@@ -69,8 +69,11 @@ const HARNESS_FILES = [...managedPaths(), ".claude/settings.json", ".claude/CLAU
 /**
  * 하네스가 설치된 저장소.
  *
- * @param {"ignored"|"committed"} mode `ignored` 면 `.claude/`·`.githooks/` 를 무시한다
- *   (= 미추적 설치). `committed` 면 전부 커밋한다 (= 이 저장소).
+ * **둘 다 A 가 고른 것이다.** 하네스를 개인 도구로 보면 `ignored`, 팀 규약으로 보면
+ * `committed` 다. 설치 도구는 어느 쪽도 강요하지 않고, 심기는 양쪽에서 다 서야 한다.
+ *
+ * @param {"ignored"|"committed"} mode `ignored` 면 `.claude/`·`.githooks/` 를 무시한다.
+ *   `committed` 면 전부 커밋한다 (= 이 저장소).
  */
 function harnessRepo(mode) {
   const dir = makeRepo();
