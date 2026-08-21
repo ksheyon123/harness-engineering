@@ -1,6 +1,6 @@
 {
   "name": "@ksheyon123/harness-engineering",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "type": "module",
   "description": "Claude Code 하네스 엔지니어링 — 역할 기반(기획자/개발자/QA) 문서 주도 개발 워크플로우",
   "license": "MIT",
