@@ -1,56 +1,26 @@
 #!/usr/bin/env node
 /**
  * 게이트가 green 으로 끝난 커밋을 기록한다. `package.json` 의 `posttest` 가 부른다 —
- * npm 은 `test` 가 **성공했을 때만** `posttest` 를 돌리므로, 이 파일에 이름이 오르는 것은
+ * npm 은 `test` 가 **성공했을 때만** `posttest` 를 돌리므로, 이 파일이 불렸다는 것 자체가
  * 곧 "이 sha 에서 게이트가 통과했다" 는 뜻이다.
  *
- * `pre-push` 가 이 목록을 읽는다. 둘을 나눈 이유는 **게이트 정의의 단일 출처를 지키기**
+ * `pre-push` 가 그 기록을 읽는다. 둘을 나눈 이유는 **게이트 정의의 단일 출처를 지키기**
  * 위해서다 — 무엇을 돌릴지는 `scripts.test` 가 정하고, 여기는 그 결과를 적기만 한다.
- * 훅이 `npm test` 를 직접 부르면 push 마다 몇 분이 붙고, 그때 돌린 것이 정말 게이트인지도
- * 사본이 정한다.
  *
- * 기록은 **gitdir 안**에 둔다. 추적되지 않고, worktree 마다 자연히 갈리고, worktree 가
- * 사라질 때 함께 사라진다.
+ * ## **`init` 은 더 이상 이것을 배선하지 않는다**
+ *
+ * `posttest` 는 A 의 `package.json` 에 사는데 그 파일은 언제나 추적된다. 그래서 그 한 줄이
+ * **커밋을 타고 팀 전체에 전파되고**, 하네스를 설치한 적 없는 사람의 `npm test` 까지
+ * 하네스를 실행시킨다 — 하네스의 나머지는 로컬 설정으로 옵트인하는데 이것만 그 경계를
+ * 깬다. 자세한 것과 실측은 `scripts/gate.mjs` 머리주석에 있다.
+ *
+ * 그래서 지금 기록을 남기는 자리는 **`harness gate`** 다. 이 파일은 **A 가 스스로 `posttest`
+ * 에 걸었을 때**를 위해 남아 있다 — 그건 A 의 결정이고, 하네스가 대신 정하지 않는다.
+ *
+ * **적는 방법은 `recordVerified` 하나뿐이다.** 사본이 둘이면 한쪽이 형식을 바꿀 때 다른
+ * 쪽이 남긴 기록을 `pre-push` 가 조용히 못 읽는다.
  */
 
-import { execFileSync } from "node:child_process";
-import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { recordVerified } from "./verified-marker.mjs";
 
-import { markerPath } from "./verified-marker.mjs";
-
-/** 최근 것만 남긴다. amend·rebase 로 sha 가 갈리므로 하나만 두면 금세 어긋난다. */
-const KEEP = 50;
-
-const path = markerPath();
-if (!path) process.exit(0); // git 저장소가 아니다 — 기록할 곳이 없다.
-
-let head;
-try {
-  head = execFileSync("git", ["rev-parse", "HEAD"], {
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "ignore"],
-  }).trim();
-} catch {
-  process.exit(0); // 커밋이 하나도 없다. 기록할 sha 자체가 없다.
-}
-
-let existing = [];
-try {
-  existing = readFileSync(path, "utf8").split("\n").filter(Boolean);
-} catch {
-  /* 아직 없다. */
-}
-
-if (existing[existing.length - 1] === head) process.exit(0);
-
-try {
-  mkdirSync(dirname(path), { recursive: true });
-  if (existing.length + 1 > KEEP) {
-    writeFileSync(path, `${[...existing.slice(-(KEEP - 1)), head].join("\n")}\n`);
-  } else {
-    appendFileSync(path, `${head}\n`);
-  }
-} catch {
-  // 기록 실패가 게이트 결과를 뒤집어서는 안 된다. push 때 막히고, 그때 다시 돌리면 된다.
-}
+recordVerified();

@@ -142,7 +142,6 @@ export function inspect(tree, git, options = {}) {
     baseRef(settings),
     contract(tree),
     gateTarget(tree, config),
-    gateRecord(tree),
     ignored(tree, git),
     runnerExclude(tree),
     { ...reachesWorktrees(states, plantingWired(tree, git)), id: COMMITTED_CHECK },
@@ -520,7 +519,7 @@ function contract(tree) {
  * 설치 직후의 프로젝트가 정확히 이 자리에서 무너진다. `init` 은 테스트 러너를 설치하지도
  * `scripts.test` 를 만들지도 않는다(무엇을 검사할지는 A 가 정한다). 그래서 배선은 전부
  * 멀쩡한데 **돌릴 것이 없는** 상태가 만들어지는데, 지금까지 그것을 묻는 자리가 없었다 —
- * `gateRecord` 는 `posttest` 만 보므로 이 상태에서도 초록이다.
+ * 기록은 `harness gate` 가 남기므로 이 검사와 무관하다.
  *
  * 드러나는 시점이 최악이다: `developer` 를 스폰하고 나서야, 그 종료 훅이 재시도 상한을
  * 태운 뒤에야 보인다.
@@ -573,23 +572,6 @@ function npmScriptIn(gate) {
   return null;
 }
 
-function gateRecord(tree) {
-  const name = "게이트 기록 — `pre-push` 가 읽을 것이 남는다";
-  const path = join(tree, "package.json");
-  if (!existsSync(path)) return unknown(name, "`package.json` 이 없다 — `posttest` 배선을 확인할 수 없다.");
-
-  const parsed = readJson(path);
-  const posttest = parsed?.scripts?.posttest ?? "";
-
-  return posttest.includes("mark-verified.mjs")
-    ? ok(name, `\`posttest\` = \`${posttest}\``)
-    : broken(
-        name,
-        posttest
-          ? `\`posttest\` 에 \`${posttest}\` 만 걸려 있다 — \`mark-verified.mjs\` 를 이어 붙여라.`
-          : "`posttest` 가 없다 — 게이트가 green 이어도 기록이 안 남아 push 가 전부 막힌다.",
-      );
-}
 
 /**
  * **`.gitignore` 를 글자로 읽지 않는다.** 한때 `.claude/worktrees/` 라는 줄이 있는지만

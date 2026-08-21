@@ -273,14 +273,24 @@ describe("init — 설치 판정", () => {
       expect(existsSync(join(dir, ".claude/hooks/path-ownership.mjs"))).toBe(false);
     });
 
-    it("`posttest` 가 이미 있으면 빼앗지 않고 알린다", () => {
+    it("**A 의 `package.json` 을 아예 건드리지 않는다**", () => {
+      // 한때 여기에 `posttest` 를 배선했다. A 의 스크립트 자리 하나를 점유하는 일이었고,
+      // 이미 쓰고 있는 프로젝트에서는 다투다 사람에게 넘기고 끝났다 — 그 안내를 놓치면
+      // 게이트는 도는데 기록이 안 남아 push 가 전부 막힌다. 지금은 `harness gate` 가 한다.
       const dir = tree({
         "package.json": JSON.stringify({ name: "a", scripts: { posttest: "내 스크립트" } }),
       });
-      const s = step(plan(dir, fakeGit()), "package.json");
+      const result = plan(dir, fakeGit());
 
-      expect(s.kind).toBe("manual");
-      expect(s.detail).toContain("내 스크립트");
+      expect(step(result, "package.json")).toBeUndefined();
+      expect(result.steps.concat(result.blockers).some((s) => s.path === "package.json")).toBe(false);
+    });
+
+    it("`package.json` 을 안 건드리는 대신 `harness gate` 로 돌리라고 말한다", () => {
+      // 안 알려주면 게이트는 도는데 기록이 안 남고, 그 사실은 push 가 막히고 나서야 드러난다.
+      const { notes } = plan(tree(), fakeGit());
+
+      expect(notes.join("\n")).toContain("harness gate");
     });
 
     it("`worktree.baseRef` 가 다르면 알린다", () => {

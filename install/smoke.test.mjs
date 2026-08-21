@@ -392,13 +392,6 @@ describe("smoke — 배선이 살아 있는가", () => {
       expect(find(checks, "돌릴 것이 있다").state).toBe("unknown");
     });
 
-    it("`posttest` 가 없으면 push 가 전부 막힌다", () => {
-      const { checks } = look({
-        files: { "package.json": JSON.stringify({ name: "a", version: "1.0.0" }) },
-      });
-
-      expect(find(checks, "게이트 기록").state).toBe("broken");
-    });
 
     it("`.claude` 를 통째로 무시해도 사본 무시 판정은 초록이다", () => {
       // 글자로 `.claude/worktrees/` 줄을 찾던 시절에는 여기서 거짓 ✗ 가 났다.

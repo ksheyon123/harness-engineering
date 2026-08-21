@@ -73,8 +73,6 @@ const IGNORE_LINES = [
   },
 ];
 
-/** 게이트가 green 인 sha 를 기록하는 자리. `pre-push` 가 그 기록을 읽는다. */
-const POSTTEST = "node .githooks/mark-verified.mjs";
 
 /** 층 1·세션 훅 배선. A 의 `settings.json` 에 **더한다** — 있는 것을 지우지 않는다. */
 function settingsAdditions() {
@@ -125,7 +123,19 @@ export function plan(tree, git) {
 
   steps.push(claudeMd(tree));
   steps.push(gitignore(tree));
-  steps.push(...packageJson(tree));
+  // **A 의 `package.json` 은 건드리지 않는다.** 한때 여기서 `posttest` 를 배선했다 —
+  // 게이트가 green 인 sha 를 기록해야 `pre-push` 가 통과시키기 때문이다.
+  //
+  // 그 배선이 **하네스의 옵트인 경계를 깼다.** 하네스는 로컬 설정(`core.hooksPath`)으로
+  // 옵트인하므로 설치하지 않은 사람에게는 안 붙는데, `package.json` 은 A 의 파일이라
+  // 언제나 추적되어 그 한 줄만 **커밋을 타고 팀 전체에 전파된다.** 실측:
+  //
+  //   `.githooks/` 커밋 → 설치한 적 없는 사람의 `npm test` 가 마커를 쓴다.
+  //                       그것을 읽을 `pre-push` 는 안 붙어 있다 — 죽은 파일이 쌓인다
+  //   `.githooks/` 무시 → 그 사람의 `npm test` 가 MODULE_NOT_FOUND 로 죽는다.
+  //                       **테스트는 다 통과했는데** 종료 코드 1 이고, CI 도 같이 깨진다
+  //
+  // 지금은 `harness gate` 가 그 일을 한다 — **명령이라 커밋으로 전파되지 않는다.**
 
   const hooksPath = hooksPathStep(tree, git);
   if (hooksPath.state === "conflict") blockers.push(hooksPath);
@@ -155,6 +165,16 @@ export function plan(tree, git) {
     "**게이트가 도는지 확인해라.** 테스트 러너도 `scripts.test` 도 만들지 않았다 — " +
       "무엇을 검사할지는 이 프로젝트가 정한다. 게이트가 안 돌면 `developer` 는 종료 " +
       "게이트를 통과할 수 없다. `harness smoke` 가 이것을 묻는다.",
+  );
+
+  // `package.json` 을 안 건드리게 된 대가다. 안 알려주면 게이트는 도는데 기록이 안 남고,
+  // 그 사실은 **push 가 막히고 나서야** 드러난다.
+  notes.push(
+    "**게이트는 `harness gate` 로 돌려라.** 통과한 sha 를 기록해야 `pre-push` 가 " +
+      "통과시킨다. 손으로 `npm test` 를 치면 검사는 되지만 기록이 안 남아 push 에서 막힌다 — " +
+      "막히는 것으로 드러나므로 조용히 새지는 않는다. **`posttest` 에 걸지 마라**: " +
+      "`package.json` 은 언제나 추적되므로 그 한 줄이 커밋을 타고 전파되어, **하네스를 " +
+      "설치한 적 없는 동료와 CI 의 `npm test` 까지** 하네스를 실행시킨다.",
   );
 
   // 러너 설정은 프로젝트마다 파일도 형식도 달라서 손댈 수 없다. 빠뜨리면 사본의 테스트가
@@ -232,37 +252,6 @@ function gitignore(tree) {
   };
 }
 
-/** `posttest` 배선. 이미 다른 것이 걸려 있으면 빼앗지 않는다. */
-function packageJson(tree) {
-  const path = "package.json";
-  const full = join(tree, path);
-  if (!existsSync(full)) return [];
-
-  const raw = readFileSync(full, "utf8");
-  let parsed;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return [{ kind: "manual", path, detail: "`package.json` 을 읽지 못해 `posttest` 를 배선하지 못했다." }];
-  }
-
-  const existing = parsed.scripts?.posttest;
-  if (existing === POSTTEST) return [{ kind: "file", path, contents: raw, state: "same" }];
-  if (existing) {
-    return [
-      {
-        kind: "manual",
-        path,
-        detail:
-          `\`posttest\` 에 이미 \`${existing}\` 이 걸려 있다. ` +
-          `\`${POSTTEST}\` 를 이어 붙여라 — 없으면 게이트 통과 기록이 안 남고 push 가 막힌다.`,
-      },
-    ];
-  }
-
-  const next = { ...parsed, scripts: { ...parsed.scripts, posttest: POSTTEST } };
-  return [{ kind: "file", path, contents: `${JSON.stringify(next, null, 2)}\n`, state: "update" }];
-}
 
 /**
  * `core.hooksPath` 를 **절대경로**로. **이미 다른 곳을 가리키면 멈춘다.**

@@ -248,4 +248,66 @@ describe("doctor — 설정을 검사해 사람에게 보고한다", () => {
       expect(texts(only(notes, "warning"))).not.toContain("일부만");
     });
   });
+
+  /**
+   * **`posttest` 가 옵트인 경계를 넘는가.**
+   *
+   * 하네스는 로컬 설정(`core.hooksPath`)으로 옵트인한다 — 클론에 안 따라온다. 그런데
+   * `package.json` 은 **언제나 추적되므로** 거기 걸린 `posttest` 한 줄만 커밋을 타고
+   * 팀에 전파되고, `npm test` 는 Claude Code 밖에서 매일 치는 명령이다.
+   *
+   * **깨지는 조합일 때만 말한다.** 배선을 거는 것 자체는 A 의 결정이다.
+   */
+  describe("`posttest` 배선이 동료를 깨뜨리는가", () => {
+    /** 하네스가 깔린 저장소에 `posttest` 배선까지 얹는다. */
+    function wired(gitignore, posttest = "node .githooks/mark-verified.mjs") {
+      const dir = mkdtempSync(join(tmpdir(), "doctor-posttest-"));
+      for (const path of managedPaths()) {
+        const at = join(dir, path);
+        mkdirSync(join(at, ".."), { recursive: true });
+        writeFileSync(at, "//\n");
+      }
+      writeFileSync(join(dir, ".gitignore"), gitignore);
+      writeFileSync(
+        join(dir, "package.json"),
+        JSON.stringify({ name: "a", version: "1.0.0", scripts: { test: "x", posttest } }, null, 2),
+      );
+
+      const git = (args) => execFileSync("git", args, { cwd: dir, env: cleanEnv(), stdio: "ignore" });
+      git(["init", "-q"]);
+      git(["config", "user.email", "t@t"]);
+      git(["config", "user.name", "t"]);
+      return dir;
+    }
+
+    const said = (dir) => texts(only(diagnose(dir), "warning"));
+
+    it("가리키는 파일이 무시되면 경고한다 — 동료의 `npm test` 가 죽는다", () => {
+      // 실측: 그 사람은 MODULE_NOT_FOUND 로 종료 코드 1 을 받는다. 테스트는 다 통과했는데.
+      const warn = said(wired(".claude/\n.githooks/\n"));
+
+      expect(warn).toContain("무시된다");
+      expect(warn).toContain("harness gate");
+    });
+
+    it("커밋되는 저장소에서는 조용하다 — 지저분할 뿐 아무것도 안 깨진다", () => {
+      // 설치 안 한 사람에게 마커가 써지긴 하지만, 그건 노이즈고 파손이 아니다.
+      // 그리고 `posttest` 를 거는 것은 A 의 결정이라 뒤집을 자격이 없다.
+      expect(said(wired("node_modules\n"))).not.toContain("harness gate");
+    });
+
+    it("`posttest` 가 남의 것이면 우리 일이 아니다", () => {
+      expect(said(wired(".claude/\n.githooks/\n", "npm run lint"))).not.toContain("harness gate");
+    });
+
+    it("`posttest` 가 없으면 조용하다", () => {
+      const dir = wired(".claude/\n.githooks/\n");
+      writeFileSync(
+        join(dir, "package.json"),
+        JSON.stringify({ name: "a", version: "1.0.0", scripts: { test: "x" } }, null, 2),
+      );
+
+      expect(said(dir)).not.toContain("harness gate");
+    });
+  });
 });

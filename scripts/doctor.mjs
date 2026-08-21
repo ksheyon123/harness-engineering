@@ -39,7 +39,7 @@ const PATH_KEYS = ["source", "harnessFiles"];
 const PKG_ROOT = fileURLToPath(new URL("..", import.meta.url));
 
 export function diagnose(baseDir) {
-  const notes = [...installNotes(baseDir), ...ignoreLeak(baseDir)];
+  const notes = [...installNotes(baseDir), ...ignoreLeak(baseDir), ...posttestLeak(baseDir)];
   const found = findConfig(baseDir);
 
   if (!found) {
@@ -178,6 +178,64 @@ function ignoreLeak(baseDir) {
         `    의도한 것이면 그대로 두고, 아니면 \`.gitignore\` 에 직접 적어라.`,
     },
   ];
+}
+
+/**
+ * **`posttest` 배선이 옵트인 경계를 넘는가.**
+ *
+ * 하네스는 로컬 설정(`core.hooksPath`)으로 옵트인한다 — 클론에 안 따라오므로 설치하지
+ * 않은 사람에게는 안 붙는다. 그런데 `package.json` 은 **언제나 추적되므로** 거기 걸린
+ * `posttest` 한 줄은 커밋을 타고 팀 전체에 전파되고, `npm test` 는 Claude Code 밖에서
+ * 개발자와 CI 가 매일 치는 명령이다.
+ *
+ * 그 전파가 무엇을 하는지는 **하네스 파일이 추적되는가**에 달려 있다(실측):
+ *
+ * | 하네스 파일 | 설치한 적 없는 사람의 `npm test` |
+ * |---|---|
+ * | 커밋된다 | 돈다. 마커가 써지는데 읽을 `pre-push` 가 없다 — **죽은 파일이 쌓인다** |
+ * | 무시된다 | **`MODULE_NOT_FOUND` 로 죽는다.** 테스트는 통과했는데 종료 코드 1, CI 도 같이 |
+ *
+ * **뒤엣것만 경고한다.** 앞엣것은 지저분할 뿐 아무것도 안 깨뜨리고, 무엇보다 `posttest`
+ * 를 거는 것은 **A 의 결정**이다 — `init` 은 더 이상 배선하지 않지만, A 가 스스로 걸었다면
+ * 그 선택을 뒤집을 자격이 우리에게 없다. 깨지는 조합일 때만 말한다.
+ */
+function posttestLeak(baseDir) {
+  let posttest = "";
+  try {
+    posttest = JSON.parse(readFileSync(join(baseDir, "package.json"), "utf8")).scripts?.posttest ?? "";
+  } catch {
+    return []; // `package.json` 이 없거나 깨졌다 — 배선도 없다.
+  }
+  if (!`${posttest}`.includes("mark-verified.mjs")) return [];
+
+  // 그 배선이 가리키는 파일이 동료에게 가는가. 안 가면 그 사람의 `npm test` 가 죽는다.
+  const target = ".githooks/mark-verified.mjs";
+  if (!existsSync(join(baseDir, target)) || !isIgnored(baseDir, target)) return [];
+
+  return [
+    {
+      level: "warning",
+      text:
+        `\`posttest\` 가 \`${target}\` 을 부르는데 **그 파일은 무시된다.**\n` +
+        `    \`package.json\` 은 언제나 추적되므로 이 배선만 커밋을 타고 팀에 전파되고,\n` +
+        `    하네스를 설치한 적 없는 동료와 CI 의 \`npm test\` 가 \`MODULE_NOT_FOUND\` 로 죽는다\n` +
+        `    — **테스트는 다 통과했는데도.** \`posttest\` 를 빼고 \`harness gate\` 로 돌려라.`,
+    },
+  ];
+}
+
+/** 한 경로가 무시되는가. **git 에게 묻는다** — `.gitignore` 를 글자로 읽으면 틀린다. */
+function isIgnored(baseDir, path) {
+  try {
+    execFileSync("git", ["check-ignore", "-q", "--", path], {
+      cwd: baseDir,
+      env: cleanEnv(),
+      stdio: "ignore",
+    });
+    return true;
+  } catch {
+    return false; // 종료 코드 1 = 무시 안 됨. **오류가 아니라 답이다.**
+  }
 }
 
 /**
