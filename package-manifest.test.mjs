@@ -45,6 +45,10 @@ describe("발행되는 tarball", () => {
       "harness-config.mjs",
       "glob.mjs",
       "spec-shape.mjs",
+      // 알림. `notify-waiting.mjs` 는 shim 이 임포트하는 훅 본체이고, `notify.mjs` 는
+      // 그것과 `harness push` 가 함께 쓰는 모듈이다. 하나만 담기면 나머지가 그 자리에서 죽는다.
+      "notify.mjs",
+      "notify-waiting.mjs",
     ]) {
       expect(has(`.claude/hooks/${hook}`), `.claude/hooks/${hook}`).toBe(true);
     }
@@ -97,6 +101,15 @@ describe("발행되는 tarball", () => {
     // `spawn.mjs` 가 Windows 에서 부르는 창 런처다. 빠지면 Windows 설치본에서만,
     // 그것도 실제로 탭을 띄우려 할 때만 드러난다.
     expect(has("scripts/spawn.ps1")).toBe(true);
+    expect(has("scripts/gate.mjs")).toBe(true);
+    expect(has("scripts/push.mjs")).toBe(true);
+  });
+
+  it("비밀의 **본보기만** 담기고 값이 든 파일은 담기지 않는다", () => {
+    // A 가 어떤 키를 넣어야 하는지 알 자리는 있어야 한다.
+    expect(has(".claude/harness.env.example")).toBe(true);
+    // 그리고 값이 든 파일은 **어떤 경로로도** 나가면 안 된다 — 이 저장소는 공개 패키지다.
+    expect(packed.filter((p) => p.endsWith("harness.env"))).toEqual([]);
   });
 
   it("설치기가 담긴다", () => {

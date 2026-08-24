@@ -30,6 +30,7 @@ import { fileURLToPath } from "node:url";
 import { matches } from "../.claude/hooks/glob.mjs";
 import { CONFIG_FILE, CONFIG_PATHS, DEFAULTS, findConfig, loadConfig } from "../.claude/hooks/harness-config.mjs";
 import { cleanEnv } from "../.claude/hooks/hook-kit.mjs";
+import { ENV_FILE } from "../.claude/hooks/notify.mjs";
 import { MANIFEST_PATH, managedPaths, parseManifest } from "../install/managed.mjs";
 
 /** 경로 패턴을 쓰는 키. 저장소에 실제로 걸리는지 확인할 수 있는 것들이다. */
@@ -39,7 +40,12 @@ const PATH_KEYS = ["source", "harnessFiles"];
 const PKG_ROOT = fileURLToPath(new URL("..", import.meta.url));
 
 export function diagnose(baseDir) {
-  const notes = [...installNotes(baseDir), ...ignoreLeak(baseDir), ...posttestLeak(baseDir)];
+  const notes = [
+    ...installNotes(baseDir),
+    ...ignoreLeak(baseDir),
+    ...posttestLeak(baseDir),
+    ...secretLeak(baseDir),
+  ];
   const found = findConfig(baseDir);
 
   if (!found) {
@@ -220,6 +226,57 @@ function posttestLeak(baseDir) {
         `    \`package.json\` 은 언제나 추적되므로 이 배선만 커밋을 타고 팀에 전파되고,\n` +
         `    하네스를 설치한 적 없는 동료와 CI 의 \`npm test\` 가 \`MODULE_NOT_FOUND\` 로 죽는다\n` +
         `    — **테스트는 다 통과했는데도.** \`posttest\` 를 빼고 \`harness gate\` 로 돌려라.`,
+    },
+  ];
+}
+
+/**
+ * **비밀 파일이 커밋 경로에 서 있는가.**
+ *
+ * `.claude/harness.env` 에는 웹훅 URL 이 산다. Slack 이 대표적인데, 그 URL 을 아는 사람이
+ * 곧 그 채널의 발신 권한을 갖는다 — 파일 하나가 곧 자격증명이다.
+ *
+ * ## 왜 여기서만 오류(error)인가
+ *
+ * `ignoreLeak` 은 **보고만** 한다. 커밋할지 말지는 A 가 정하고 하네스가 대신 정하지
+ * 않는다는 원칙 때문이다. 여기는 다르다 — 비밀을 커밋하겠다는 결정은 성립하지 않고,
+ * 되돌리는 값도 다르다(히스토리에 한 번 들어가면 지우는 것으로 끝나지 않는다).
+ * **그래서 이것만 판정한다.**
+ *
+ * 세 상태를 가른다:
+ *
+ * | 상태 | 무엇 |
+ * |---|---|
+ * | 이미 추적 중 | **오류.** 값이 들어 있었다면 이미 샜다 — 되돌리고 URL 을 재발급해야 한다 |
+ * | 있는데 무시 안 됨 | **오류.** `pre-commit` 이 `git add -A` 를 강제하므로 다음 커밋에 반드시 들어간다 |
+ * | 없거나 무시됨 | 조용하다 |
+ */
+function secretLeak(baseDir) {
+  const path = ENV_FILE;
+  const tracked = trackedFiles(baseDir);
+
+  if (tracked && tracked.some((file) => normalize(file) === normalize(path))) {
+    return [
+      {
+        level: "error",
+        text:
+          `\`${path}\` 가 **추적되고 있다.** 이 파일에는 웹훅 URL 이 살고, 그 URL 자체가\n` +
+          `    자격증명이다 — 아는 사람이 곧 발신 권한을 갖는다.\n` +
+          `    \`git rm --cached ${path}\` 로 빼고 \`.gitignore\` 에 한 줄을 넣어라.\n` +
+          `    **이미 push 된 커밋에 값이 들어 있었다면 URL 을 재발급해라** — 히스토리에서\n` +
+          `    지우는 것만으로는 이미 읽은 사람을 되돌릴 수 없다.`,
+      },
+    ];
+  }
+
+  if (!existsSync(join(baseDir, path)) || isIgnored(baseDir, path)) return [];
+
+  return [
+    {
+      level: "error",
+      text:
+        `\`${path}\` 이 있는데 **무시되지 않는다.** \`pre-commit\` 이 \`git add -A\` 를\n` +
+        `    강제하므로 다음 커밋에 반드시 딸려 들어간다. \`.gitignore\` 에 그 줄을 넣어라.`,
     },
   ];
 }

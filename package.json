@@ -18,6 +18,7 @@
   },
   "files": [
     ".claude/harness.md",
+    ".claude/harness.env.example",
     ".claude/planner-mode.md",
     ".claude/planner/",
     ".claude/skills/",

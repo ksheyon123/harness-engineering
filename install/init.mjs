@@ -71,6 +71,10 @@ const IGNORE_LINES = [
     line: ".claude/post-checkout-trace.log",
     why: "post-checkout 이 남기는 발동 흔적. 사본이 만들어질 때마다 자라는 로컬 기록이다.",
   },
+  {
+    line: ".claude/harness.env",
+    why: "웹훅 URL 이 사는 자리. URL 자체가 비밀이라 커밋되면 발신 권한이 통째로 샌다.",
+  },
 ];
 
 
@@ -84,6 +88,9 @@ function settingsAdditions() {
         { matcher: "Edit|Write", hooks: [{ type: "command", command: command("path-ownership.mjs") }] },
       ],
       SessionStart: [{ hooks: [{ type: "command", command: command("session-role.mjs") }] }],
+      // 세션이 **끝나는 게 아니라 멈추는** 순간을 밖으로 알린다. URL 이 없으면 아무 일도
+      // 일어나지 않으므로, 배선은 늘 깔아 두고 켜는 것은 A 가 정한다.
+      Notification: [{ hooks: [{ type: "command", command: command("notify-waiting.mjs") }] }],
     },
     // 역할 브랜치가 스폰 시점 브랜치의 직계 자손이 된다. 회수를 머지 하나로 끝내는 근거다.
     worktree: { baseRef: "head" },

@@ -35,6 +35,7 @@ const COMMANDS = {
   doctor: "doctor.mjs",
   reap: "reap-worktrees.mjs",
   gate: "gate.mjs",
+  push: "push.mjs",
 };
 
 const [command, ...rest] = process.argv.slice(2);
@@ -63,6 +64,7 @@ function usage() {
     "사용법: harness <명령>\n\n" +
       "  spawn <원문>   작업 세션을 새 탭·창에 띄운다 (Windows · macOS)\n" +
       "  gate           게이트를 돌리고, 통과했을 때만 검증 기록을 남긴다\n" +
+      "  push [인자…]   push 를 돌리고, 성공했을 때만 알린다 (기본: -u origin <현재-브랜치>)\n" +
       "  reap           회수가 끝난 서브에이전트 사본을 거둔다\n" +
       "  doctor         설정과 설치본을 검사해 보고한다\n" +
       "  init           이 저장소에 하네스를 설치한다 (`--dry-run` 으로 먼저 볼 수 있다)\n" +

@@ -35,6 +35,7 @@ describe("harness-config — 프로젝트마다 달라지는 값의 단일 출�
         harnessFiles: [".claude/**"],
         specRoot: "docs/specs",
         protectedBranches: ["trunk"],
+        notify: { urlEnv: "MY_HOOK", events: ["push"] },
       }),
     );
 
@@ -44,6 +45,34 @@ describe("harness-config — 프로젝트마다 달라지는 값의 단일 출�
       harnessFiles: [".claude/**"],
       specRoot: "docs/specs",
       protectedBranches: ["trunk"],
+      notify: { urlEnv: "MY_HOOK", events: ["push"] },
+    });
+  });
+
+  describe("notify — URL 은 여기 없다", () => {
+    it("설정이 없으면 두 지점이 다 켜져 있다 — 실질 스위치는 URL 의 존재다", () => {
+      expect(loadConfig(tree(null)).notify).toEqual({
+        urlEnv: "HARNESS_NOTIFY_URL",
+        events: ["notification", "push"],
+      });
+    });
+
+    it("키 단위로 채운다 — `events` 만 적어도 `urlEnv` 는 기본값이다", () => {
+      expect(loadConfig(tree({ notify: { events: ["push"] } })).notify).toEqual({
+        urlEnv: "HARNESS_NOTIFY_URL",
+        events: ["push"],
+      });
+    });
+
+    it("**빈 `events` 는 살린다** — 다른 배열과 달리 여기서는 정당한 의도다", () => {
+      // 버리고 기본값으로 되돌리면 끄려던 사람이 끌 수가 없다.
+      expect(loadConfig(tree({ notify: { events: [] } })).notify.events).toEqual([]);
+    });
+
+    it("객체가 아니면 통째로 기본값이다", () => {
+      for (const broken of ["켜짐", ["push"], 3, null]) {
+        expect(loadConfig(tree({ notify: broken })).notify).toEqual(DEFAULTS.notify);
+      }
     });
   });
 

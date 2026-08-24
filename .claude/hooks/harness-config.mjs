@@ -110,6 +110,19 @@ export const DEFAULTS = Object.freeze({
   specRoot: "harness",
   /** 직접 커밋을 막을 브랜치. */
   protectedBranches: Object.freeze(["main", "dev", "master"]),
+  /**
+   * 알림. **여기에 URL 은 없다** — 이 파일은 추적되고, 웹훅 URL 은 그 자체가 비밀이다.
+   * 여기 적히는 것은 *어느 키를 읽을지*와 *어느 지점에서 쏠지*뿐이고, 값은
+   * `.claude/harness.env`(무시됨)나 환경변수에 산다. 자세한 것은 `notify.mjs`.
+   *
+   * **기본이 켜져 있는 이유**: 실질 스위치는 URL 의 존재라, URL 이 없으면 이 값들이
+   * 무엇이든 아무 일도 일어나지 않는다. 반대로 기본을 빈 배열로 두면 설정 파일을 두지
+   * 않는 저장소는 알림을 켤 방법이 없어진다.
+   */
+  notify: Object.freeze({
+    urlEnv: "HARNESS_NOTIFY_URL",
+    events: Object.freeze(["notification", "push"]),
+  }),
 });
 
 /** 기본값의 **사본**. 부르는 쪽이 고쳐도 다음 호출이 오염되지 않는다. */
@@ -120,6 +133,7 @@ function defaults() {
     harnessFiles: [...DEFAULTS.harnessFiles],
     specRoot: DEFAULTS.specRoot,
     protectedBranches: [...DEFAULTS.protectedBranches],
+    notify: { urlEnv: DEFAULTS.notify.urlEnv, events: [...DEFAULTS.notify.events] },
   };
 }
 
@@ -151,7 +165,25 @@ export function loadConfig(baseDir) {
     harnessFiles: stringList(raw.harnessFiles) ?? fallback.harnessFiles,
     specRoot: specRoot(raw.specRoot) ?? fallback.specRoot,
     protectedBranches: stringList(raw.protectedBranches) ?? fallback.protectedBranches,
+    notify: notify(raw.notify, fallback.notify),
   };
+}
+
+/**
+ * 알림 설정. **키 단위로 채운다** — `events` 만 적은 설정도 `urlEnv` 는 기본값으로 돈다.
+ *
+ * `events: []` 는 **버리지 않는다.** 다른 배열들과 반대인데, 여기서는 빈 값이 오타가
+ * 아니라 "아무 데서도 쏘지 마라" 라는 정당한 의도이기 때문이다. 그 의도를 기본값으로
+ * 되돌리면 끄려던 사람이 끌 수가 없다.
+ */
+function notify(value, fallback) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return fallback;
+
+  const events = Array.isArray(value.events)
+    ? value.events.filter((v) => typeof v === "string" && v.trim()).map((v) => v.trim())
+    : fallback.events;
+
+  return { urlEnv: string(value.urlEnv) ?? fallback.urlEnv, events };
 }
 
 function string(value) {

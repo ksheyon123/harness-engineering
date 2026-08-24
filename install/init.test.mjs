@@ -89,7 +89,8 @@ describe("init — 설치 판정", () => {
 
     it("`.gitignore` 에 줄이 다 있으면 또 넣지 않는다", () => {
       const dir = tree({
-        ".gitignore": "node_modules\n.claude/worktrees/\n.claude/post-checkout-trace.log\n",
+        ".gitignore":
+          "node_modules\n.claude/worktrees/\n.claude/post-checkout-trace.log\n.claude/harness.env\n",
       });
 
       expect(step(plan(dir, fakeGit()), ".gitignore").state).toBe("same");

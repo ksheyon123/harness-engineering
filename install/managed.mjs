@@ -43,6 +43,7 @@ export const HOOK_SHIMS = [
   "session-role.mjs",
   "verify-green.mjs",
   "verify-checklist.mjs",
+  "notify-waiting.mjs",
 ];
 
 /** `.githooks/` 쪽 shim. 셸 진입점이 `$(dirname "$0")/<이름>.mjs` 를 부른다. */
@@ -75,6 +76,10 @@ export const VERBATIM = [
   // 라우팅을 판정할 필요가 없고, 없으면 규약의 기준으로 판단한다. 스킬을 고른 이유는
   // 사람이 직접 치기 때문이다: 부르는 시점이 곧 필요한 시점이라, `planner/` 를 스킬로 못
   // 하게 만들었던 지연 로딩이 여기서는 오히려 원하는 성질이 된다.
+  // 비밀의 **본보기**만 복사한다. 값이 든 `.claude/harness.env` 는 A 가 자기 손으로
+  // 만들고, `init` 이 `.gitignore` 에 그 줄을 깐다. 어떤 키가 필요한지 알릴 자리가
+  // 없으면 알림 기능은 있어도 켜는 법을 아무도 모른다.
+  { from: ".claude/harness.env.example", to: ".claude/harness.env.example" },
   { from: ".claude/skills/harness-fix/SKILL.md", to: ".claude/skills/harness-fix/SKILL.md" },
   { from: ".claude/skills/task/SKILL.md", to: ".claude/skills/task/SKILL.md" },
   // 규약 본문. A 의 `CLAUDE.md` 가 `@harness.md` 로 끌어온다 — 루트 안이라 worktree 에서도

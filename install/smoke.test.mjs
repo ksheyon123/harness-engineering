@@ -83,6 +83,10 @@ function repo({ files = {}, drop = [], untrack = [], hooksPath = ".githooks" } =
     ".claude/hooks/session-role.mjs": SESSION_ROLE,
     ".claude/hooks/verify-green.mjs": "// 본체\n",
     ".claude/hooks/verify-checklist.mjs": "// 본체\n",
+    // 승인 대기를 밖으로 알리는 훅. 사본에 없으면 그 사본의 세션은 조용히 멈춘다.
+    ".claude/hooks/notify-waiting.mjs": "// 본체\n",
+    // 비밀의 본보기. 값이 든 `.claude/harness.env` 는 여기 없다 — 추적되지 않는다.
+    ".claude/harness.env.example": "HARNESS_NOTIFY_URL=\n",
     ".githooks/pre-commit": '#!/bin/sh\nexec node "$(dirname "$0")/pre-commit.mjs"\n',
     ".githooks/pre-push": '#!/bin/sh\nexec node "$(dirname "$0")/pre-push.mjs"\n',
     ".githooks/pre-commit.mjs": "// 판정\n",
