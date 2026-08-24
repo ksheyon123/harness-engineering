@@ -192,6 +192,6 @@ npx harness sync
 
 ## 설치자가 알아야 할 한계
 
-목록은 [README 의 '아직 안 되는 것'](../README.md#아직-안-되는-것) 에 있고, 근거는 [`backlog.md`](./backlog.md) 에 있다. **설치 직후에 행동이 필요한 것은 하나다:**
+목록은 [README 의 '아직 안 되는 것'](../README.md#아직-안-되는-것) 에 있다. **설치 직후에 행동이 필요한 것은 하나다:**
 
 - **POSIX 에서 설치했다면 층 2 가 붙었는지 직접 확인해라.** `.githooks/pre-commit`·`pre-push` 의 실행 비트를 Windows 에서는 잴 수 없어 `smoke` 가 `?` 로 찍는다 — 조용히 통과시키지는 않지만 판정도 못 한다. `ls -l .githooks/pre-*` 로 보고, `x` 가 없으면 `chmod +x` 한다. **git 은 실행권한 없는 훅을 에러 없이 건너뛴다**

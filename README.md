@@ -8,8 +8,6 @@
 |---|---|
 | **[docs/usage.md](./docs/usage.md)** | **사용법** — 사람은 언제 무엇을 하나 · 못 하는 것과 그 이유 · 막혔을 때 · 명령 |
 | [docs/implementation.md](./docs/implementation.md) | 설치와 운영 — 절차 · 설정(`harness.config.json`) · 갱신 · 막히는 자리 |
-| [docs/backlog.md](./docs/backlog.md) | 확인됐지만 안 고친 것 — 왜 문제이고 어떻게 고치는지 |
-| [docs/measured.md](./docs/measured.md) | 이미 재본 것 — worktree · 플러그인 · git 의 실제 동작 |
 | [.claude/harness.md](./.claude/harness.md) | 규약 본문 — 자리 · 모드 · 검증 · 커밋/push · worktree |
 | [.claude/planner-mode.md](./.claude/planner-mode.md) | 기획자 모드 — 논의 · 격리 진입 · spec 을 어떻게 쓰는가 |
 | [.claude/planner/](./.claude/planner/) | 논의 방식 — 작업 세션이 물고 시작한다. **디렉터리가 곧 스위치다** |
@@ -74,8 +72,6 @@ npx harness init            # 끝에서 smoke 를 직접 돈다 — 배선이 �
 - **`spawn` 의 유닉스판이 없다.** Windows 밖에서는 작업 세션을 규약대로 띄울 수 없다
 - **POSIX 실행권한이 검증되지 않았다.** `.githooks/` 의 실행 비트를 Windows 에서 잴 수 없어 `smoke` 가 `?` 로 찍는다
 
-나머지는 [docs/backlog.md](./docs/backlog.md) 에 근거와 함께 있다 — 추측인 항목은 추측이라고 표시돼 있다.
-
 ## 이 저장소에서 개발하려면
 
 ```sh
@@ -84,7 +80,7 @@ git config core.hooksPath .githooks   # 층 2 를 붙인다
 npm test                              # 게이트
 ```
 
-하네스를 고치는 것은 **실행자**(맨몸 `claude`)의 일이다. 손대기 전에 [docs/backlog.md](./docs/backlog.md) 와 [docs/measured.md](./docs/measured.md) 를 읽어라 — [.claude/CLAUDE.md](./.claude/CLAUDE.md) 가 그 둘을 가리킨다.
+하네스를 고치는 것은 **실행자**(맨몸 `claude`)의 일이고, 절차는 `/harness-fix` 에 있다. 무엇이 남았고 무엇을 이미 재봤는지는 [`docs/`](./docs/) 에 있다.
 
 ## 라이선스
 
