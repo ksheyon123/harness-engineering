@@ -112,11 +112,53 @@ export function resolveUrl(baseDir, notify, env = process.env) {
 }
 
 /**
+ * 바디에 **얹을** 고정 필드의 접두어. `HARNESS_NOTIFY_FIELD_chat_id=…` → `{chat_id: …}`.
+ *
+ * ## 왜 이것이 필요한가 — 텔레그램이 드러낸 구멍
+ *
+ * Slack·Discord 는 메시지 본문만 있으면 되지만, **텔레그램 Bot API 는 `chat_id` 를
+ * 요구한다.** 그 필드는 저장소마다 값이 다르고 메시지마다 바뀌지 않는다 — 즉 *설정*이다.
+ *
+ * 목적지별 포맷터를 만드는 대신 **아무 필드나 얹을 수 있는 길**을 하나 낸다. 텔레그램은
+ * 그 길의 첫 손님일 뿐이고, 고정 필드를 요구하는 다음 목적지도 코드 수정 없이 붙는다.
+ *
+ * ## 왜 추적되는 설정이 아니라 비밀 파일인가
+ *
+ * `chat_id` 는 토큰만큼은 아니어도 **개인 식별자**다(그 채팅방을 가리킨다). 이 저장소는
+ * 공개 패키지라 추적되는 파일에 두면 그대로 npm 과 GitHub 에 올라간다. 자리를 둘로
+ * 늘리지 않고, 목적지에 관한 것은 전부 무시되는 한 파일에 모은다.
+ */
+export const FIELD_PREFIX = "HARNESS_NOTIFY_FIELD_";
+
+/**
+ * 바디에 얹을 고정 필드. `resolveUrl` 과 같은 우선순위다 — **파일이 환경변수를 이긴다.**
+ *
+ * 값은 **문자열 그대로** 넣는다. JSON 으로 해석하지 않는다 — 텔레그램의 `chat_id` 는
+ * `-1001234567890` 처럼 숫자로 보이지만 문자열로도 받고, 해석을 넣는 순간 `"01"` 같은
+ * 값이 조용히 `1` 이 되는 부류의 버그가 생긴다.
+ */
+export function extraFields(baseDir, env = process.env) {
+  const out = {};
+  for (const source of [env, loadSecrets(baseDir)]) {
+    for (const [key, value] of Object.entries(source ?? {})) {
+      if (key.startsWith(FIELD_PREFIX) && key.length > FIELD_PREFIX.length) {
+        out[key.slice(FIELD_PREFIX.length)] = `${value}`;
+      }
+    }
+  }
+  return out;
+}
+
+/**
  * 알림 하나를 쏜다. **던지지 않는다** — 결과는 반환값이 전부다.
  *
- * 바디는 **범용 하나**다. `text` 는 Slack Incoming Webhook 이, `content` 는 Discord 가
- * 그대로 렌더하고, 둘 다 모르는 목적지는 나머지 키를 보면 된다. 목적지별 포맷터를 두지
- * 않은 이유가 이것이다 — 키 하나 더 넣는 값으로 흔한 목적지가 전부 그냥 붙는다.
+ * 바디는 **범용 하나**다. `text` 는 Slack Incoming Webhook 과 텔레그램이, `content` 는
+ * Discord 가 그대로 렌더하고, 셋 다 모르는 목적지는 나머지 키를 보면 된다. 목적지별
+ * 포맷터를 두지 않은 이유가 이것이다 — 키 하나 더 넣는 값으로 흔한 목적지가 다 붙는다.
+ *
+ * `HARNESS_NOTIFY_FIELD_*` 로 준 필드가 **먼저 깔리고 메시지가 그 위에 온다.** 순서가
+ * 이러해야 고정 필드가 메시지 본문을 덮어쓸 수 없다 — 얹는 것은 *더하기*이지 *바꾸기*가
+ * 아니고, 실수로 `text` 를 얹었을 때 알림이 통째로 벙어리가 되면 안 된다.
  *
  * @param {string} event `harness.config.json` 의 `notify.events` 에 적히는 이름
  * @param {{baseDir: string, text: string, detail?: object, fetchImpl?: Function, env?: object, config?: object}} options
@@ -144,7 +186,13 @@ export async function notify(event, options) {
     return { sent: false, reason: "이 런타임에 `fetch` 가 없다 — Node 18 이상이 필요하다." };
   }
 
-  const body = { event, text, content: text, ...(detail ? { detail } : {}) };
+  const body = {
+    ...extraFields(baseDir, env),
+    event,
+    text,
+    content: text,
+    ...(detail ? { detail } : {}),
+  };
 
   try {
     const response = await fetchImpl(url, {
@@ -155,11 +203,31 @@ export async function notify(event, options) {
     });
 
     if (!response?.ok) {
-      return { sent: false, reason: `목적지가 ${response?.status ?? "?"} 로 답했다.` };
+      const said = await describeResponse(response, url);
+      return { sent: false, reason: `목적지가 ${response?.status ?? "?"} 로 답했다.${said}` };
     }
     return { sent: true, reason: null };
   } catch (error) {
     return { sent: false, reason: `전송이 실패했다 — ${scrub(error, url)}` };
+  }
+}
+
+/**
+ * 실패한 응답의 본문 한 토막.
+ *
+ * **상태 코드만으로는 고칠 수가 없다.** 텔레그램이 그 예다 — `chat_id` 를 빠뜨리든
+ * 토큰이 틀리든 형식이 어긋나든 전부 400 대이고, 무엇이 문제인지는 본문에만 적혀 있다
+ * (`{"ok":false,"description":"Bad Request: chat_id is empty"}`). 붙이는 사람이 처음
+ * 마주치는 것이 정확히 이 화면이라, 여기서 안 보여주면 추측으로 붙이게 된다.
+ *
+ * 자르고 씻는다 — 본문이 길 수 있고, 목적지가 요청한 URL 을 되돌려주기도 한다.
+ */
+async function describeResponse(response, url) {
+  try {
+    const text = `${await response.text()}`.trim();
+    return text ? ` ${scrub({ message: text.slice(0, 400) }, url)}` : "";
+  } catch {
+    return ""; // 본문을 못 읽는 것은 판정을 바꾸지 않는다 — 이미 실패다.
   }
 }
 

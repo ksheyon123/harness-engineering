@@ -103,6 +103,7 @@ describe("발행되는 tarball", () => {
     expect(has("scripts/spawn.ps1")).toBe(true);
     expect(has("scripts/gate.mjs")).toBe(true);
     expect(has("scripts/push.mjs")).toBe(true);
+    expect(has("scripts/notify-test.mjs")).toBe(true);
   });
 
   it("비밀의 **본보기만** 담기고 값이 든 파일은 담기지 않는다", () => {
