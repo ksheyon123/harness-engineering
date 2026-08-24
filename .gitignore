@@ -7,8 +7,9 @@ node_modules
 # 로컬 권한 승인 기록 — 개인 환경에 종속되므로 추적하지 않는다.
 .claude/settings.local.json
 
-# git worktree 는 저장소 밖 형제 디렉터리에 두는 것이 원칙.
-# 내부(.claude/worktrees/)에 생기더라도 추적하지 않는다.
+# worktree 사본은 반드시 저장소 안 이 자리에 있어야 한다 — 밖으로 나가면
+# node_modules 상향 해석이 안 닿아 훅 shim 과 사본 안의 npm test 가 죽는다(docs/measured.md).
+# 자리는 규약이 고정하고 만드는 것은 Claude Code 다. 추적하지는 않는다.
 .claude/worktrees/
 
 # post-checkout 이 남기는 발동 흔적. 사본이 만들어질 때마다 자라는 로컬 기록이라

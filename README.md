@@ -22,16 +22,14 @@
 ```sh
 npm i -D @ksheyon123/harness-engineering
 npx harness init            # 끝에서 smoke 를 직접 돈다 — 배선이 깨졌으면 종료 코드 1
-git switch -c chore/harness-install
-git add -A                  # 이것까지 해야 끝난다 — 커밋 안 된 파일은 worktree 사본에 안 간다
-git commit
 ```
 
 그 다음 **Claude Code 를 새로 연다** — 훅은 세션이 시작될 때 읽힌다. 거기서부터는 [docs/usage.md](./docs/usage.md) 다.
 
 - **`npm install` 만으로는 아무것도 안 된다.** 배선은 `harness init` 이 저장소에 실체(`.claude/settings.json` · `.githooks/` · 규약)를 만들어야 생긴다.
 - **게이트는 `init` 이 만들지 않는다.** 무엇을 검사할지는 저장소가 정한다 — `package.json` 의 `scripts.test` 가 그 단일 출처다.
-- **`.gitignore` 에 `.claude` 가 있어도 된다.** `init` 이 그 경로를 `git add -f` 로 담고 무엇을 담았는지 찍는다.
+- **커밋은 선택이다.** worktree 사본에 하네스가 도달하는 길은 둘이고 `init` 이 그중 하나를 세워 둔다 — `core.hooksPath` 와 `post-checkout` 이 서면 사본이 만들어질 때마다 **커밋 없이** 심긴다. 하네스를 팀 규약으로 삼겠다면 커밋한다(`git switch -c chore/harness-install && git add -A && git commit`) — 보호 브랜치 직접 커밋은 층 2 가 막으므로 브랜치를 자른다.
+- **`.gitignore` 에 `.claude` 가 있어도 된다.** `init` 은 인덱스를 건드리지 않는다 — 무시해 둔 것은 그것을 개인 설정으로 본 판단이고, 위의 심기가 그 상태로도 돌게 해 준다.
 
 ## 무엇을 푸는가
 
