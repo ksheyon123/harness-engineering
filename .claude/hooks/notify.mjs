@@ -33,7 +33,7 @@
 
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 import { loadConfig } from "./harness-config.mjs";
 import { cleanEnv } from "./hook-kit.mjs";
@@ -77,15 +77,74 @@ export function parseEnvFile(text) {
   return out;
 }
 
-/** 비밀 파일. 없거나 못 읽으면 빈 객체 — 알림이 안 갈 뿐 아무것도 깨지지 않는다. */
-export function loadSecrets(baseDir) {
-  const path = join(baseDir, ENV_FILE);
-  if (!existsSync(path)) return {};
+/**
+ * 비밀을 찾을 트리들. **뒤의 것이 앞의 것을 못 이긴다**(앞이 우선).
+ *
+ * ## 왜 본체까지 거슬러 올라가나 — 실측으로 드러난 결함
+ *
+ * 비밀은 추적되지 않는다(그래야 한다). 그런데 **worktree 사본은 커밋된 것만 받는다** —
+ * 그래서 `.claude/harness.env` 는 사본에 영영 도달하지 않는다.
+ *
+ * 그리고 알림을 쏘는 두 지점은 **둘 다 사본 안에서 돈다**: 작업 세션은 `EnterWorktree`
+ * 격리 안에 있고, `Notification` 훅은 그 세션의 `cwd` 를 받는다. 즉 이 조회가 자기
+ * 트리만 보면 **알림이 존재하는 이유인 바로 그 자리에서만 죽는다**(오케스트레이터
+ * 모드는 사람이 떠나 있는 것을 전제로 돈다). 실제로 그렇게 죽었다.
+ *
+ * 사본에 복사해 넣는 길은 택하지 않는다 — 비밀의 사본을 디스크에 N 개 만드는 일이고,
+ * `reap` 이 지우기 전까지 남는다. **읽을 때 거슬러 올라가는 편이 사본을 안 만든다.**
+ *
+ * git 이 답을 준다: 링크된 worktree 에서 `--git-common-dir` 은 `<본체>/.git` 을 가리킨다.
+ * 본체에서는 자기 `.git` 이라 결과가 같아지고, 그래서 분기가 필요 없다.
+ */
+export function secretRoots(baseDir) {
+  const main = mainTree(baseDir);
+  return main && normalizePath(main) !== normalizePath(baseDir) ? [baseDir, main] : [baseDir];
+}
+
+/**
+ * 이 트리가 사본이면 본체의 최상단, 아니면 자기 자신. 못 알아내면 `null`.
+ *
+ * `--path-format` 은 git 2.31+ 이라 쓰지 않는다. 대신 나온 값을 `baseDir` 기준으로
+ * 풀어낸다 — 본체에서는 상대값(`.git`)이 오고 사본에서는 절대값이 온다.
+ */
+function mainTree(baseDir) {
   try {
-    return parseEnvFile(readFileSync(path, "utf8"));
+    const common = execFileSync("git", ["rev-parse", "--git-common-dir"], {
+      cwd: baseDir,
+      env: cleanEnv(),
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    return common ? dirname(resolve(baseDir, common)) : null;
   } catch {
-    return {};
+    return null; // git 이 없거나 저장소가 아니다 — 자기 트리만 본다.
   }
+}
+
+const normalizePath = (path) => {
+  const unified = path.replace(/\\/g, "/").replace(/\/+$/, "");
+  return process.platform === "win32" ? unified.toLowerCase() : unified;
+};
+
+/**
+ * 비밀 파일. 없거나 못 읽으면 빈 객체 — 알림이 안 갈 뿐 아무것도 깨지지 않는다.
+ *
+ * 사본 안이라면 본체의 것까지 본다. **가까운 트리가 이긴다** — 사본에 일부러 둔 값이
+ * 있다면 그것이 의도이고, 없으면(정상) 본체 것이 그대로 쓰인다.
+ */
+export function loadSecrets(baseDir) {
+  const found = {};
+  // 먼 것부터 깔고 가까운 것으로 덮는다.
+  for (const root of secretRoots(baseDir).reverse()) {
+    const path = join(root, ENV_FILE);
+    if (!existsSync(path)) continue;
+    try {
+      Object.assign(found, parseEnvFile(readFileSync(path, "utf8")));
+    } catch {
+      /* 한 자리를 못 읽어도 나머지는 읽는다. */
+    }
+  }
+  return found;
 }
 
 /**

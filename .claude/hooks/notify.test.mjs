@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,6 +13,7 @@ import {
   notify,
   parseEnvFile,
   resolveUrl,
+  secretRoots,
 } from "./notify.mjs";
 
 /** 설정 없이 도는 기본값과 같은 모양. 테스트가 `loadConfig` 를 타지 않게 직접 준다. */
@@ -66,6 +68,88 @@ describe("loadSecrets", () => {
   it("`.claude/harness.env` 를 읽는다", () => {
     writeEnv(`HARNESS_NOTIFY_URL=${URL_VALUE}\n`);
     expect(loadSecrets(tree)).toEqual({ HARNESS_NOTIFY_URL: URL_VALUE });
+  });
+});
+
+/**
+ * **사본에서 본체의 비밀을 읽는가.**
+ *
+ * 이 테스트가 없어서 놓쳤다. 알림이 존재하는 이유는 오케스트레이터 모드(사람이 떠나
+ * 있다)인데, 그 모드는 **항상 worktree 사본 안에서 돈다.** 비밀은 추적되지 않으니 사본에
+ * 도달하지 않고, 그래서 기능이 **정확히 필요한 자리에서만** 죽었다. 본체에서 돌린 검증은
+ * 전부 초록이었다.
+ */
+describe("secretRoots — worktree 사본에서 본체까지", () => {
+  /** `GIT_*` 를 씻어 낸 git 러너. 안 씻으면 진짜 저장소를 건드린다. */
+  function git(cwd) {
+    const env = { ...process.env };
+    for (const key of Object.keys(env)) if (key.startsWith("GIT_")) delete env[key];
+    return (args) => execFileSync("git", args, { cwd, env, stdio: "ignore" });
+  }
+
+  /** 커밋 하나와 사본 하나를 가진 저장소. 사본 자리는 실제 규약과 같다. */
+  function repoWithWorktree() {
+    const main = mkdtempSync(join(tmpdir(), "harness-wt-"));
+    const run = git(main);
+
+    run(["init", "-b", "main"]);
+    run(["config", "user.email", "t@t"]);
+    run(["config", "user.name", "t"]);
+    writeFileSync(join(main, "README.md"), "x\n");
+    run(["add", "-A"]);
+    run(["commit", "-m", "첫 커밋"]);
+
+    const copy = join(main, ".claude/worktrees/task");
+    run(["worktree", "add", "-b", "task", copy]);
+
+    mkdirSync(join(main, ".claude"), { recursive: true });
+    return { main, copy };
+  }
+
+  let repo;
+
+  beforeEach(() => {
+    repo = repoWithWorktree();
+  });
+
+  afterEach(() => {
+    rmSync(repo.main, { recursive: true, force: true });
+  });
+
+  it("본체에서는 자기 트리 하나뿐이다", () => {
+    expect(secretRoots(repo.main)).toEqual([repo.main]);
+  });
+
+  it("사본에서는 자기 트리 **다음에** 본체를 본다", () => {
+    const [first, second] = secretRoots(repo.copy);
+
+    expect(first).toBe(repo.copy);
+    expect(second.replace(/\\/g, "/")).toBe(repo.main.replace(/\\/g, "/"));
+  });
+
+  it("**사본에서 본체의 비밀을 읽는다** — 이것이 안 되면 작업 세션은 조용히 끝난다", () => {
+    writeFileSync(join(repo.main, ENV_FILE), `HARNESS_NOTIFY_URL=${URL_VALUE}\n`);
+
+    expect(loadSecrets(repo.copy)).toEqual({ HARNESS_NOTIFY_URL: URL_VALUE });
+    expect(resolveUrl(repo.copy, CONFIG.notify, {}).url).toBe(URL_VALUE);
+  });
+
+  it("고정 필드도 같이 따라온다 — 텔레그램의 `chat_id` 가 사본에서 빠지면 400 이다", () => {
+    writeFileSync(join(repo.main, ENV_FILE), `${FIELD_PREFIX}chat_id=-100123\n`);
+
+    expect(extraFields(repo.copy, {})).toEqual({ chat_id: "-100123" });
+  });
+
+  it("사본에 있으면 그것이 이긴다 — 가까운 트리가 우선이다", () => {
+    mkdirSync(join(repo.copy, ".claude"), { recursive: true });
+    writeFileSync(join(repo.main, ENV_FILE), "HARNESS_NOTIFY_URL=본체\n");
+    writeFileSync(join(repo.copy, ENV_FILE), "HARNESS_NOTIFY_URL=사본\n");
+
+    expect(loadSecrets(repo.copy).HARNESS_NOTIFY_URL).toBe("사본");
+  });
+
+  it("git 저장소가 아니면 자기 트리만 본다 — 던지지 않는다", () => {
+    expect(secretRoots(tree)).toEqual([tree]);
   });
 });
 
