@@ -156,5 +156,5 @@
 |---|---|
 | `.claude/planner/*.md` | **논의 방식**(② 의 질문 형식). 기본은 `grilling.md` 다. **디렉터리가 곧 스위치다** — 지우면 안 묻고, 바꾸면 그대로 돌고, 더하면 다 실린다. 작업 세션에만 붙는다 |
 | `.claude/rules/*.md` | 경로별 코딩 규약. `paths:` frontmatter 를 붙이면 **매칭되는 파일을 읽을 때만** 로드된다 — 빼면 매 세션 실려 분리한 의미가 없어진다 |
-| `harness.config.json` | 게이트 명령 · 소스 경로 · spec 위치 · 보호 브랜치. 값과 기본값은 [`implementation.md`](./implementation.md#프로젝트에-맞추기--harnessconfigjson) 에 있다 |
+| `.claude/harness.config.json` | 게이트 명령 · 소스 경로 · spec 위치 · 보호 브랜치. 값과 기본값은 [`implementation.md`](./implementation.md#프로젝트에-맞추기--harnessconfigjson) 에 있다 |
 | `.claude/agents/developer.md` | 개발자에게 주는 지시(테스트 스타일 등). **`harness sync` 가 덮어쓰려 하면 알리고 멈춘다** — 손댄 파일은 덮지 않는다 |
