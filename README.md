@@ -6,7 +6,8 @@
 
 | 어디 | 무엇 |
 |---|---|
-| **[docs/implementation.md](./docs/implementation.md)** | **설치와 운영** — 절차 · 설정(`harness.config.json`) · 갱신 · 막히는 자리 |
+| **[docs/usage.md](./docs/usage.md)** | **사용법** — 사람은 언제 무엇을 하나 · 못 하는 것과 그 이유 · 막혔을 때 · 명령 |
+| [docs/implementation.md](./docs/implementation.md) | 설치와 운영 — 절차 · 설정(`harness.config.json`) · 갱신 · 막히는 자리 |
 | [docs/backlog.md](./docs/backlog.md) | 확인됐지만 안 고친 것 — 왜 문제이고 어떻게 고치는지 |
 | [docs/measured.md](./docs/measured.md) | 이미 재본 것 — worktree · 플러그인 · git 의 실제 동작 |
 | [.claude/harness.md](./.claude/harness.md) | 규약 본문 — 자리 · 모드 · 검증 · 커밋/push · worktree |
@@ -26,7 +27,7 @@ git add -A                  # 이것까지 해야 끝난다 — 커밋 안 된 �
 git commit
 ```
 
-그 다음 **Claude Code 를 새로 연다** — 훅은 세션이 시작될 때 읽힌다.
+그 다음 **Claude Code 를 새로 연다** — 훅은 세션이 시작될 때 읽힌다. 거기서부터는 [docs/usage.md](./docs/usage.md) 다.
 
 - **`npm install` 만으로는 아무것도 안 된다.** 배선은 `harness init` 이 저장소에 실체(`.claude/settings.json` · `.githooks/` · 규약)를 만들어야 생긴다.
 - **게이트는 `init` 이 만들지 않는다.** 무엇을 검사할지는 저장소가 정한다 — `package.json` 의 `scripts.test` 가 그 단일 출처다.
@@ -66,13 +67,7 @@ git commit
 
 ## 명령
 
-| 명령 | 언제 |
-|---|---|
-| `harness spawn "<사람의 원문>"` | 기능 요청이 왔을 때. 작업 세션을 새 탭에 띄운다 (**Windows 전용**) |
-| `harness reap` | 한 task 의 push 직후, `ExitWorktree` **전에**. 회수가 끝난 사본을 거둔다 |
-| `harness doctor` | 설정(`harness.config.json`)의 **값**이 의심될 때 |
-| `harness smoke` | **배선**이 끊겼는지 의심될 때 — 훅이 실재하는 파일을 가리키는지 · 돌아 판정을 내놓는지 · 전부 커밋됐는지 |
-| `harness sync` | 패키지를 올린 뒤. 저장소에 복사된 규약·에이전트 정의를 다시 쓴다 |
+`spawn` · `reap` · `gate` · `doctor` · `smoke` · `sync` 여섯이고, **표는 [docs/usage.md](./docs/usage.md#매일-쓰는-명령) 한 곳에만 둔다.**
 
 > `smoke` 가 증명하는 것은 *부르면 도는가* 까지다. *Claude Code 가 실제로 부르는가* 는 세션을 띄워야만 안다 — 그래서 사람이 확인할 목록을 같이 찍는다.
 

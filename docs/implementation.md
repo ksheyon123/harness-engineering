@@ -159,16 +159,6 @@ export default { test: { exclude: ["**/node_modules/**", "**/.claude/worktrees/*
 
 `**/` 접두어가 중요하다 — 사본이 중첩돼도 매칭된다.
 
-## 매일 쓰는 명령
-
-| 명령 | 언제 |
-|---|---|
-| `harness spawn "<사람의 원문>"` | 기능 요청이 왔을 때. 작업 세션을 새 탭에 띄운다 (Windows 전용) |
-| `harness reap` | 한 task 의 push 직후, `ExitWorktree` **전에**. 회수가 끝난 사본을 거둔다 |
-| `harness doctor` | 설정이 이 프로젝트에 맞는지 의심될 때 |
-| `harness smoke` | 배선이 끊겼는지 의심될 때 |
-| `harness sync` | 패키지를 올린 뒤 |
-
 ## 갱신
 
 ```sh
@@ -196,8 +186,8 @@ npx harness sync
 | 서브에이전트가 빈 브랜치만 남기고 끝났다 | 원인이 둘이다. **먼저 `smoke` 의 `신뢰` 항목을 봐라**(아래 행). 거기가 초록이면 승인 프롬프트에서 멈춘 것이다 — 멈춤은 종료가 아니라 `SubagentStop` 이 안 돌고, 게이트도 인계 커밋도 없다 |
 | `smoke` 가 `신뢰 — 종료 훅이 등록될 수 있다` 로 ✗ | 저장소가 Claude Code 신뢰 목록에 없어 **frontmatter 훅이 등록조차 안 된다.** 실행 실패가 아니라 등록 누락이라 재시도 카운터도 `systemMessage` 도 안 남는다. **조상 폴더(`~/projects` 등)가 신뢰돼 있으면 다이얼로그가 안 뜨므로 스스로 낫지 않는다** — `~/.claude.json` 의 `projects["<이 저장소>"].hasTrustDialogAccepted` 를 직접 `true` 로 둬라 |
 
-## 아직 안 되는 것
+## 설치자가 알아야 할 한계
 
-- **`spawn` 의 유닉스판이 없다.** Windows 밖에서는 작업 세션을 규약대로 띄울 수 없다. 직접 `claude` 를 열어 역할을 말로 심지 마라 — 그 세션은 `HARNESS_ROLE` 이 없어 자기를 실행자로 알고, 대화로 덮은 역할은 `/clear` 한 번에 사라진다
-- **POSIX 실행권한이 검증되지 않았다.** `.githooks/pre-commit`·`pre-push` 의 실행 비트를 Windows 에서는 잴 수 없어 `smoke` 가 `?` 로 찍는다. 리눅스·맥에서 설치했다면 **층 2 가 붙었는지 직접 확인해라**
-- 그 밖에 확인됐지만 안 고친 것은 [`backlog.md`](./backlog.md) 에 근거와 함께 있다
+목록은 [README 의 '아직 안 되는 것'](../README.md#아직-안-되는-것) 에 있고, 근거는 [`backlog.md`](./backlog.md) 에 있다. **설치 직후에 행동이 필요한 것은 하나다:**
+
+- **POSIX 에서 설치했다면 층 2 가 붙었는지 직접 확인해라.** `.githooks/pre-commit`·`pre-push` 의 실행 비트를 Windows 에서는 잴 수 없어 `smoke` 가 `?` 로 찍는다 — 조용히 통과시키지는 않지만 판정도 못 한다. `ls -l .githooks/pre-*` 로 보고, `x` 가 없으면 `chmod +x` 한다. **git 은 실행권한 없는 훅을 에러 없이 건너뛴다**
