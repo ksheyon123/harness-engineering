@@ -10,7 +10,7 @@
 | git 저장소 | 층 2 가 `core.hooksPath` 를 쓴다. `git init` 만 돼 있으면 된다 |
 | Claude Code | 층 1·세션 훅·서브에이전트 격리가 전부 Claude Code 의 기능이다 |
 | **도는 게이트** | 종료 훅이 `npm test` 를 돌린다. `init` 은 러너를 설치하지 않는다 — [아래](#게이트는-init-이-만들지-않는다) |
-| Windows | **`harness spawn` 만** 그렇다. 나머지는 플랫폼을 안 가린다 — 유닉스판 `spawn` 은 아직 없다 |
+| Windows 또는 macOS | **`harness spawn` 만** 그렇다 — 그것만 터미널을 열어야 해서다. 나머지는 플랫폼을 안 가린다. **macOS 는 테스트 미완이고 Linux 판은 없다** |
 
 ## 설치 — 두 단계
 

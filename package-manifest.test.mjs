@@ -93,6 +93,9 @@ describe("발행되는 tarball", () => {
     expect(has("scripts/harness.mjs")).toBe(true);
     expect(has("scripts/doctor.mjs")).toBe(true);
     expect(has("scripts/reap-worktrees.mjs")).toBe(true);
+    expect(has("scripts/spawn.mjs")).toBe(true);
+    // `spawn.mjs` 가 Windows 에서 부르는 창 런처다. 빠지면 Windows 설치본에서만,
+    // 그것도 실제로 탭을 띄우려 할 때만 드러난다.
     expect(has("scripts/spawn.ps1")).toBe(true);
   });
 

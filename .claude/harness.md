@@ -140,7 +140,7 @@ spec 형식 판정은 `.claude/hooks/spec-shape.mjs` 에 있고 `pre-commit` 이
 
 > **직접 `claude` 를 열어 역할을 말로 심지 마라.** 그러면 그 세션은 `HARNESS_ROLE` 이 없어 자기를 실행자로 알고 있고, 대화로 덮어쓴 역할은 `/clear` 한 번에 사라진다.
 
-나머지(`wt` 부재 시 새 창, `-EncodedCommand` 로 넘기는 이유, 비Windows 에서 종료 코드 1)는 `.claude/skills/task/SKILL.md` 와 `scripts/spawn.ps1` 에 있다.
+**Windows 와 macOS 에서 돈다**(macOS 는 **테스트 미완**이다 — 개발 기계가 Windows다). 그 밖의 플랫폼에서는 없다고 말하고 종료 코드 1 을 낸다. 나머지(`wt` 부재 시 새 창, macOS 에서 새 창으로 떨어지는 이유, `-EncodedCommand` 로 넘기는 이유)는 `.claude/skills/task/SKILL.md` 와 `scripts/spawn.mjs` 에 있다.
 
 ### 하네스를 고칠 때 — `/harness-fix`
 
