@@ -16,7 +16,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { command, findClaude, plan, repoRoot } from "./spawn.mjs";
+import { SEED_FILE, command, findClaude, parseArgs, plan, repoRoot } from "./spawn.mjs";
 
 const SPAWN = fileURLToPath(new URL("./spawn.mjs", import.meta.url));
 const PKG = fileURLToPath(new URL("..", import.meta.url));
@@ -107,20 +107,42 @@ describe("spawn — 작업 세션은 부른 사람이 서 있던 저장소에서
 describe("spawn — 새 터미널이 실행할 명령", () => {
   const target = { repo: "/home/a/repo", claude: "/usr/local/bin/claude", seed: "로그인 만들어줘" };
 
-  it("Windows — 역할·저장소·원문이 전부 들어간다", () => {
+  it("Windows — 역할·저장소가 들어가고 원문은 파일에서 읽는다", () => {
     const text = command({ ...target, platform: "win32", repo: "C:\\repo" });
 
     expect(text).toContain(`$env:HARNESS_ROLE = 'work-session'`);
     expect(text).toContain(`Set-Location -LiteralPath 'C:\\repo'`);
-    expect(text).toContain(`& '/usr/local/bin/claude' '로그인 만들어줘'`);
+    expect(text).toContain(SEED_FILE);
+    expect(text).toContain(`& '/usr/local/bin/claude' $harnessSeed`);
   });
 
-  it("macOS — 역할·저장소·원문이 전부 들어간다", () => {
+  it("macOS — 역할·저장소가 들어가고 원문은 파일에서 읽는다", () => {
     const text = command({ ...target, platform: "darwin" });
 
     expect(text).toContain("export HARNESS_ROLE=work-session");
     expect(text).toContain(`cd '/home/a/repo'`);
-    expect(text).toContain(`'/usr/local/bin/claude' '로그인 만들어줘'`);
+    expect(text).toContain(SEED_FILE);
+    expect(text).toContain(`'/usr/local/bin/claude' "$harness_seed"`);
+  });
+
+  /**
+   * **이 두 개가 이 변경의 요점이다.** 원문이 본문에 리터럴로 들어가던 시절, Windows 는
+   * 본문이 통째로 base64 가 되어 명령줄에 실렸고 한글 약 12,100자에서 상한을 쳤다.
+   * 본문에 원문이 없으면 원문 길이는 본문 길이와 무관해진다.
+   */
+  it("원문이 본문에 리터럴로 들어가지 않는다", () => {
+    const seed = "아주아주 독특한 문자열 ZZTOP";
+
+    for (const platform of ["win32", "darwin"]) {
+      expect(command({ ...target, platform, seed }), platform).not.toContain("ZZTOP");
+    }
+  });
+
+  it("원문이 아무리 길어도 본문 길이가 안 늘어난다", () => {
+    const short = command({ ...target, platform: "win32", seed: "짧다" });
+    const long = command({ ...target, platform: "win32", seed: "가".repeat(50_000) });
+
+    expect(long).toBe(short);
   });
 
   it("macOS — claude 가 끝나도 창이 남는다", () => {
@@ -128,24 +150,69 @@ describe("spawn — 새 터미널이 실행할 명령", () => {
     expect(command({ ...target, platform: "darwin" })).toContain('exec "${SHELL:-/bin/sh}" -l');
   });
 
-  it("macOS — 일회용 런처는 스스로를 지운다", () => {
-    // 원문(사람이 친 요청)이 공용 임시 디렉터리에 영구히 남지 않는다.
-    const text = command({ ...target, platform: "darwin" });
+  it("일회용 런처는 원문을 읽은 뒤 원문과 자기를 지운다", () => {
+    // 원문(사람이 친 요청)이 임시 디렉터리에 영구히 남지 않는다.
+    const mac = command({ ...target, platform: "darwin" });
+    expect(mac.indexOf("harness_seed=")).toBeLessThan(mac.indexOf(`rm -f "$0"`));
+    expect(mac).toContain(`rm -f "$0" "$harness_dir/${SEED_FILE}"`);
 
-    expect(text).toContain(`rm -f "$0"`);
+    const win = command({ ...target, platform: "win32" });
+    expect(win.indexOf("ReadAllText")).toBeLessThan(win.indexOf("Remove-Item"));
+    expect(win).toContain("Remove-Item -LiteralPath $harnessDir -Recurse -Force");
   });
 
-  it("원문의 따옴표가 명령을 깨뜨리지 않는다", () => {
-    // 사람은 `'` 를 친다. 여기서 안 막으면 새 터미널이 엉뚱한 명령을 실행한다.
-    const seed = `it's 'quoted'`;
+  it("저장소 경로의 따옴표는 여전히 막는다", () => {
+    // 원문은 이제 리터럴이 아니지만 저장소·claude 경로는 그대로 박힌다.
+    const repo = `/home/it's`;
 
-    expect(command({ ...target, platform: "win32", seed })).toContain(`'it''s ''quoted'''`);
-    expect(command({ ...target, platform: "darwin", seed })).toContain(`'it'\\''s '\\''quoted'\\'''`);
+    expect(command({ ...target, platform: "win32", repo })).toContain(`'/home/it''s'`);
+    expect(command({ ...target, platform: "darwin", repo })).toContain(`'/home/it'\\''s'`);
   });
 
-  it("원문이 비면 claude 를 인자 없이 연다", () => {
-    expect(command({ ...target, platform: "win32", seed: "" })).toMatch(/& '[^']+'$/m);
-    expect(command({ ...target, platform: "darwin", seed: "" })).toMatch(/^'[^']+'$/m);
+  it("원문이 비면 claude 를 인자 없이 열고 seed 파일을 안 읽는다", () => {
+    const win = command({ ...target, platform: "win32", seed: "" });
+    expect(win).not.toContain(SEED_FILE);
+    expect(win).toMatch(/& '[^']+'$/m);
+
+    const mac = command({ ...target, platform: "darwin", seed: "" });
+    expect(mac).not.toContain(SEED_FILE);
+    expect(mac).toMatch(/^'[^']+'$/m);
+  });
+});
+
+describe("spawn — 인자 파싱", () => {
+  it("`--dry-run` 은 원문 앞에서만 플래그다", () => {
+    expect(parseArgs(["--dry-run", "로그인", "만들어줘"])).toEqual({
+      dryRun: true,
+      seed: "로그인 만들어줘",
+    });
+  });
+
+  /**
+   * 회귀. 예전에는 `argv.includes` + `filter` 였다 — 원문 안의 `--dry-run` 이 조용히
+   * 사라지면서 모드까지 뒤집혔다. 따옴표를 안 쓴 사람만 원문을 잃었다.
+   */
+  it("**원문 안의 `--dry-run` 은 원문이다** — 지워지지도, 모드를 뒤집지도 않는다", () => {
+    expect(parseArgs(["로그에", "--dry-run", "이", "찍히는", "문제"])).toEqual({
+      dryRun: false,
+      seed: "로그에 --dry-run 이 찍히는 문제",
+    });
+  });
+
+  it("`--` 는 그 뒤 전부를 원문으로 만든다 — 원문이 플래그로 시작할 때의 탈출구다", () => {
+    expect(parseArgs(["--", "--dry-run", "을", "고쳐줘"])).toEqual({
+      dryRun: false,
+      seed: "--dry-run 을 고쳐줘",
+    });
+    expect(parseArgs(["--dry-run", "--", "--dry-run", "을", "고쳐줘"])).toEqual({
+      dryRun: true,
+      seed: "--dry-run 을 고쳐줘",
+    });
+  });
+
+  it("인자가 없으면 원문도 없다", () => {
+    expect(parseArgs([])).toEqual({ dryRun: false, seed: "" });
+    expect(parseArgs(["--dry-run"])).toEqual({ dryRun: true, seed: "" });
   });
 });
 

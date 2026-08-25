@@ -17,7 +17,9 @@
  *
  * 원문을 임시 파일로 건네고 훅의 `initialUserMessage` 로 심는 방식도 만들어 봤으나,
  * 설치된 버전에서 아무 일도 일어나지 않았다(파일은 소비되는데 메시지가 안 생긴다).
- * 문서에만 있는 필드에 파이프라인 진입을 걸지 않는다.
+ * 문서에만 있는 필드에 파이프라인 진입을 걸지 않는다. **지금 원문이 파일로 가는 것은
+ * 그것과 다른 이야기다** — 진입 경로는 여전히 첫 프롬프트 인자이고, 바뀐 것은 그 값이
+ * *어디서 오는가* 뿐이다(`command` 의 머리주석).
  *
  * ## 왜 정책이 Node 에 있나 — 한때 전부 `.ps1` 이었다
  *
@@ -152,12 +154,34 @@ const ps = (value) => String(value).replace(/'/g, "''");
 /** POSIX 셸 작은따옴표 규칙 — 따옴표를 닫고 이스케이프한 뒤 다시 연다. */
 const sh = (value) => String(value).replace(/'/g, `'\\''`);
 
+/** 원문이 사는 파일 이름. 런처가 **자기 옆에서** 찾으므로 경로를 조립하지 않는다. */
+export const SEED_FILE = "seed.txt";
+
 /**
- * 새 터미널이 실행할 명령 본문. **여기서 따옴표가 전부 통제된다** — 아래 launch 가
- * 명령줄에 싣는 것은 base64 이거나 임시 파일 경로뿐이라, 이 문자열 밖으로 새는 것이
- * 없다.
+ * 새 터미널이 실행할 명령 본문.
+ *
+ * ## 원문은 여기 안 들어간다 — 옆의 파일에서 읽는다
+ *
+ * 한때 원문을 이 문자열에 박았다. 그 대가가 둘이었고, **둘 다 Windows 에만 있었다:**
+ *
+ * - **길이 상한.** 본문이 통째로 base64(utf16le)가 되어 명령줄에 실렸다. 인코딩이
+ *   원문을 2.67배로 부풀려, 한글 **약 12,100자**에서 명령줄 상한(32767)을 쳤다(실측).
+ *   에러 로그 한 덩어리 + 요구사항이면 닿는 크기다. macOS 는 본문이 파일로 가서
+ *   애초에 상한이 없었다 — 같은 명령이 플랫폼에 따라 다른 크기에서 죽었다.
+ * - **따옴표 조립.** 원문이 `'…'` 안에 들어가니 `ps()`·`sh()` 로 감싸야 했다. 지금은
+ *   **원문이 리터럴로 안 들어가므로 감쌀 것 자체가 없다.**
+ *
+ * 그래서 런처는 **자기 옆의 `seed.txt`** 를 읽어 변수에 담고, 그것을 claude 에 넘긴다.
+ * 경로를 본문에 끼워 넣지도 않는다 — `$PSCommandPath`·`$0` 으로 자기 위치를 알아낸다.
+ *
+ * > **지난번 실패와 다른 점.** 원문을 파일로 건네고 훅의 `initialUserMessage` 로 심는
+ * > 방식은 설치본에서 아무 일도 일어나지 않았다(문서에만 있는 필드였다). 여기서는
+ * > **claude 의 첫 프롬프트 인자**라는 검증된 경로를 그대로 쓰고, 그 값의 출처만 바꾼다.
+ *
+ * 남은 리터럴은 저장소 경로와 `claude` 경로 둘뿐이고, 그건 우리가 만든 값이다.
  *
  * @param {{platform: NodeJS.Platform, repo: string, claude: string, seed: string}} target
+ *        `seed` 는 **내용이 아니라 유무만** 쓴다 — 원문은 `launch` 가 파일로 쓴다.
  * @returns {string}
  */
 export function command({ platform, repo, claude, seed }) {
@@ -167,21 +191,34 @@ export function command({ platform, repo, claude, seed }) {
     return [
       `$env:HARNESS_ROLE = 'work-session'`,
       `Set-Location -LiteralPath '${ps(repo)}'`,
-      seed ? `& '${ps(claude)}' '${ps(seed)}'` : `& '${ps(claude)}'`,
+      `$harnessDir = Split-Path -Parent $PSCommandPath`,
+      ...(seed
+        ? [
+            // 읽고 나서 지운다 — 원문(사람이 친 요청)이 디스크에 남지 않는다.
+            `$harnessSeed = [IO.File]::ReadAllText((Join-Path $harnessDir '${SEED_FILE}'), [Text.Encoding]::UTF8)`,
+            `Remove-Item -LiteralPath (Join-Path $harnessDir '${SEED_FILE}') -Force -ErrorAction SilentlyContinue`,
+          ]
+        : []),
+      // 자기 자신까지 지운다. 실행 중인 `.ps1` 은 못 지울 수도 있어 실패를 삼킨다 —
+      // 그때도 위에서 원문은 이미 사라졌고, 남는 것은 원문 없는 런처뿐이다.
+      `Remove-Item -LiteralPath $harnessDir -Recurse -Force -ErrorAction SilentlyContinue`,
+      seed ? `& '${ps(claude)}' $harnessSeed` : `& '${ps(claude)}'`,
     ].join("\n");
   }
 
   return [
     "#!/bin/sh",
-    "# harness spawn 이 만든 일회용 런처다. 아래 두 줄에서 스스로를 지운다 —",
+    "# harness spawn 이 만든 일회용 런처다. 원문을 읽은 뒤 원문과 자기를 지운다 —",
     "# POSIX 는 열린 파일을 unlink 해도 읽던 것을 끝까지 읽는다.",
-    `rm -f "$0"`,
-    `rmdir "$(dirname "$0")" 2>/dev/null`,
+    `harness_dir="$(dirname "$0")"`,
+    ...(seed ? [`harness_seed="$(cat "$harness_dir/${SEED_FILE}")"`] : []),
+    `rm -f "$0"${seed ? ` "$harness_dir/${SEED_FILE}"` : ""}`,
+    `rmdir "$harness_dir" 2>/dev/null`,
     "",
     "export HARNESS_ROLE=work-session",
     // `cd` 가 실패해도 창을 닫지 않는다. 닫으면 사람은 아무것도 못 본다.
     `cd '${sh(repo)}' || echo "harness spawn: 저장소로 이동하지 못했다 — ${sh(repo)}" >&2`,
-    seed ? `'${sh(claude)}' '${sh(seed)}'` : `'${sh(claude)}'`,
+    seed ? `'${sh(claude)}' "$harness_seed"` : `'${sh(claude)}'`,
     // claude 가 끝나도 창을 남긴다. Windows 의 `-NoExit` 과 같은 자리다.
     `exec "\${SHELL:-/bin/sh}" -l`,
     "",
@@ -224,34 +261,78 @@ export function plan({
 /**
  * 실제로 띄운다. **플랫폼이 갈리는 곳은 여기 하나뿐이다.**
  *
- * @param {{platform: NodeJS.Platform, command: string}} target
+ * 양쪽 다 **런처와 원문을 파일로 쓰고 명령줄에는 경로 하나만 싣는다.** 그래서 길이
+ * 상한도, 셸을 여러 겹 지나며 꼬이는 따옴표도 없다 — 명령줄에 닿는 것이 우리가 만든
+ * 임시 경로뿐이기 때문이다. macOS 가 원래 그 모양이었고, Windows 를 거기 맞춘 것이다.
+ *
+ * `mkdtemp` 는 POSIX 에서 `0700` 디렉터리를 만든다. Windows 의 `%TEMP%` 는 이미
+ * 사용자 전용이다. 어느 쪽이든 원문은 런처가 읽는 즉시 지운다.
+ *
+ * @param {{platform: NodeJS.Platform, command: string, seed?: string}} target
  */
-export function launch({ platform, command: text }) {
+export function launch({ platform, command: text, seed = "" }) {
+  const dir = mkdtempSync(join(tmpdir(), "harness-spawn-"));
+
+  // 원문은 **UTF-8, BOM 없이.** 런처가 인코딩을 명시해서 읽는다.
+  if (seed) writeFileSync(join(dir, SEED_FILE), seed, "utf8");
+
   if (platform === "win32") {
-    // **base64 로 넘긴다.** Windows Terminal 은 명령줄의 `;` 를 자기 하위 명령
-    // 구분자로 먹는다. 그대로 넘기면 wt 가 명령을 여러 조각으로 쪼개고 마지막 조각을
-    // 실행 파일로 알고 찾다가 죽는다(0x80070002). 인코딩하면 구분자도 따옴표도
-    // 명령줄에 닿지 않는다 — 남는 것은 `A-Za-z0-9+/=` 뿐이다.
-    //
+    const script = join(dir, "work-session.ps1");
+    // **BOM 을 붙인다.** PowerShell 5.1 은 `-File` 스크립트를 BOM 없는 UTF-8 로 읽으면
+    // 시스템 ANSI 코드페이지로 해석해 한글이 깨진다.
+    writeFileSync(script, `﻿${text}`, "utf8");
+
     // 띄우는 것 자체를 `.ps1` 에 남겨두는 이유는 `wt.exe` 다. 그것은 앱 실행 별칭이라
     // PATH 해석이 평범하지 않고, PowerShell 의 `Get-Command` 는 그것을 확실히 찾는다.
-    const encoded = Buffer.from(text, "utf16le").toString("base64");
-    const script = fileURLToPath(new URL("./spawn.ps1", import.meta.url));
+    const launcher = fileURLToPath(new URL("./spawn.ps1", import.meta.url));
     return spawnSync(
       "powershell",
-      ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, "-EncodedCommand", encoded],
+      ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", launcher, "-ScriptPath", script],
       { stdio: "inherit" },
     );
   }
 
-  // `mkdtemp` 는 `0700` 디렉터리를 만든다. 원문(사람이 친 요청)이 잠깐 디스크에 남으므로
-  // 공용 임시 디렉터리에 그냥 던지지 않는다.
-  const dir = mkdtempSync(join(tmpdir(), "harness-spawn-"));
   const script = join(dir, "work-session.command");
   // `.command` 는 macOS 가 Terminal 에 연결해 둔 확장자다. 실행 비트가 있어야 돈다.
   writeFileSync(script, text, { mode: 0o700 });
 
   return spawnSync("open", ["-a", "Terminal", script], { stdio: "inherit" });
+}
+
+/**
+ * 인자를 가른다. **플래그는 원문 앞에서만 본다.**
+ *
+ * 한때 `argv.includes("--dry-run")` 과 `filter(arg => arg !== "--dry-run")` 이었다.
+ * 그래서 **원문 안의 그 문자열이 조용히 사라지면서 모드까지 뒤집혔다**(실측:
+ * `spawn 원문앞 --dry-run 원문뒤` → 원문이 `원문앞 원문뒤` 가 되고 창이 안 떴다).
+ * 따옴표로 감싼 사람은 argv 가 하나라 안 걸리고, **안 감싼 사람만 원문을 잃었다.**
+ *
+ * 첫 비플래그 인자에서 멈추므로 그 뒤는 전부 원문이다. `--` 를 쓰면 그 자리에서
+ * 명시적으로 끊는다 — 원문이 `--dry-run` 으로 *시작*하는 경우의 탈출구다.
+ *
+ * @param {string[]} argv
+ * @returns {{dryRun: boolean, seed: string}}
+ */
+export function parseArgs(argv) {
+  let dryRun = false;
+  let i = 0;
+
+  while (i < argv.length) {
+    if (argv[i] === "--dry-run") {
+      dryRun = true;
+      i += 1;
+      continue;
+    }
+    if (argv[i] === "--") {
+      i += 1;
+      break;
+    }
+    break;
+  }
+
+  // 원문은 **요약하지 않고 그대로** 잇는다. 요약해서 넘기면 spec 이 그 요약 수준에서
+  // 멈춘다 — 재료가 그것뿐이기 때문이다.
+  return { dryRun, seed: argv.slice(i).join(" ").trim() };
 }
 
 /** 경로 비교는 `gate`·`reap-worktrees` 와 같은 방식이다. */
@@ -261,15 +342,7 @@ function normalize(path) {
 }
 
 if (process.argv[1] && normalize(process.argv[1]) === normalize(fileURLToPath(import.meta.url))) {
-  const argv = process.argv.slice(2);
-  const dryRun = argv.includes("--dry-run");
-
-  // 원문은 **요약하지 않고 그대로** 잇는다. 요약해서 넘기면 spec 이 그 요약 수준에서
-  // 멈춘다 — 재료가 그것뿐이기 때문이다.
-  const seed = argv
-    .filter((arg) => arg !== "--dry-run")
-    .join(" ")
-    .trim();
+  const { dryRun, seed } = parseArgs(process.argv.slice(2));
 
   let target;
   try {
@@ -288,7 +361,7 @@ if (process.argv[1] && normalize(process.argv[1]) === normalize(fileURLToPath(im
     process.exit(0);
   }
 
-  const result = launch({ platform: process.platform, command: target.command });
+  const result = launch({ platform: process.platform, command: target.command, seed });
   if (result.error || result.status !== 0) {
     process.stderr.write(
       `작업 세션을 띄우지 못했다 — ${result.error?.message ?? `종료 코드 ${result.status}`}\n`,
