@@ -33,10 +33,17 @@ import { problemsIn } from "../.claude/hooks/spec-shape.mjs";
  * 본체의 이 스크립트가 불리는데, git 은 훅의 cwd 를 커밋이 일어나는 트리의 top-level 로
  * 놓는다. 모듈 위치 기준으로 찾으면 본체 설정을 읽어버린다.
  */
-const { protectedBranches, specRoot } = loadConfig(process.cwd());
+const { protectedBranches, specBaseBranches, specRoot } = loadConfig(process.cwd());
 
-/** 직접 커밋을 막을 브랜치. */
+/** 직접 커밋을 막을 브랜치. `nearestBase()` 는 이걸 쓰지 않는다 — 아래 `BASE_CANDIDATES`. */
 const PROTECTED = new Set(protectedBranches);
+
+/**
+ * `multipleSpecs()`(정확히는 `nearestBase()`) 가 보는 base 후보. `protectedBranches` 에
+ * `specBaseBranches` 를 더한 것 — 목적이 다르면 자리도 다르다. 후자에 브랜치를 적어도
+ * `protectedBranch()` 의 직접 커밋 금지 판정에는 안 들어간다.
+ */
+const BASE_CANDIDATES = new Set([...protectedBranches, ...specBaseBranches]);
 
 const problems = [
   ...protectedBranch(),
@@ -139,9 +146,16 @@ function partiallyStaged() {
  *
  * ## base 를 어떻게 잡나
  *
- * `main` 으로 박지 않는다 — `dev` 기반 브랜치에서 틀린다. 보호 브랜치 목록(설정)마다
- * `merge-base` 를 구하고 **HEAD 에서 가장 가까운 것**을 고른다. 하나도 못 찾으면
- * (보호 브랜치가 없는 저장소) 판정하지 않는다 — 없는 것과 모르는 것은 다르다.
+ * `main` 으로 박지 않는다 — `dev` 기반 브랜치에서 틀린다. `protectedBranches` 에
+ * `specBaseBranches`(설정)를 더한 후보마다 `merge-base` 를 구하고 **HEAD 에서 가장
+ * 가까운 것**을 고른다. 하나도 못 찾으면(후보가 없는 저장소) 판정하지 않는다 —
+ * 없는 것과 모르는 것은 다르다.
+ *
+ * `specBaseBranches` 가 따로 있는 이유: 아직 protected 브랜치에 머지되지 않은 부모
+ * task 브랜치 위에 다음 task 를 쌓으면(stacked branch), base 가 그보다 훨씬 앞선
+ * protected 브랜치로 잡혀 부모가 이미 담고 있는 spec 까지 "이 브랜치가 추가한 것"으로
+ * 잘못 세어진다. 그 부모를 `specBaseBranches` 에 적으면 base 후보가 되어 바로잡히고,
+ * `protectedBranches` 에 적을 때와 달리 그 브랜치의 직접 커밋 금지는 켜지지 않는다.
  *
  * ## `HEAD` 가 아니라 **인덱스**와 비교한다
  *
@@ -178,11 +192,11 @@ function multipleSpecs() {
   ];
 }
 
-/** 보호 브랜치 중 `HEAD` 에서 가장 가까운 갈림점. 못 찾으면 `null`. */
+/** base 후보 중 `HEAD` 에서 가장 가까운 갈림점. 못 찾으면 `null`. */
 function nearestBase() {
   let best = null;
 
-  for (const branch of PROTECTED) {
+  for (const branch of BASE_CANDIDATES) {
     let base;
     try {
       base = git(["merge-base", "HEAD", branch]).trim();

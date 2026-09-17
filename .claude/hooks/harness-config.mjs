@@ -111,6 +111,14 @@ export const DEFAULTS = Object.freeze({
   /** 직접 커밋을 막을 브랜치. */
   protectedBranches: Object.freeze(["main", "dev", "master"]),
   /**
+   * `pre-commit` 의 "한 브랜치에 spec 은 하나" 판정이 base 후보로 추가로 보는 브랜치.
+   * `protectedBranches` 와 별개다 — 여기 적어도 그 브랜치에 직접 커밋하는 것은 막히지
+   * 않는다. 아직 protected 브랜치에 머지되지 않은 부모 task 브랜치 위에 다음 task 를
+   * 쌓을 때(stacked branch), 그 부모를 여기 적으면 부모가 이미 담고 있는 spec 이
+   * "이 브랜치가 새로 추가한 것"으로 잘못 잡히지 않는다.
+   */
+  specBaseBranches: Object.freeze([]),
+  /**
    * 알림. **여기에 URL 은 없다** — 이 파일은 추적되고, 웹훅 URL 은 그 자체가 비밀이다.
    * 여기 적히는 것은 *어느 키를 읽을지*와 *어느 지점에서 쏠지*뿐이고, 값은
    * `.claude/harness.env`(무시됨)나 환경변수에 산다. 자세한 것은 `notify.mjs`.
@@ -133,6 +141,7 @@ function defaults() {
     harnessFiles: [...DEFAULTS.harnessFiles],
     specRoot: DEFAULTS.specRoot,
     protectedBranches: [...DEFAULTS.protectedBranches],
+    specBaseBranches: [...DEFAULTS.specBaseBranches],
     notify: { urlEnv: DEFAULTS.notify.urlEnv, events: [...DEFAULTS.notify.events] },
   };
 }
@@ -165,6 +174,7 @@ export function loadConfig(baseDir) {
     harnessFiles: stringList(raw.harnessFiles) ?? fallback.harnessFiles,
     specRoot: specRoot(raw.specRoot) ?? fallback.specRoot,
     protectedBranches: stringList(raw.protectedBranches) ?? fallback.protectedBranches,
+    specBaseBranches: stringList(raw.specBaseBranches) ?? fallback.specBaseBranches,
     notify: notify(raw.notify, fallback.notify),
   };
 }

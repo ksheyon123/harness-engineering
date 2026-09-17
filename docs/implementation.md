@@ -146,6 +146,7 @@ core.hooksPath          `.githooks` 로 설정한다
 | `harnessFiles` | `.claude/**` · `.githooks/**` · `scripts/**` · `package.json` · `package-lock.json` · `vitest.config.mjs` | 고치면 하네스의 동작이 바뀌는 것 |
 | `specRoot` | `"harness"` | spec·QA 체크리스트가 사는 곳. 뒤에 `/` 를 붙이지 않는다 |
 | `protectedBranches` | `["main", "dev", "master"]` | 직접 커밋을 막을 브랜치 |
+| `specBaseBranches` | `[]` | "한 브랜치에 spec 은 하나" 판정의 base 후보로 추가할 브랜치. `protectedBranches` 와 별개라 여기 적어도 직접 커밋 금지는 안 켜진다 — 머지 안 된 부모 task 브랜치 위에 다음 task 를 쌓을 때 쓴다 |
 
 > **무엇을 검사하는가**는 `package.json` 의 `scripts.test` 가 정하고, **어떤 명령을 부르는가**는 `gate` 가 정한다. 출처가 둘로 느는 것이 아니라 각각 한 곳씩 갖는다.
 

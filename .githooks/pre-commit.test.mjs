@@ -313,6 +313,59 @@ describe("pre-commit — 층 2 불변식", () => {
 
       expect(commit(dir, "spec 둘").status).toBe(0);
     });
+
+    describe("specBaseBranches — 머지 안 된 부모 브랜치를 base 후보로 더한다", () => {
+      /**
+       * main — component-split(부모 task, spec 하나 이미 커밋됨) — child-task(지금 커밋하는 브랜치)
+       *
+       * component-split 은 아직 main 에 머지되지 않았다. 기본 base 후보(main/dev/master)
+       * 로는 component-split 이 안 잡혀서, base 가 그보다 훨씬 앞선 지점으로 잡힌다.
+       */
+      function stackedRepo() {
+        const dir = makeRepo("seed");
+        write(dir, "a.txt", "a\n");
+        git(dir, ["add", "-A"]);
+        commit(dir, "base");
+        git(dir, ["branch", "main"]);
+
+        git(dir, ["checkout", "-q", "-b", "component-split"]);
+        addSpec(dir, "parent-task");
+        commit(dir, "parent spec");
+
+        git(dir, ["checkout", "-q", "-b", "child-task"]);
+        return dir;
+      }
+
+      it("설정이 없으면 부모 브랜치의 spec 까지 세어져 막힌다", () => {
+        const dir = stackedRepo();
+        addSpec(dir, "child-task");
+
+        const { status, stderr } = commit(dir, "child spec");
+
+        expect(status).not.toBe(0);
+        expect(stderr).toContain("spec 을 2개 추가한다");
+      });
+
+      it("부모 브랜치를 specBaseBranches 에 적으면 통과한다", () => {
+        const dir = stackedRepo();
+        write(dir, ".claude/harness.config.json", JSON.stringify({ specBaseBranches: ["component-split"] }));
+        addSpec(dir, "child-task");
+
+        expect(commit(dir, "child spec").status).toBe(0);
+      });
+
+      it("specBaseBranches 에 적어도 그 브랜치의 직접 커밋 금지는 켜지지 않는다", () => {
+        // protectedBranches 와 분리되어 있다는 것을 확인한다 — 부작용이 없어야 한다.
+        const dir = stackedRepo();
+        write(dir, ".claude/harness.config.json", JSON.stringify({ specBaseBranches: ["component-split"] }));
+
+        git(dir, ["checkout", "-q", "component-split"]);
+        write(dir, "fixup.txt", "x\n");
+        git(dir, ["add", "-A"]);
+
+        expect(commit(dir, "fixup").status).toBe(0);
+      });
+    });
   });
 
   it("--no-verify 로 지나갈 수 있다", () => {

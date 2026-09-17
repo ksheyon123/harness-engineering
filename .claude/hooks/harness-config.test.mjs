@@ -25,6 +25,7 @@ describe("harness-config — 프로젝트마다 달라지는 값의 단일 출�
     expect(config.specRoot).toBe("specs");
     expect(config.gate).toBe(DEFAULTS.gate);
     expect(config.protectedBranches).toEqual(DEFAULTS.protectedBranches);
+    expect(config.specBaseBranches).toEqual(DEFAULTS.specBaseBranches);
   });
 
   it("전부 덮을 수도 있다", () => {
@@ -35,6 +36,7 @@ describe("harness-config — 프로젝트마다 달라지는 값의 단일 출�
         harnessFiles: [".claude/**"],
         specRoot: "docs/specs",
         protectedBranches: ["trunk"],
+        specBaseBranches: ["release/1.0"],
         notify: { urlEnv: "MY_HOOK", events: ["push"] },
       }),
     );
@@ -45,8 +47,17 @@ describe("harness-config — 프로젝트마다 달라지는 값의 단일 출�
       harnessFiles: [".claude/**"],
       specRoot: "docs/specs",
       protectedBranches: ["trunk"],
+      specBaseBranches: ["release/1.0"],
       notify: { urlEnv: "MY_HOOK", events: ["push"] },
     });
+  });
+
+  it("specBaseBranches — protectedBranches 와 별개로 설정한다", () => {
+    // 직접 커밋 금지 판정(protectedBranch())은 이 필드를 보지 않는다. base 후보에만 쓰인다.
+    const config = loadConfig(tree({ specBaseBranches: ["refactore/shk/component-split"] }));
+
+    expect(config.specBaseBranches).toEqual(["refactore/shk/component-split"]);
+    expect(config.protectedBranches).toEqual(DEFAULTS.protectedBranches);
   });
 
   describe("notify — URL 은 여기 없다", () => {
