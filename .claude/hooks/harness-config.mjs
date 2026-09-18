@@ -17,12 +17,15 @@
  * 조용히 스키마 기본값으로 돌아간다 — 설치된 프로젝트에서 기본값은 거의 항상 틀린 값이다.
  *
  * 그래서 `loadConfig` 는 `baseDir` 를 받아도 **그 트리 자체가 아니라 그 트리가 속한
- * 저장소의 본체(main worktree)** 에서 읽는다(`mainWorktreeRoot`). `git worktree list
- * --porcelain` 의 첫 줄은 **어느 worktree 안에서 물어도 항상 본체를 가리킨다**(실측,
- * `docs/measured.md`) — 그래서 부르는 쪽이 "지금 worktree 안에 있나"를 먼저 판정할
- * 필요가 없고, 본체 자신에서 불러도 첫 줄이 자기 자신이라 결과가 똑같다. git 이 아니거나
- * 저장소가 아니면(순수 fs 테스트 등) `null` 이 나오고, 그때는 원래 받은 `baseDir` 그대로
- * 쓴다 — 판정 불가와 "본체가 곧 자기 자신"은 다르다.
+ * 저장소의 본체(main worktree)** 에서 읽는다(`mainWorktreeRoot`). git 프로세스는 안
+ * 띄운다 — `<worktree>/.git` 이 디렉터리면 자기 자신이 본체고, `gitdir: <본체>/.git/
+ * worktrees/<이름>` 한 줄짜리 파일이면(링크된 worktree 의 문서화된 형식) 그 경로에서
+ * 본체를 역산한다. 서브프로세스를 안 띄우는 이유는 성능이다 — `path-ownership` 처럼
+ * 모든 Edit/Write 마다 도는 훅에서 호출마다 git 을 띄우면 그 지연이 누적된다(실측:
+ * 어떤 환경의 git 서브프로세스 하나가 수백 ms~1 초 넘게 걸려, 시간 여유가 빠듯하던
+ * 테스트 하나를 그 한 번 추가만으로 타임아웃시켰다). git 이 아니거나 저장소가 아니면
+ * (순수 fs 테스트 등) `null` 이 나오고, 그때는 원래 받은 `baseDir` 그대로 쓴다 — 판정
+ * 불가와 "본체가 곧 자기 자신"은 다르다.
  *
  * **이 설계가 `harness.config.json` 을 "task 브랜치가 자기 것만 따로 갖는" 파일이 아니라
  * "저장소 전체가 공유하는 하네스 설정"으로 취급한다는 뜻이다.** 실제로도 그렇다 —
@@ -45,9 +48,8 @@
  * 아니라 **통과**가 되고, 층 1 이 통째로 사라지는데 아무 신호도 없다.
  */
 
-import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { dirname, join } from "node:path";
 
 /** 설정 파일 이름. */
 export const CONFIG_FILE = "harness.config.json";
@@ -226,43 +228,49 @@ function specRoot(value) {
 }
 
 /**
- * 이 트리가 속한 저장소의 본체(main worktree) 최상위 경로. 판정할 수 없으면(git 이
- * 없거나, 저장소가 아니거나) `null` — 없는 것과 모르는 것은 다르다.
+ * 이 트리가 속한 저장소의 본체(main worktree) 최상위 경로. 판정할 수 없으면(`.git` 이
+ * 없거나 알아볼 수 없는 모양이거나) `null` — 없는 것과 모르는 것은 다르다.
  *
- * `git worktree list --porcelain` 의 첫 줄은 **어느 worktree 안에서 물어도 항상 본체를
- * 가리킨다**(실측, `docs/measured.md`). 본체 자신에서 불러도 첫 줄이 자기 자신이라 결과가
- * `cwd` 와 같아진다.
+ * **git 프로세스를 안 띄운다 — 순수 fs 로만 읽는다.** `git worktree list --porcelain` 로
+ * 물어도 정답은 정답인데, 이 함수는 `loadConfig` 를 거쳐 `path-ownership`(모든 Edit/Write
+ * 마다 도는 `PreToolUse` 훅)까지 타므로 **호출마다 서브프로세스 하나가 늘어나는 비용을
+ * 못 견딘다** — 실측으로 어떤 환경에서는 git 서브프로세스 하나가 수백 ms~1초 넘게 걸려서,
+ * 이미 시간 여유가 별로 없던 테스트(`install/smoke.test.mjs`)가 그 한 번 추가만으로
+ * 타임아웃을 넘겼다.
+ *
+ * 대신 git 이 worktree 를 표시하는 방식 자체를 그대로 읽는다:
+ *
+ * - **평범한 저장소**(링크된 worktree 가 아님): `<cwd>/.git` 이 디렉터리다 → `cwd` 자신이
+ *   곧 본체다.
+ * - **링크된 worktree**: `<cwd>/.git` 이 `gitdir: <본체>/.git/worktrees/<이름>` 한 줄짜리
+ *   **파일**이다(git 의 문서화된 형식). 그 경로에서 `worktrees/<이름>` 과 `.git` 을
+ *   걷어내면 본체가 나온다.
  *
  * @param {string} cwd
  * @returns {string | null}
  */
 export function mainWorktreeRoot(cwd) {
-  let out;
+  const dotGit = join(cwd, ".git");
+
+  let stat;
   try {
-    out = execFileSync("git", ["worktree", "list", "--porcelain"], {
-      cwd,
-      env: gitEnv(),
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    });
+    stat = statSync(dotGit);
+  } catch {
+    return null; // `.git` 자체가 없다 — 저장소가 아니다.
+  }
+
+  if (stat.isDirectory()) return cwd;
+
+  let content;
+  try {
+    content = readFileSync(dotGit, "utf8");
   } catch {
     return null;
   }
 
-  const first = out.split(/\r?\n/)[0] ?? "";
-  return first.startsWith("worktree ") ? first.slice("worktree ".length).trim() : null;
-}
+  const match = /^gitdir:\s*(.+?)\s*$/m.exec(content);
+  if (!match) return null; // 알아볼 수 없는 모양 — 판정하지 않는다.
 
-/**
- * `GIT_` 접두어를 지운 env. `GIT_DIR` 이 상속돼 있으면 git 은 `cwd` 를 무시하고 그 값을
- * 쓴다 — 자식 프로세스를 띄우는 쪽이 매번 씻는다(`hook-kit.mjs` 의 `cleanEnv` 와 같은
- * 이유). 여기서 따로 두는 이유는 이 모듈이 `hook-kit.mjs` 를 임포트하지 않기 때문이다 —
- * `loadConfig` 는 git 없이도(순수 fs 테스트) 그대로 동작해야 한다.
- */
-function gitEnv() {
-  const env = { ...process.env };
-  for (const key of Object.keys(env)) {
-    if (key.startsWith("GIT_")) delete env[key];
-  }
-  return env;
+  // `<본체>/.git/worktrees/<이름>` → 세 단계 위가 `<본체>` 다.
+  return dirname(dirname(dirname(match[1])));
 }
