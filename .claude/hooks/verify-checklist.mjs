@@ -21,7 +21,8 @@ import { readFileSync } from "node:fs";
 import { loadConfig } from "./harness-config.mjs";
 import { cleanEnv, emit, handoff, readHookInput, retryBudget } from "./hook-kit.mjs";
 
-/** 이 훅은 qa 의 worktree 를 cwd 로 돈다 — 산출물도 설정도 그 트리의 것이다. */
+// 이 훅은 qa 의 worktree 를 cwd 로 돈다 — 산출물은 그 트리의 것이지만, `specRoot` 는
+// `loadConfig` 가 본체 값으로 튕겨내므로 worktree 에 config 가 심기지 않았어도 맞는다.
 const { specRoot } = loadConfig(process.cwd());
 
 /** 인계 커밋에 이름을 남길 역할. 오케스트레이터가 로그에서 출처를 읽는다. */

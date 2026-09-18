@@ -1,9 +1,17 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
-import { CONFIG_FILE, CONFIG_PATHS, DEFAULTS, findConfig, loadConfig } from "./harness-config.mjs";
+import {
+  CONFIG_FILE,
+  CONFIG_PATHS,
+  DEFAULTS,
+  findConfig,
+  loadConfig,
+  mainWorktreeRoot,
+} from "./harness-config.mjs";
 
 /** 설정 파일 하나만 든 임시 트리. `content` 가 `null` 이면 파일을 만들지 않는다. */
 function tree(content) {
@@ -181,5 +189,81 @@ describe("설정의 자리 — `.claude/` 우선, 루트 폴백", () => {
   it("경로는 `/` 로 적힌다 — 그대로 사람에게 찍히는 값이다", () => {
     // `join` 으로 지으면 Windows 에서 `.claude\…` 가 되어 문서·메시지와 어긋난다.
     for (const path of CONFIG_PATHS) expect(path).not.toContain("\\");
+  });
+});
+
+/**
+ * `loadConfig` 가 worktree 사본이 아니라 **본체**에서 읽는지. 설치되는 프로젝트는
+ * `.claude/` 를 gitignore 하고 `post-checkout`(심기)로 채우는데, 그 심기가 실패하면
+ * (환경에 따라 실측됨) 사본엔 설정 파일이 아예 없다. 이때도 본체 값이 그대로 적용돼야
+ * "심기가 됐든 안 됐든 동작이 같다"가 성립한다.
+ */
+describe("본체(main worktree) 기준 — worktree 사본에 파일이 없어도 본체 값을 쓴다", () => {
+  const fixtures = [];
+
+  afterEach(() => {
+    while (fixtures.length) rmSync(fixtures.pop(), { recursive: true, force: true });
+  });
+
+  /** `GIT_` 접두어를 지운 env. 임시 저장소를 겨냥하므로 부모의 `GIT_DIR` 을 물려받으면 안 된다. */
+  function cleanEnv() {
+    const env = {};
+    for (const [key, value] of Object.entries(process.env)) {
+      if (!key.startsWith("GIT_")) env[key] = value;
+    }
+    return env;
+  }
+
+  function git(cwd, args) {
+    return execFileSync("git", args, { cwd, env: cleanEnv(), encoding: "utf8" });
+  }
+
+  /** 본체 + 링크된 worktree 하나를 만든다. 본체엔 config 를, worktree 엔 아무것도 안 둔다. */
+  function repoWithWorktree(config) {
+    const main = mkdtempSync(join(tmpdir(), "harness-config-main-"));
+    fixtures.push(main);
+    git(main, ["init", "-q", "-b", "main"]);
+    git(main, ["config", "user.email", "hook@example.invalid"]);
+    git(main, ["config", "user.name", "hook"]);
+    writeFileSync(join(main, "a.txt"), "a\n");
+    if (config) {
+      mkdirSync(join(main, ".claude"), { recursive: true });
+      writeFileSync(join(main, ".claude", CONFIG_FILE), JSON.stringify(config));
+    }
+    git(main, ["add", "-A"]);
+    git(main, ["commit", "-q", "-m", "base"]);
+
+    const copy = join(main, "..", `harness-config-copy-${Math.random().toString(16).slice(2)}`);
+    git(main, ["worktree", "add", "-q", "-b", "side", copy]);
+    fixtures.push(copy);
+
+    return { main, copy };
+  }
+
+  it("worktree 사본엔 config 가 없어도 본체 값을 읽는다", () => {
+    const { copy } = repoWithWorktree({ specRoot: "본체값" });
+
+    expect(loadConfig(copy).specRoot).toBe("본체값");
+  });
+
+  it("본체 자신에서 불러도 그대로 동작한다 — 첫 줄이 자기 자신이다", () => {
+    const { main } = repoWithWorktree({ specRoot: "본체값" });
+
+    expect(loadConfig(main).specRoot).toBe("본체값");
+  });
+
+  it("본체에도 config 가 없으면 여전히 기본값이다", () => {
+    const { copy } = repoWithWorktree(null);
+
+    expect(loadConfig(copy)).toEqual({ ...DEFAULTS });
+  });
+
+  it("git 저장소가 아니면 판정하지 않고 받은 경로 그대로 쓴다", () => {
+    const dir = mkdtempSync(join(tmpdir(), "harness-config-nogit-"));
+    fixtures.push(dir);
+    writeFileSync(join(dir, CONFIG_FILE), JSON.stringify({ specRoot: "그대로" }));
+
+    expect(mainWorktreeRoot(dir)).toBeNull();
+    expect(loadConfig(dir).specRoot).toBe("그대로");
   });
 });

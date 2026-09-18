@@ -29,9 +29,10 @@ import { loadConfig } from "../.claude/hooks/harness-config.mjs";
 import { problemsIn } from "../.claude/hooks/spec-shape.mjs";
 
 /**
- * 설정은 **cwd 기준**으로 읽는다. `core.hooksPath` 가 절대경로라 worktree 에서 커밋해도
- * 본체의 이 스크립트가 불리는데, git 은 훅의 cwd 를 커밋이 일어나는 트리의 top-level 로
- * 놓는다. 모듈 위치 기준으로 찾으면 본체 설정을 읽어버린다.
+ * `process.cwd()` 를 건네지만 `loadConfig` 내부에서 그 트리가 속한 **본체**로 튕겨낸다
+ * (`harness-config.mjs` 의 `mainWorktreeRoot`) — worktree 사본에 `harness.config.json`
+ * 이 심기지 않았어도(설치 환경에 따라 `post-checkout` 심기가 안 도는 경우가 실측됐다)
+ * 본체 값을 그대로 쓴다.
  */
 const { protectedBranches, specBaseBranches, specRoot } = loadConfig(process.cwd());
 

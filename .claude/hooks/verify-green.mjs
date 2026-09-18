@@ -37,7 +37,8 @@ const env = cleanEnv();
 const input = readHookInput();
 const budget = retryBudget("verify-green", { env, input, max: MAX_ATTEMPTS });
 
-// 이 훅은 역할의 worktree 를 cwd 로 돈다 — 게이트도 설정도 그 트리의 것이라야 한다.
+// 이 훅은 역할의 worktree 를 cwd 로 돈다. `loadConfig` 가 본체 값으로 튕겨내므로
+// 그 worktree 에 harness.config.json 이 심기지 않았어도 올바른 게이트 명령을 받는다.
 const { gate } = loadConfig(process.cwd());
 
 let failure = null;

@@ -5,20 +5,30 @@
  * `main`/`dev`/`master`). 그 값들이 여러 파일에 흩어져 있으면 남의 저장소에 옮길 때
  * 스무 줄을 손으로 고쳐야 하고, 하나를 빠뜨리면 **그 훅만 조용히 엉뚱한 경로를 지킨다.**
  *
- * ## 왜 `baseDir` 를 인자로 받나
+ * ## 왜 `baseDir` 를 인자로 받나, 그리고 왜 본체로 튕겨내나
  *
- * 훅마다 서 있는 트리가 다르다. 설정은 추적되는 파일이라 worktree 사본에도 그대로
- * 있으므로, **각자 자기가 일하고 있는 트리의 것**을 읽어야 한다:
+ * 훅마다 서 있는 트리가 다르다 — `path-ownership` 은 훅 입력의 `cwd`, `verify-green`·
+ * `verify-checklist`·`pre-commit` 은 `process.cwd()`. 예전엔 "설정은 추적되는 파일이라
+ * worktree 사본에도 그대로 있다"고 가정하고 그 트리를 그대로 읽었는데, **이 전제가
+ * 설치되는 프로젝트에서는 성립하지 않는다.** 그런 저장소는 보통 `.claude/` 를 통째로
+ * gitignore 하고, `post-checkout`(심기)이 커밋 대신 파일을 복사해 채워 넣는다. 그 심기가
+ * 실패하면(환경·Claude Code 버전에 따라 `post-checkout` 자체가 안 도는 경우가 실측됐다)
+ * worktree 사본엔 `harness.config.json` 이 아예 없고, `cwd` 기준으로 그대로 읽으면
+ * 조용히 스키마 기본값으로 돌아간다 — 설치된 프로젝트에서 기본값은 거의 항상 틀린 값이다.
  *
- * | 부르는 곳 | `baseDir` | 왜 |
- * |---|---|---|
- * | `path-ownership` | 훅 입력의 `cwd` | 판정 대상 경로를 재는 기준과 같아야 한다 |
- * | `verify-green`·`verify-checklist` | `process.cwd()` | 역할의 worktree 에서 돈다 |
- * | `pre-commit` | `process.cwd()` | git 이 훅의 cwd 를 top-level 로 놓는다 |
+ * 그래서 `loadConfig` 는 `baseDir` 를 받아도 **그 트리 자체가 아니라 그 트리가 속한
+ * 저장소의 본체(main worktree)** 에서 읽는다(`mainWorktreeRoot`). `git worktree list
+ * --porcelain` 의 첫 줄은 **어느 worktree 안에서 물어도 항상 본체를 가리킨다**(실측,
+ * `docs/measured.md`) — 그래서 부르는 쪽이 "지금 worktree 안에 있나"를 먼저 판정할
+ * 필요가 없고, 본체 자신에서 불러도 첫 줄이 자기 자신이라 결과가 똑같다. git 이 아니거나
+ * 저장소가 아니면(순수 fs 테스트 등) `null` 이 나오고, 그때는 원래 받은 `baseDir` 그대로
+ * 쓴다 — 판정 불가와 "본체가 곧 자기 자신"은 다르다.
  *
- * `pre-commit` 만 특히 주의해야 한다 — `core.hooksPath` 가 절대경로라 **본체의 스크립트**가
- * 불리는데 cwd 는 커밋이 일어나는 worktree 다. 모듈 위치(`import.meta.url`) 기준으로
- * 찾으면 본체 설정을 읽어버린다. cwd 기준이라야 맞다.
+ * **이 설계가 `harness.config.json` 을 "task 브랜치가 자기 것만 따로 갖는" 파일이 아니라
+ * "저장소 전체가 공유하는 하네스 설정"으로 취급한다는 뜻이다.** 실제로도 그렇다 —
+ * `harnessFiles` 기본값의 `.claude/**` 에 이 파일이 들어있어, 층 1 이 애초에 작업
+ * 세션에게 이 파일을 고칠 권한을 주지 않는다. 고치는 건 실행자가 본체에서 하는 일이고,
+ * 그 값이 모든 worktree 에 즉시 · 일관되게 반영돼야 맞다.
  *
  * ## 없거나 깨졌으면 기본값이다
  *
@@ -35,6 +45,7 @@
  * 아니라 **통과**가 되고, 층 1 이 통째로 사라지는데 아무 신호도 없다.
  */
 
+import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -156,8 +167,9 @@ function defaults() {
  * @param {string} baseDir 설정을 찾을 트리의 최상단
  */
 export function loadConfig(baseDir) {
+  const root = mainWorktreeRoot(baseDir) ?? baseDir;
   const fallback = defaults();
-  const found = findConfig(baseDir);
+  const found = findConfig(root);
   if (!found) return fallback;
 
   let raw;
@@ -211,4 +223,46 @@ function stringList(value) {
 function specRoot(value) {
   const s = string(value);
   return s ? s.replace(/\/+$/, "") : null;
+}
+
+/**
+ * 이 트리가 속한 저장소의 본체(main worktree) 최상위 경로. 판정할 수 없으면(git 이
+ * 없거나, 저장소가 아니거나) `null` — 없는 것과 모르는 것은 다르다.
+ *
+ * `git worktree list --porcelain` 의 첫 줄은 **어느 worktree 안에서 물어도 항상 본체를
+ * 가리킨다**(실측, `docs/measured.md`). 본체 자신에서 불러도 첫 줄이 자기 자신이라 결과가
+ * `cwd` 와 같아진다.
+ *
+ * @param {string} cwd
+ * @returns {string | null}
+ */
+export function mainWorktreeRoot(cwd) {
+  let out;
+  try {
+    out = execFileSync("git", ["worktree", "list", "--porcelain"], {
+      cwd,
+      env: gitEnv(),
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+  } catch {
+    return null;
+  }
+
+  const first = out.split(/\r?\n/)[0] ?? "";
+  return first.startsWith("worktree ") ? first.slice("worktree ".length).trim() : null;
+}
+
+/**
+ * `GIT_` 접두어를 지운 env. `GIT_DIR` 이 상속돼 있으면 git 은 `cwd` 를 무시하고 그 값을
+ * 쓴다 — 자식 프로세스를 띄우는 쪽이 매번 씻는다(`hook-kit.mjs` 의 `cleanEnv` 와 같은
+ * 이유). 여기서 따로 두는 이유는 이 모듈이 `hook-kit.mjs` 를 임포트하지 않기 때문이다 —
+ * `loadConfig` 는 git 없이도(순수 fs 테스트) 그대로 동작해야 한다.
+ */
+function gitEnv() {
+  const env = { ...process.env };
+  for (const key of Object.keys(env)) {
+    if (key.startsWith("GIT_")) delete env[key];
+  }
+  return env;
 }
