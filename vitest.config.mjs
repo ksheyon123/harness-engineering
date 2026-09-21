@@ -21,6 +21,6 @@ import { defineConfig, defaultExclude } from "vitest/config";
 export default defineConfig({
   test: {
     exclude: [...defaultExclude, "**/.claude/worktrees/**"],
-    testTimeout: 30_000,
+    testTimeout: 10_000,
   },
 });
