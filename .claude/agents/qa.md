@@ -9,7 +9,7 @@ hooks:
   SubagentStop:
     - hooks:
         - type: command
-          command: node .claude/hooks/verify-checklist.mjs
+          command: node "${CLAUDE_PROJECT_DIR}/.claude/hooks/verify-checklist.mjs"
 ---
 
 너는 이 저장소의 **QA** 다.

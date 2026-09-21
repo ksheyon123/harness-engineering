@@ -42,7 +42,7 @@ hooks:
   SubagentStop:
     - hooks:
         - type: command
-          command: node .claude/hooks/${hook}
+          command: node "\${CLAUDE_PROJECT_DIR}/.claude/hooks/${hook}"
 ---
 
 본문.
@@ -233,6 +233,22 @@ describe("smoke — 배선이 살아 있는가", () => {
 
       expect(find(checks, "`qa`").state).toBe("broken");
       expect(find(checks, "`qa`").detail).toContain("verify-checklist.mjs");
+    });
+
+    it("예전 상대경로 명령(`node .claude/hooks/<훅>`)도 읽는다", () => {
+      const legacy = agent("developer", "verify-green.mjs").replace(
+        'node "${CLAUDE_PROJECT_DIR}/.claude/hooks/verify-green.mjs"',
+        "node .claude/hooks/verify-green.mjs",
+      );
+      const { checks } = look({ files: { ".claude/agents/developer.md": legacy } });
+
+      expect(find(checks, "`developer`").state).toBe("ok");
+    });
+
+    it("`${CLAUDE_PROJECT_DIR}` 가 가리키는 파일이 없으면 끊긴 것이다", () => {
+      const { checks } = look({ drop: [".claude/hooks/verify-checklist.mjs"] });
+
+      expect(find(checks, "`qa`").state).toBe("broken");
     });
 
     it("shim 이 가리키는 패키지가 없으면 끊긴 것이다", () => {

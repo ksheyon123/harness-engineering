@@ -266,10 +266,16 @@ function exitGates(tree) {
       return broken(name, `\`${path}\` 에 \`isolation: worktree\` 가 없다 — 네 트리에서 직접 돈다.`);
     }
 
-    const wired = new RegExp(`command:\\s*node\\s+(\\S*${hook.replace(".", "\\.")})`).exec(front);
-    if (!wired) return broken(name, `\`${path}\` 의 \`SubagentStop\` 이 \`${hook}\` 을 안 부른다.`);
+    // 명령은 `node "${CLAUDE_PROJECT_DIR}/.claude/hooks/<훅>"` 이다. Claude Code 는 worktree
+    // 에 들어가도 `${CLAUDE_PROJECT_DIR}` 를 본체에 둔다(공식 문서) — 사본에 심기가 안 돼도
+    // 본체의 훅을 부른다. 예전 상대경로 형태(`node .claude/hooks/<훅>`)도 읽는다.
+    const commandLine = new RegExp(`command:\\s*(node\\s+.*${hook.replace(".", "\\.")}\\S*)`).exec(front);
+    if (!commandLine) return broken(name, `\`${path}\` 의 \`SubagentStop\` 이 \`${hook}\` 을 안 부른다.`);
 
-    const target = wired[1];
+    const target =
+      hookPathIn(commandLine[1]) ??
+      new RegExp(`node\\s+(\\S*${hook.replace(".", "\\.")})`).exec(commandLine[1])?.[1];
+    if (!target) return broken(name, `\`${path}\` 의 \`SubagentStop\` 명령에서 \`${hook}\` 경로를 못 읽었다.`);
     const loaded = loads(tree, target);
     if (!loaded.ok) return broken(name, `\`${target}\` 를 불러올 수 없다 — ${loaded.why}`);
 

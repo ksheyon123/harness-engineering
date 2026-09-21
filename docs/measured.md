@@ -27,7 +27,8 @@
 | `CLAUDE.md` 의 `@` 임포트가 `node_modules` 를 타나 | **탄다.** `.claude/CLAUDE.md` 의 `@../node_modules/<pkg>/CLAUDE.md` 가 로드됐다 |
 | 그 임포트가 worktree 안에서도 되나 | **안 된다.** 상대경로 거리를 맞춰도 실패하고, `node_modules` 를 worktree **안**에 두면 성공한다 → **임포트는 프로젝트 루트 밖으로 못 나간다** |
 | 조상 디렉터리의 `CLAUDE.md` 는 worktree 에서 로드되나 | **로드된다.** 다만 **그 파일의 임포트는 펼쳐지지 않는다** — A 가 직접 쓴 문장만 살아남는다 |
-| worktree 안에서 `${CLAUDE_PROJECT_DIR}` 가 가리키는 곳 | **worktree 루트.** 본체가 아니다 — `node_modules` 가 없는 곳이다 |
+| worktree 안에서 `${CLAUDE_PROJECT_DIR}` 가 가리키는 곳 | **옛 버전에서는 worktree 루트였다.** 본체가 아니라 `node_modules` 가 없는 곳이다. **지금 버전(2.1.278)은 다르다 — 공식 문서: "Claude Code keeps `${CLAUDE_PROJECT_DIR}` where it was" (worktree 경로는 훅 입력의 `cwd` 로 따로 준다).** 그래서 `settings.json` 훅이 사본에서 돌았고, frontmatter `SubagentStop` 을 `node "${CLAUDE_PROJECT_DIR}/.claude/hooks/…"` 로 바꿨다. **서브에이전트 frontmatter 훅에서도 본체를 가리키는지는 실측 전이다** |
+| 지금 버전이 worktree 를 만드는 방식 | **`post-checkout` 을 안 부른다.** reflog 가 `0000 → sha` 뒤에 `reset: moving to HEAD` 뿐이다 — 생성한 뒤 `git reset` 으로 파일을 채운다(`git reset` 은 훅이 없다). 8/25~9/11 에 `EnterWorktree`·`isolation` 으로 만든 사본은 트레이스가 남았으나 9/18 이후 것은 없다. **심기는 더 이상 믿을 수 없다** |
 | worktree 안에서 `import "<pkg>/..."` (node 상향 해석) | **된다.** 사본에 `node_modules` 가 없어도 부모의 것을 찾는다. **사본이 저장소 안에 중첩돼 있어야만 성립** |
 | 플러그인 훅(`SessionStart`·`PreToolUse`)이 worktree 안에서 도나 | **돈다.** `${CLAUDE_PLUGIN_ROOT}` 는 **프로젝트 밖 절대경로**라 cwd 와 무관하다 |
 | 플러그인의 `additionalContext` 주입이 worktree 안에서 실리나 | **실린다** |

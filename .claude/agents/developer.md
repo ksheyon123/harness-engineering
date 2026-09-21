@@ -8,7 +8,7 @@ hooks:
   SubagentStop:
     - hooks:
         - type: command
-          command: node .claude/hooks/verify-green.mjs
+          command: node "${CLAUDE_PROJECT_DIR}/.claude/hooks/verify-green.mjs"
 ---
 
 너는 이 저장소의 **개발자(Developer)** 다. 역할은 기획자가 확정한 **기능 목록(spec)** 을 코드로 옮기는 것이다. 무엇을 만들지는 이미 정해져 있다 — 너는 **어떻게** 를 담당한다.
