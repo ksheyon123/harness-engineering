@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -285,6 +285,63 @@ describe("verify-green — SubagentStop 게이트 훅", () => {
     },
     SLOW,
   );
+
+  describe("기본은 spawn 지점 이후의 변경분만 돈다", () => {
+    /** 받은 인자를 찍고 red 로 끝나는 게이트 — 무엇이 돌았는지 reason 으로 돌아온다. */
+    function echoingFixture(config) {
+      const dir = makeFixture();
+      writeFileSync(
+        join(dir, "probe.mjs"),
+        'console.error("ARGS=" + JSON.stringify(process.argv.slice(2)));\nprocess.exit(1);\n',
+      );
+      if (config) {
+        mkdirSync(join(dir, ".claude"), { recursive: true });
+        writeFileSync(join(dir, ".claude", "harness.config.json"), JSON.stringify(config));
+      }
+      git(dir, ["add", "-A"]);
+      git(dir, ["commit", "-qm", "seed"]);
+      return dir;
+    }
+
+    it(
+      "`{base}` 를 worktree 의 `HEAD` 로 바꿔 돌린다",
+      () => {
+        const dir = echoingFixture();
+        const head = git(dir, ["rev-parse", "HEAD"]).trim();
+
+        const { verdict } = runHook(dir);
+
+        expect(verdict.reason).toContain(`ARGS=["--changed","${head}"]`);
+      },
+      SLOW,
+    );
+
+    it(
+      "`changedGate: null` 이면 전체를 돈다",
+      () => {
+        const { verdict } = runHook(echoingFixture({ changedGate: null }));
+
+        expect(verdict.reason).toContain("ARGS=[]");
+      },
+      SLOW,
+    );
+
+    it(
+      "커밋이 없어 기준을 못 잡으면 전체를 돈다",
+      () => {
+        const dir = makeFixture();
+        writeFileSync(
+          join(dir, "probe.mjs"),
+          'console.error("ARGS=" + JSON.stringify(process.argv.slice(2)));\nprocess.exit(1);\n',
+        );
+
+        const { verdict } = runHook(dir);
+
+        expect(verdict.reason).toContain("ARGS=[]");
+      },
+      SLOW,
+    );
+  });
 
   it(
     "커밋하지 못하면 알리되 종료를 막지는 않는다",

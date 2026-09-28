@@ -141,7 +141,8 @@ core.hooksPath          `.githooks` 로 설정한다
 
 | 키 | 기본값 | 무엇 |
 |---|---|---|
-| `gate` | `"npm test"` | 종료 훅이 돌리는 명령. npm 이 아니면 이것만 바꾸면 된다 |
+| `gate` | `"npm test"` | 전체 게이트. `changedGate` 가 꺼져 있거나 기준 커밋을 못 잡으면 이것이 돈다. npm 이 아니면 이것만 바꾸면 된다 |
+| `changedGate` | `"npm test -- --changed {base}"` | **변경분 게이트 — 기본으로 도는 것.** 아래 절 참고 |
 | `source` | `["src/**"]` | 제품 코드. 역할이 고치고 세션은 못 고친다 |
 | `harnessFiles` | `.claude/**` · `.githooks/**` · `scripts/**` · `package.json` · `package-lock.json` · `vitest.config.mjs` | 고치면 하네스의 동작이 바뀌는 것 |
 | `specRoot` | `"harness"` | spec·QA 체크리스트가 사는 곳. 뒤에 `/` 를 붙이지 않는다 |
@@ -149,6 +150,45 @@ core.hooksPath          `.githooks` 로 설정한다
 | `specBaseBranches` | `[]` | "한 브랜치에 spec 은 하나" 판정의 base 후보로 추가할 브랜치. `protectedBranches` 와 별개라 여기 적어도 직접 커밋 금지는 안 켜진다 — 머지 안 된 부모 task 브랜치 위에 다음 task 를 쌓을 때 쓴다 |
 
 > **무엇을 검사하는가**는 `package.json` 의 `scripts.test` 가 정하고, **어떤 명령을 부르는가**는 `gate` 가 정한다. 출처가 둘로 느는 것이 아니라 각각 한 곳씩 갖는다.
+
+#### `changedGate` — 기본은 변경분만 테스트한다
+
+두 게이트 지점이 `gate` 대신 이것을 부른다. `{base}` 는 기준 커밋 sha 로 바뀌고, 러너가 그 뒤로 바뀐 파일에 **import 로 이어진** 테스트만 돌린다.
+
+| 지점 | `{base}` |
+|---|---|
+| developer 종료 훅 | spawn 지점(역할 worktree 의 `HEAD`) — 이번에 고친 것만 |
+| `harness gate` (push 전) | 보호 브랜치와의 merge-base — task 브랜치 전체, 여러 developer 를 합친 결과 포함 |
+
+기준을 못 잡으면(커밋 없음 · 보호 브랜치 없음 · 보호 브랜치 위에 서 있음) **전체(`gate`)로 떨어진다.**
+
+**러너별 작성법:**
+
+```jsonc
+// vitest (기본값 그대로 — 적을 필요 없다)
+{ "changedGate": "npm test -- --changed {base}" }
+
+// jest
+{ "changedGate": "npm test -- --changedSince={base}" }
+
+// 스크립트를 거치지 않고 직접
+{ "changedGate": "npx vitest run --changed {base}" }
+```
+
+**전체를 테스트하도록 바꾸려면 `null` 을 적는다:**
+
+```json
+{ "changedGate": null }
+```
+
+그러면 두 지점 다 `gate` 를 통째로 돈다. 이럴 때 끈다:
+
+- 테스트가 대상을 **import 하지 않고** 실행해서 결과만 보는 경우(CLI 를 자식 프로세스로 실행 · 서버를 띄워 HTTP 로 확인하는 E2E) — 러너가 관련성을 몰라 그 테스트를 건너뛴다. **이 하네스 원본이 이 경우라 끄고 있다**
+- 러너가 변경분 실행을 지원하지 않는 경우
+
+> **`gate` 를 바꾸고 `changedGate` 를 안 적으면 꺼진 것으로 읽는다.** 기본값은 `npm test` 뒤에 vitest 인자를 붙이는 모양이라, `pytest -q` 저장소에 그대로 쓰면 엉뚱한 명령이 돈다. 변경분을 쓰려면 그 러너의 명령을 `changedGate` 에 직접 적는다(예: `pytest --testmon`).
+
+> **설정 파일(`.env` · `tsconfig.json` 등)만 바꾼 변경은 아무 테스트도 안 돌 수 있다.** 그런 변경은 사람이 직접 전체 테스트로 확인한다.
 
 > **오타 난 설정은 조용히 기본값으로 돌아간다.** 훅에서 던지면 `PreToolUse` 가 죽어 차단이 아니라 **통과**가 되기 때문이다. `harness doctor` 로 확인해라.
 

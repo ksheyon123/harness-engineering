@@ -39,13 +39,15 @@
  *
  * ## 무엇을 돌리는가는 여기가 정하지 않는다
  *
- * `harness.config.json` 의 `gate` 다(기본값 `npm test`). 이 파일은 그 문자열을 셸에
- * 넘기고 종료 코드를 그대로 전달할 뿐이다 — **게이트 정의의 단일 출처는 그대로다.**
+ * `harness.config.json` 이다 — 기본은 `changedGate`(보호 브랜치와 갈라진 뒤의 변경분만),
+ * 꺼져 있으면 `gate`(전체). 고르는 규칙은 `.claude/hooks/gate-command.mjs`. 이 파일은 그
+ * 문자열을 셸에 넘기고 종료 코드를 그대로 전달할 뿐이다 — **게이트 정의의 단일 출처는 그대로다.**
  */
 
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
+import { branchBase, gateCommand } from "../.claude/hooks/gate-command.mjs";
 import { loadConfig } from "../.claude/hooks/harness-config.mjs";
 import { cleanEnv } from "../.claude/hooks/hook-kit.mjs";
 import { recordVerified } from "../.githooks/verified-marker.mjs";
@@ -59,7 +61,9 @@ import { recordVerified } from "../.githooks/verified-marker.mjs";
  * @returns {{gate: string, status: number, recorded: boolean}}
  */
 export function gate(tree, run = shell, record = recordVerified) {
-  const command = loadConfig(tree).gate;
+  // 기본은 변경분만 돈다 — 기준은 보호 브랜치와의 merge-base. 왜 그런지는 `gate-command.mjs`.
+  const config = loadConfig(tree);
+  const { command } = gateCommand(tree, { base: branchBase(tree, config.protectedBranches), config });
   const status = run(command, tree);
 
   // **여기가 전부다.** 0 이 아니면 — 실패든 신호로 죽었든(`null`) — 적지 않는다.

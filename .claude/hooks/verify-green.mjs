@@ -12,7 +12,8 @@
  * 커밋으로 굳힌다. worktree 는 커밋된 상태만 밖으로 보이고, 커밋할 수 있는 자리가
  * 여기밖에 없다.
  *
- * **돌릴 명령은 `harness.config.json` 의 `gate` 가 정한다**(기본값 `npm test`). 여기에
+ * **돌릴 명령은 `harness.config.json` 이 정한다** — 기본은 `changedGate`(spawn 지점 이후
+ * 변경분만), 꺼져 있으면 `gate`(전체). 고르는 규칙은 `gate-command.mjs`. 여기에
  * 명령을 적지 않는다 — 사본은 강제력을 더하지 않으면서 원본과 어긋나고, 낡은 사본은
  * 없는 것보다 나쁘다(세션이 틀린 검사를 돌리고 통과했다고 확신한다).
  *
@@ -21,6 +22,7 @@
  */
 
 import { execSync } from "node:child_process";
+import { gateCommand, spawnBase } from "./gate-command.mjs";
 import { loadConfig } from "./harness-config.mjs";
 import { cleanEnv, emit, handoff, readHookInput, retryBudget } from "./hook-kit.mjs";
 
@@ -39,11 +41,13 @@ const budget = retryBudget("verify-green", { env, input, max: MAX_ATTEMPTS });
 
 // 이 훅은 역할의 worktree 를 cwd 로 돈다. `loadConfig` 가 본체 값으로 튕겨내므로
 // 그 worktree 에 harness.config.json 이 심기지 않았어도 올바른 게이트 명령을 받는다.
-const { gate } = loadConfig(process.cwd());
+// 기본은 변경분만 돈다 — 기준은 spawn 지점. 왜 그런지는 `gate-command.mjs`.
+const tree = process.cwd();
+const { command } = gateCommand(tree, { base: spawnBase(tree), config: loadConfig(tree) });
 
 let failure = null;
 try {
-  execSync(gate, { env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  execSync(command, { env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 } catch (error) {
   failure = `${error.stdout ?? ""}${error.stderr ?? ""}`.trim() || String(error);
 }

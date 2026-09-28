@@ -38,9 +38,9 @@
  * 기본값은 **이 저장소의 현재 동작 그대로**다. 그래서 설정 파일이 없어도 아무것도
  * 바뀌지 않고, 설치 직후의 프로젝트도 일단 돈다.
  *
- * **이 저장소는 `harness.config.json` 을 두지 않는다.** 기본값과 같은 내용을 파일로 또
- * 적으면 사본이 둘이 되고, 사본은 반드시 어긋난다. 여기서는 기본값이 곧 설정이고,
- * 파일은 값이 달라지는 프로젝트를 위한 것이다.
+ * **달라지는 값만 적는다.** 기본값과 같은 내용을 파일로 또 적으면 사본이 둘이 되고,
+ * 사본은 반드시 어긋난다. 이 저장소가 적는 것은 `changedGate: null` 하나다 — 테스트가
+ * 훅을 import 하지 않고 자식 프로세스로 부르므로 변경분 추론이 관련 테스트를 놓친다.
  *
  * **대가가 있다: 오타 난 설정은 조용히 기본값으로 돌아간다.** 남의 저장소에서는 기본값이
  * 틀린 값이므로 엉뚱한 경로를 지키게 된다. 검증(`doctor`)은 아직 없다 — G 에 적혀 있다.
@@ -106,8 +106,19 @@ export function findConfig(baseDir) {
  * 두면 그 시도가 그 자리에서 터진다. 내보내는 값은 아래에서 **사본**으로 만든다.
  */
 export const DEFAULTS = Object.freeze({
-  /** 게이트. `verify-green` 이 이것을 돌린다. */
+  /** 전체 게이트. `changedGate` 가 꺼져 있거나 기준 커밋을 못 잡으면 이것을 돈다. */
   gate: "npm test",
+  /**
+   * **변경분에 관련된 테스트만** 돌리는 게이트. 두 게이트 지점(종료 훅 · `harness gate`)이
+   * `gate` 대신 이것을 부른다. `{base}` 는 부르는 자리가 정한 기준 커밋으로 바뀐다 —
+   * 어느 커밋인지와 기준을 못 잡을 때 어떻게 되는지는 `gate-command.mjs`.
+   *
+   * `null` 이면 끈다 — 두 지점 다 `gate` 를 통째로 돈다. 기본값은 `npm test` 에 vitest 의
+   * `--changed` 를 넘기는 모양이라, **`gate` 를 바꾼 설정은 이 키를 안 적으면 `null` 로
+   * 읽는다**(`loadConfig`). pytest 저장소에 `-- --changed` 가 붙어 게이트가 죽는 것보다
+   * 전체를 도는 편이 낫다.
+   */
+  changedGate: "npm test -- --changed {base}",
   /** 제품 코드. 역할이 고치고, 세션은 못 고친다. */
   source: Object.freeze(["src/**"]),
   /** 고치면 하네스의 동작이 바뀌는 것. 산문은 여기 들지 않는다. */
@@ -150,6 +161,7 @@ export const DEFAULTS = Object.freeze({
 function defaults() {
   return {
     gate: DEFAULTS.gate,
+    changedGate: DEFAULTS.changedGate,
     source: [...DEFAULTS.source],
     harnessFiles: [...DEFAULTS.harnessFiles],
     specRoot: DEFAULTS.specRoot,
@@ -184,6 +196,7 @@ export function loadConfig(baseDir) {
 
   return {
     gate: string(raw.gate) ?? fallback.gate,
+    changedGate: changedGate(raw),
     source: stringList(raw.source) ?? fallback.source,
     harnessFiles: stringList(raw.harnessFiles) ?? fallback.harnessFiles,
     specRoot: specRoot(raw.specRoot) ?? fallback.specRoot,
@@ -208,6 +221,22 @@ function notify(value, fallback) {
     : fallback.events;
 
   return { urlEnv: string(value.urlEnv) ?? fallback.urlEnv, events };
+}
+
+/**
+ * 변경분 게이트. **`null` 을 버리지 않는다** — 다른 키와 반대로, 여기서 `null` 은 오타가
+ * 아니라 "전체를 돌려라" 라는 정당한 의도다(`notify.events: []` 와 같은 이유).
+ *
+ * 키가 없을 때 기본값을 쓰는 것은 **`gate` 도 기본값일 때뿐이다.** 기본값은 `npm test`
+ * 뒤에 인자를 붙이는 모양이라, `gate` 를 `pytest -q` 로 바꾼 저장소에 그대로 쓰면 전혀
+ * 다른 명령이 돈다.
+ */
+function changedGate(raw) {
+  if (raw.changedGate === null) return null;
+  const explicit = string(raw.changedGate);
+  if (explicit) return explicit;
+  const gate = string(raw.gate);
+  return gate && gate !== DEFAULTS.gate ? null : DEFAULTS.changedGate;
 }
 
 function string(value) {

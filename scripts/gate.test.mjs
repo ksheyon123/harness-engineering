@@ -129,6 +129,64 @@ describe("harness gate — 통과했을 때만 기록한다", () => {
       expect(run.calls[0].command).toBe("pytest -q");
     });
 
+    describe("기본은 보호 브랜치와 갈라진 뒤의 변경분만 돈다", () => {
+      /** `main` 에서 task 브랜치를 잘라 커밋 하나를 얹는다. 기준은 `main` 의 sha 다. */
+      function onTaskBranch(config) {
+        const r = repo(config);
+        const base = r.head();
+        r.git(["checkout", "-q", "-b", "feat/x"]);
+        writeFileSync(join(r.dir, "b.txt"), "b\n");
+        r.git(["add", "-A"]);
+        r.git(["commit", "-q", "--no-verify", "-m", "work"]);
+        return { ...r, base };
+      }
+
+      it("`{base}` 를 merge-base 로 바꿔 돌린다", () => {
+        const run = runner(0);
+        const { dir, base } = onTaskBranch();
+
+        gate(dir, run);
+
+        expect(run.calls[0].command).toBe(`npm test -- --changed ${base}`);
+      });
+
+      it("통과하면 여전히 `HEAD` 를 기록한다", () => {
+        const { dir, head } = onTaskBranch();
+
+        gate(dir, runner(0));
+
+        expect(marks(dir)).toEqual([head()]);
+      });
+
+      it("`changedGate: null` 이면 전체를 돈다", () => {
+        const run = runner(0);
+        const { dir } = onTaskBranch({ changedGate: null });
+
+        gate(dir, run);
+
+        expect(run.calls[0].command).toBe("npm test");
+      });
+
+      it("보호 브랜치 위에 서 있으면 기준이 없어 전체를 돈다", () => {
+        // merge-base 가 `HEAD` 자신이라 '바뀐 것' 이 없다. 변경분 명령을 돌리면 아무것도
+        // 안 돌고 green 이 기록된다 — 검사 없는 통과다.
+        const run = runner(0);
+
+        gate(repo().dir, run);
+
+        expect(run.calls[0].command).toBe("npm test");
+      });
+
+      it("보호 브랜치가 하나도 없으면 전체를 돈다", () => {
+        const run = runner(0);
+        const { dir } = onTaskBranch({ protectedBranches: ["trunk"] });
+
+        gate(dir, run);
+
+        expect(run.calls[0].command).toBe("npm test");
+      });
+    });
+
     it("게이트를 그 트리에서 돌린다 — 사본에서 부르면 사본이 검사된다", () => {
       const run = runner(0);
       const { dir } = repo();

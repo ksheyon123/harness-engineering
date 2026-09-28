@@ -51,6 +51,7 @@ describe("harness-config — 프로젝트마다 달라지는 값의 단일 출�
 
     expect(config).toEqual({
       gate: "pytest -q",
+      changedGate: null,
       source: ["app/**", "lib/**"],
       harnessFiles: [".claude/**"],
       specRoot: "docs/specs",
@@ -66,6 +67,36 @@ describe("harness-config — 프로젝트마다 달라지는 값의 단일 출�
 
     expect(config.specBaseBranches).toEqual(["refactore/shk/component-split"]);
     expect(config.protectedBranches).toEqual(DEFAULTS.protectedBranches);
+  });
+
+  describe("changedGate — 기본은 변경분만", () => {
+    it("설정이 없으면 켜져 있다", () => {
+      expect(loadConfig(tree(null)).changedGate).toBe("npm test -- --changed {base}");
+    });
+
+    it("`null` 을 적으면 끈다 — 오타가 아니라 '전체를 돌려라' 는 의도다", () => {
+      expect(loadConfig(tree({ changedGate: null })).changedGate).toBeNull();
+    });
+
+    it("적은 명령을 그대로 쓴다", () => {
+      const config = loadConfig(tree({ changedGate: "npx jest --changedSince={base}" }));
+
+      expect(config.changedGate).toBe("npx jest --changedSince={base}");
+    });
+
+    it("`gate` 를 바꾸고 이 키를 안 적으면 끈다 — 기본값은 `npm test` 전용 모양이다", () => {
+      expect(loadConfig(tree({ gate: "pytest -q" })).changedGate).toBeNull();
+    });
+
+    it("`gate` 를 기본값 그대로 적었으면 켜진 채다", () => {
+      expect(loadConfig(tree({ gate: "npm test" })).changedGate).toBe(DEFAULTS.changedGate);
+    });
+
+    it("`gate` 를 바꿨어도 이 키를 적었으면 그것을 쓴다", () => {
+      const config = loadConfig(tree({ gate: "pytest -q", changedGate: "pytest --lf" }));
+
+      expect(config.changedGate).toBe("pytest --lf");
+    });
   });
 
   describe("notify — URL 은 여기 없다", () => {
