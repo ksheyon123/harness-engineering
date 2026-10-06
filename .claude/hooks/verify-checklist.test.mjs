@@ -243,6 +243,63 @@ spec: harness/thing/spec.md
     expect(git(dir, ["ls-files"])).toContain("harness/thing/qa-checklist.md");
   });
 
+  describe("인계 커밋의 제목은 qa 의 COMMIT 줄이다", () => {
+    const SUMMARY = "docs(qa): useNoteActions 인수기준 커버리지를 정리한다";
+    const FALLBACK = "chore(qa): 산출물을 인계 커밋으로 남긴다";
+
+    function passing() {
+      const dir = makeRepo();
+      write(dir, "harness/thing/qa-checklist.md", checklist([COVERED]));
+      return dir;
+    }
+
+    it("last_assistant_message 의 COMMIT 줄을 제목으로 쓴다", () => {
+      const dir = passing();
+
+      const { stdout } = runHook(dir, {
+        input: { last_assistant_message: `COMMIT: ${SUMMARY}\n\n1. 쓴 파일 …` },
+      });
+
+      expect(git(dir, ["log", "-1", "--format=%s"]).trim()).toBe(SUMMARY);
+      expect(stdout.trim()).toBe("");
+    });
+
+    it("형식이 틀리면 고정 제목으로 떨어지고, 판정은 바뀌지 않는다", () => {
+      const dir = passing();
+
+      const { stdout } = runHook(dir, {
+        input: { last_assistant_message: "체크리스트를 썼다. COMMIT 줄은 잊었다." },
+      });
+
+      expect(git(dir, ["log", "-1", "--format=%s"]).trim()).toBe(FALLBACK);
+      expect(stdout.trim()).toBe("");
+    });
+
+    it("agent_transcript_path 에서도 읽는다", () => {
+      const dir = passing();
+      const transcript = join(dir, ".git", "agent.jsonl"); // 추적되지 않는 자리
+      writeFileSync(
+        transcript,
+        `${JSON.stringify({
+          type: "assistant",
+          message: { role: "assistant", content: [{ type: "text", text: `COMMIT: ${SUMMARY}` }] },
+        })}\n`,
+      );
+
+      runHook(dir, { input: { agent_transcript_path: transcript } });
+
+      expect(git(dir, ["log", "-1", "--format=%s"]).trim()).toBe(SUMMARY);
+    });
+
+    it("본문 끝에 역할 줄을 남긴다", () => {
+      const dir = passing();
+
+      runHook(dir, { input: { last_assistant_message: `COMMIT: ${SUMMARY}` } });
+
+      expect(git(dir, ["log", "-1", "--format=%b"]).trim()).toMatch(/역할: qa$/);
+    });
+  });
+
   it("표가 없어 상한이 소진되면 인계할 산출물이 없음을 함께 알린다", () => {
     const dir = makeRepo();
     runHook(dir);

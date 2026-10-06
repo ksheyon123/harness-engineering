@@ -126,7 +126,7 @@ core.hooksPath          `.githooks` 로 설정한다
 2. **층 1 이 도구를 막나** — `"src 아래 아무 파일이나 한 줄 고쳐봐."` → 거부되고 `harness spawn` 안내가 떠야 한다
 3. **`spawn` 이 다른 프로세스를 띄우나** — `harness spawn "..."` → 새 탭에서 `"너는 누구지?"` 에 **작업 세션**이라고 답해야 한다
 4. **서브에이전트가 격리되나** — `developer` 스폰 후 `git worktree list` → `agent-<hex>` 가 하나 늘어야 한다
-5. **종료 훅이 인계 커밋을 찍나** — `git branch --list 'worktree-agent-*' --contains <spec 커밋 sha>` → `chore(developer): …` 이 보여야 한다. 브랜치가 base 그대로면 `smoke` 의 **신뢰** 판정부터 봐라 — 저장소가 신뢰 목록에 없으면 훅은 실패하는 게 아니라 **등록조차 되지 않는다**
+5. **종료 훅이 인계 커밋을 찍나** — `git branch --list 'worktree-agent-*' --contains <spec 커밋 sha>` → 본문 끝에 `역할: developer` 가 있는 커밋이 보여야 한다(제목은 developer 보고 첫 줄의 `COMMIT:` 요약, 못 남겼으면 `chore(developer): …`). 브랜치가 base 그대로면 `smoke` 의 **신뢰** 판정부터 봐라 — 저장소가 신뢰 목록에 없으면 훅은 실패하는 게 아니라 **등록조차 되지 않는다**
 6. **층 2 가 검증 안 된 push 를 막나** — 게이트를 안 돌린 채 `git push` → 거부돼야 한다
 
 1번이 안 되면 훅이 아예 안 붙은 것이다. **세션을 새로 열었는지부터 확인해라.**

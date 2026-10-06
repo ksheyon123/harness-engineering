@@ -83,7 +83,8 @@ export const PROBES = [
     name: "종료 훅이 게이트를 걸고 인계 커밋을 찍는가",
     command: `git branch --list 'worktree-agent-*' --contains <내 spec 커밋 sha>\ngit show <나온 브랜치>`,
     expect:
-      "`chore(developer): 산출물을 인계 커밋으로 남긴다` 가 보인다. 브랜치가 base 그대로면 " +
+      "developer 의 보고 첫 줄(`COMMIT: …`)이 제목인 커밋이 보이고, 본문 끝에 `역할: developer` 가 있다 " +
+      "(그 줄을 못 남겼으면 제목이 `chore(developer): 산출물을 인계 커밋으로 남긴다`). 브랜치가 base 그대로면 " +
       "SubagentStop 이 안 돈 것이고, **회수할 것이 없다.** 그때는 위의 `신뢰` 판정부터 봐라 — " +
       "저장소가 신뢰 목록에 없으면 훅은 **실패하는 게 아니라 등록조차 되지 않는다.**",
   },

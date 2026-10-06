@@ -171,7 +171,7 @@ if (problems.length === 0) {
   budget.reset();
   // 검사를 통과한 체크리스트를 그 자리에서 커밋으로 굳힌다. qa 에도 Bash 가 없어
   // 이 지점을 놓치면 표가 worktree 와 함께 사라진다.
-  const { notice } = handoff(ROLE, { env });
+  const { notice } = handoff(ROLE, { env, input });
   emit(notice ? { systemMessage: notice } : null);
 }
 
@@ -180,7 +180,7 @@ const { count, exhausted } = budget.record();
 if (exhausted) {
   // 표가 없어도 커밋은 시도한다. qa 가 다른 무언가는 남겼을 수 있고, 없으면 handoff 가
   // '인계할 산출물이 없다' 를 돌려준다 — 확인해야 할 사실은 그쪽도 마찬가지다.
-  const { notice } = handoff(ROLE, { env });
+  const { notice } = handoff(ROLE, { env, input });
 
   // spec 이 없어 대조할 것이 없는 경우가 있다. 그때 여기서 갇히면 안 된다.
   emit({

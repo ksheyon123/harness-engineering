@@ -123,8 +123,12 @@ export function retryBudget(name, { env, input, max }) {
  * **판정을 뒤집지 않는다.** 커밋이 실패해도 종료를 막지 않는다 — 역할에는 git 을 고칠
  * 수단이 없어서 되돌려 봐야 같은 자리에서 다시 실패한다. 대신 `notice` 로 알린다.
  * 조용히 실패하면 산출물이 worktree 와 함께 사라지고 아무도 모른다.
+ *
+ * **제목은 역할이 쓴다.** 역할의 최종 보고 첫 줄 `COMMIT: type(scope): 요약` 을 훅 입력에서
+ * 읽어 그대로 옮긴다(`commitSubject`). 회수가 `--ff-only` 라 머지 커밋이 안 생기므로, 이
+ * 제목이 히스토리에 남는 유일한 요약이다 — 고정 문자열이면 로그가 전부 같은 줄이 된다.
  */
-export function handoff(role, { env }) {
+export function handoff(role, { env, input = {} }) {
   const run = (args) =>
     execFileSync("git", args, { env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 
@@ -148,7 +152,7 @@ export function handoff(role, { env }) {
   }
 
   try {
-    run(["commit", "-m", `chore(${role}): 산출물을 인계 커밋으로 남긴다`, "-m", HANDOFF_BODY]);
+    run(["commit", "-m", commitSubject(role, input), "-m", `${HANDOFF_BODY}\n\n역할: ${role}`]);
   } catch (error) {
     return failedHandoff(role, error);
   }
@@ -167,7 +171,81 @@ const HANDOFF_BODY =
   "종료 훅이 자동으로 만든 커밋이다. 역할에는 Bash 가 없고 작업 세션은 worktree 격리 밖을\n" +
   "겨냥할 수 없어, 산출물을 커밋할 수 있는 자리가 종료 훅뿐이다.\n" +
   "\n" +
-  "무엇을 왜 바꿨는지는 오케스트레이터의 머지 커밋에 적힌다.";
+  "제목은 역할의 최종 보고 첫 줄(COMMIT:)에서 왔다. 그 줄이 없거나 형식이 틀리면\n" +
+  "고정 제목으로 떨어진다 — 무엇이 바뀌었는지는 이 커밋의 diff 가 답한다.";
+
+/** 역할이 요약을 못 남겼을 때의 제목. 메시지 때문에 인계가 실패하면 산출물이 사라진다. */
+const FALLBACK_SUBJECT = (role) => `chore(${role}): 산출물을 인계 커밋으로 남긴다`;
+
+/** 제목 상한. 넘으면 `git log --oneline` 에서 잘리고, 대개 요약이 아니라 보고문이다. */
+const MAX_SUBJECT = 100;
+
+const CONVENTIONAL =
+  /^(feat|fix|refactor|docs|test|chore|perf|style|build|ci|revert)(\([^()\s]+\))?!?: \S/;
+
+/**
+ * 인계 커밋의 제목. 역할의 마지막 응답에서 `COMMIT:` 줄을 찾고, 없거나 형식이 틀리면
+ * 고정 제목으로 떨어진다. **폴백은 판정도 notice 도 바꾸지 않는다** — 요약이 없다는 것은
+ * 산출물이 없다는 것과 다르고, 이걸로 경고를 내면 green 인 종료마다 소음이 붙는다.
+ */
+export function commitSubject(role, input = {}) {
+  const text = lastAssistantText(input);
+  const line = text
+    ?.split(/\r?\n/)
+    .map((l) => stripTicks(l.trim()))
+    .find((l) => /^COMMIT:/.test(l));
+  if (!line) return FALLBACK_SUBJECT(role);
+
+  const subject = stripTicks(line.slice("COMMIT:".length).trim());
+  if (subject.length > MAX_SUBJECT || !CONVENTIONAL.test(subject)) return FALLBACK_SUBJECT(role);
+  return subject;
+}
+
+/** 앞뒤 백틱만 벗긴다 — 마크다운으로 감싼 `COMMIT: …` 도 같은 줄이다. */
+function stripTicks(s) {
+  return s.replace(/^`+|`+$/g, "").trim();
+}
+
+/**
+ * 역할의 마지막 응답 텍스트. `SubagentStop` 입력의 `last_assistant_message` 가 우선이고,
+ * 없으면 `agent_transcript_path`(JSONL)를 뒤에서부터 훑어 텍스트가 있는 마지막 assistant
+ * 엔트리를 쓴다. 어느 쪽도 못 읽으면 `null` — 제목이 폴백으로 갈 뿐 인계는 계속된다.
+ */
+function lastAssistantText(input) {
+  if (typeof input.last_assistant_message === "string" && input.last_assistant_message.trim()) {
+    return input.last_assistant_message;
+  }
+  if (typeof input.agent_transcript_path !== "string") return null;
+
+  let lines;
+  try {
+    lines = readFileSync(input.agent_transcript_path, "utf8").split(/\r?\n/);
+  } catch {
+    return null;
+  }
+
+  for (let i = lines.length - 1; i >= 0; i--) {
+    let entry;
+    try {
+      entry = JSON.parse(lines[i]);
+    } catch {
+      continue; // 빈 줄이거나 쓰는 도중 잘린 줄
+    }
+    // 실측 모양은 `{type:"assistant", message:{content}}` 이고, 문서는 평평한
+    // `{role:"assistant", content}` 를 보인다. 어느 쪽이든 읽는다.
+    const message = entry?.message ?? entry;
+    if (entry?.type !== "assistant" && message?.role !== "assistant") continue;
+    const content = message?.content;
+    const text =
+      typeof content === "string"
+        ? content
+        : Array.isArray(content)
+          ? content.filter((b) => b?.type === "text").map((b) => b.text).join("\n")
+          : "";
+    if (text.trim()) return text;
+  }
+  return null;
+}
 
 function failedHandoff(role, error) {
   const detail = `${error.stdout ?? ""}${error.stderr ?? ""}`.trim() || String(error);

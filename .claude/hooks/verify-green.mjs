@@ -56,7 +56,7 @@ if (failure === null) {
   budget.reset();
   // green 인 트리를 그대로 커밋으로 굳힌다. 통과 판정과 인계가 같은 지점에서 일어나야
   // 오케스트레이터가 머지하는 것이 게이트가 본 것과 같은 트리가 된다.
-  const { notice } = handoff(ROLE, { env });
+  const { notice } = handoff(ROLE, { env, input });
   emit(notice ? { systemMessage: notice } : null); // green — 종료를 허용한다.
 }
 
@@ -65,7 +65,7 @@ const { count, exhausted, lastChance } = budget.record();
 if (exhausted) {
   // red 여도 커밋은 한다. 안 하면 산출물이 worktree 와 함께 사라져 오케스트레이터가
   // 무엇이 실패했는지조차 볼 수 없다 — 머지할지는 그쪽이 판단할 몫이다.
-  const { notice } = handoff(ROLE, { env });
+  const { notice } = handoff(ROLE, { env, input });
 
   // 차단을 푼다. 조용히 통과시키지는 않는다 — 오케스트레이터가 red 를 알아야 한다.
   emit({

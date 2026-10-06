@@ -1,7 +1,7 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -236,6 +236,113 @@ describe("verify-green — SubagentStop 게이트 훅", () => {
     },
     SLOW,
   );
+
+  describe("인계 커밋의 제목은 역할의 COMMIT 줄이다", () => {
+    const SUMMARY = "refactor(folders): 노트 액션을 useNoteActions 훅으로 분리한다";
+
+    function subjectOf(dir) {
+      return git(dir, ["log", "-1", "--format=%s"]).trim();
+    }
+
+    it(
+      "last_assistant_message 의 COMMIT 줄을 제목으로 쓴다",
+      () => {
+        const dir = makeFixture({ exitCode: 0 });
+
+        const { stdout } = runHook(dir, {
+          input: { last_assistant_message: `COMMIT: \`${SUMMARY}\`\n\n1. 구현한 기능 …` },
+        });
+
+        // --ff-only 회수라 머지 커밋이 없다 — 이 제목이 히스토리에 남는 유일한 요약이다.
+        expect(subjectOf(dir)).toBe(SUMMARY);
+        expect(stdout.trim()).toBe("");
+      },
+      SLOW,
+    );
+
+    it(
+      "형식이 틀리면 고정 제목으로 떨어지고, 판정은 바뀌지 않는다",
+      () => {
+        const dir = makeFixture({ exitCode: 0 });
+
+        const { stdout } = runHook(dir, {
+          input: { last_assistant_message: "COMMIT: 노트 액션을 분리했다" },
+        });
+
+        // 메시지 때문에 인계가 실패하면 산출물이 사라진다. 폴백은 소음도 내지 않는다.
+        expect(subjectOf(dir)).toBe("chore(developer): 산출물을 인계 커밋으로 남긴다");
+        expect(stdout.trim()).toBe("");
+      },
+      SLOW,
+    );
+
+    it(
+      "너무 긴 제목은 요약이 아니다 — 고정 제목으로 떨어진다",
+      () => {
+        const dir = makeFixture({ exitCode: 0 });
+
+        runHook(dir, {
+          input: { last_assistant_message: `COMMIT: feat(x): ${"가".repeat(120)}` },
+        });
+
+        expect(subjectOf(dir)).toBe("chore(developer): 산출물을 인계 커밋으로 남긴다");
+      },
+      SLOW,
+    );
+
+    it(
+      "last_assistant_message 가 없으면 agent_transcript_path 의 마지막 assistant 응답을 읽는다",
+      () => {
+        const dir = makeFixture({ exitCode: 0 });
+        const transcript = join(mkdtempSync(join(tmpdir(), "verify-green-tx-")), "agent.jsonl");
+        fixtures.push(dirname(transcript));
+        const entry = (role, text) =>
+          JSON.stringify({ type: role, message: { role, content: [{ type: "text", text }] } });
+        writeFileSync(
+          transcript,
+          [
+            entry("assistant", "COMMIT: chore(old): 중간 보고라 쓰이면 안 된다"),
+            entry("user", "계속"),
+            entry("assistant", `COMMIT: ${SUMMARY}\n본문`),
+            "",
+          ].join("\n"),
+        );
+
+        runHook(dir, { input: { agent_transcript_path: transcript } });
+
+        expect(subjectOf(dir)).toBe(SUMMARY);
+      },
+      SLOW,
+    );
+
+    it(
+      "본문 끝에 역할 줄을 남긴다",
+      () => {
+        const dir = makeFixture({ exitCode: 0 });
+
+        runHook(dir, { input: { last_assistant_message: `COMMIT: ${SUMMARY}` } });
+
+        // 제목의 scope 는 바뀐 영역이라 역할이 안 보인다. 출처는 본문이 말한다.
+        expect(git(dir, ["log", "-1", "--format=%b"]).trim()).toMatch(/역할: developer$/);
+      },
+      SLOW,
+    );
+
+    it(
+      "상한이 소진된 red 인계에도 COMMIT 줄을 쓴다",
+      () => {
+        const dir = makeFixture({ exitCode: 1 });
+        const input = { last_assistant_message: `COMMIT: ${SUMMARY}` };
+        runHook(dir, { input });
+        runHook(dir, { input });
+
+        runHook(dir, { input });
+
+        expect(subjectOf(dir)).toBe(SUMMARY);
+      },
+      SLOW,
+    );
+  });
 
   it(
     "인계 커밋은 부분 스테이징을 하지 않는다",
