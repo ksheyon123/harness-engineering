@@ -93,12 +93,17 @@ spec 의 **모든 기능**에 대해:
 **첫 줄은 커밋 제목이다** — `COMMIT: type(scope): 요약`. 종료 훅이 이 줄을 읽어 인계 커밋의 제목으로 쓴다. 회수가 fast-forward 라 머지 커밋이 생기지 않으므로, **히스토리에 남는 요약은 이 한 줄뿐이다.**
 
 - `type` 은 conventional commits(`feat` · `fix` · `refactor` · `test` · `docs` · `chore` …), 전체 100자 이내 한 줄.
-- `scope` 는 **바뀐 영역**이다. 역할 이름(`developer`)을 쓰지 마라 — 출처는 훅이 본문에 `역할:` 줄로 따로 남긴다.
+- `scope` 는 **바뀐 컴포넌트·모듈의 이름**이다 — 경로에서 그 단위를 가리키는 마디를 쓴다(`src/components/sidebar/…` → `sidebar`, `src/lib/…` → `lib`). 소문자 한 단어, 괄호 안에 공백 없이.
+- **여러 곳을 고쳤으면 주목적이 걸린 하나만 쓴다.** 나머지는 그 목적을 위해 따라 바뀐 것이다 — 이 변경이 *무엇을 위해* 일어났는지 답하는 곳이 scope 다. 쉼표로 나열하지 않는다.
+- 쓰지 않는 것: 역할 이름(`developer` — 출처는 훅이 본문에 `역할:` 줄로 남긴다), 경로를 통째로(`src/components/sidebar`), 아무것도 가리키지 않는 말(`app` · `src` · `code` · `all`).
 - 줄이 없거나 형식이 틀리면 훅은 고정 제목으로 떨어진다. 인계는 그대로 되지만 로그가 아무것도 말하지 않는다.
 
 ```
-✗ chore(developer): 산출물을 인계 커밋으로 남긴다
-✓ refactor(folders): 노트 액션을 FoldersProvider 에서 useNoteActions 훅으로 분리한다
+✗ chore(developer): 산출물을 인계 커밋으로 남긴다          ← 역할 이름
+✗ feat(src/components/sidebar): 접기 버튼을 추가한다        ← 경로를 통째로
+✗ feat(sidebar,lib,header): 접기 상태를 저장한다            ← 나열
+✓ feat(sidebar): 접힘 상태를 새로고침 뒤에도 유지한다        ← lib·header 도 바뀌었지만 목적은 sidebar
+✓ refactor(lib): 날짜 포맷 유틸을 하나로 합친다
 ```
 
 그 아래에 다음을 담는다:
