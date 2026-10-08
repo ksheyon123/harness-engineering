@@ -18,7 +18,7 @@
 import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-import { managedPaths } from "../install/managed.mjs";
+import { agentPaths, managedPaths } from "../install/managed.mjs";
 
 /**
  * 사본에 있어야 하는 것.
@@ -32,6 +32,7 @@ import { managedPaths } from "../install/managed.mjs";
  *
  * | 더하는 것 | 없으면 |
  * |---|---|
+ * | `.claude/agents/*.md` | A 소유라 `managedPaths()` 에 없다(`agentPaths()`). Claude Code 는 본체의 것을 읽지만, 사본 안에서 세션이 다시 열리면 거기 것을 본다 |
  * | `.claude/settings.json` | **층 1 과 `SessionStart` 가 통째로 죽는다.** 사본에서는 여기가 유일한 출처다 |
  * | `.claude/CLAUDE.md` | `@harness.md` 가 안 펼쳐진다 — 조상의 `CLAUDE.md` 는 로드돼도 **그 임포트는 안 펼쳐진다**(실측) |
  * | `harness.config.json` | 게이트 명령·spec 위치가 기본값으로 조용히 되돌아간다 |
@@ -49,6 +50,7 @@ import { managedPaths } from "../install/managed.mjs";
 export function plantList() {
   return [
     ...managedPaths(),
+    ...agentPaths(),
     ".claude/settings.json",
     ".claude/CLAUDE.md",
     ".claude/harness.config.json",

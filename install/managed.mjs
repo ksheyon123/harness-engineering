@@ -3,7 +3,7 @@
  *
  * ## 왜 기록부가 필요한가
  *
- * 문서(`harness.md` · `planner-mode.md` · `agents/*.md`)는 A 에 **복사**된다. 회피가
+ * 문서(`harness.md` · `planner-mode.md` · `roles/*.md`)는 A 에 **복사**된다. 회피가
  * 아니라 유일한 수단이었다 — `@` 임포트는 worktree 안에서 `node_modules` 를 못 타고,
  * 에이전트 정의는 `.claude/agents/` 에 실체로 있어야 Claude Code 가 읽는다(둘 다 실측).
  *
@@ -19,11 +19,30 @@
  * | 기록된 해시와 같다 | A 가 손댄 적 없다 — **안전하게 갱신한다** |
  * | 둘 다 아니다 | **A 가 손댔다** — 덮지 말고 알린다 |
  *
- * 세 번째가 요점이다. `developer.md` 를 자기 스택에 맞게 고치는 것은 정당한 일이고,
- * `sync` 가 그걸 조용히 날리면 아무도 모른다.
+ * 세 번째가 요점이다. 하네스 파일을 고치는 것은 A 의 정당한 결정일 수 있고, `sync` 가
+ * 그걸 조용히 날리면 아무도 모른다.
+ *
+ * ## 고치라고 만든 자리는 따로 있다 — 에이전트 정의
+ *
+ * 역할을 자기 스택에 맞추는 것은 **예외가 아니라 일상**이다. 그런데 그것이 하네스 소유
+ * 파일 안에서 일어나면 위 세 번째 줄에 영원히 걸려, A 는 약속(게이트 · 인계 · 보고 형식)
+ * 쪽 갱신까지 못 받는다. 그래서 갈랐다:
+ *
+ * | 파일 | 소유 | `sync` |
+ * |---|---|---|
+ * | `.claude/roles/<역할>.md` — 훅과 맞물린 지침 | 하네스 | 맞춘다 |
+ * | `.claude/agents/<역할>.md` — frontmatter + 프로젝트 사정 | **A** | 없을 때만 만든다 |
+ *
+ * 역할 지침은 `SubagentStart` 훅(`role-context.mjs`)이 스폰 때 싣는다.
  */
 
 import { createHash } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+/** 패키지 루트. 이 파일은 `<pkg>/install/` 에 있다. */
+const PKG = fileURLToPath(new URL("..", import.meta.url));
 
 /**
  * 기록부. 어느 버전이 깔려 있는지를 여기서만 알 수 있다.
@@ -44,6 +63,7 @@ export const HOOK_SHIMS = [
   "verify-green.mjs",
   "verify-checklist.mjs",
   "notify-waiting.mjs",
+  "role-context.mjs",
 ];
 
 /** `.githooks/` 쪽 shim. 셸 진입점이 `$(dirname "$0")/<이름>.mjs` 를 부른다. */
@@ -66,8 +86,9 @@ export const VERBATIM = [
   // 지금 붙여도 A 가 깨지지 않는다: `$1`(old-ref)이 전부 0 인 호출에만 반응하므로
   // 평범한 `git checkout` 은 아무것도 하지 않는다.
   { from: ".githooks/post-checkout", to: ".githooks/post-checkout", exec: true },
-  { from: ".claude/agents/developer.md", to: ".claude/agents/developer.md" },
-  { from: ".claude/agents/qa.md", to: ".claude/agents/qa.md" },
+  // 역할 지침. 에이전트 정의(A 소유)에서 갈라낸 **하네스 몫**이다 — 아래 `AGENT_TEMPLATES` 참고.
+  { from: ".claude/roles/developer.md", to: ".claude/roles/developer.md" },
+  { from: ".claude/roles/qa.md", to: ".claude/roles/qa.md" },
   { from: ".claude/planner-mode.md", to: ".claude/planner-mode.md" },
   // 작업 세션이 시작할 때 물고 들어가는 문서(`session-role` 이 붙인다). **디렉터리가 곧
   // 스위치라** A 가 지우면 안 물고 바꾸면 그대로 돈다 — 기록부가 'A 가 손댔다' 를 구분해 준다.
@@ -89,6 +110,71 @@ export const VERBATIM = [
   // 이 저장소 사정만 덧붙인다 — 그래서 임포트가 깨지면 A 가 아니라 여기서 먼저 드러난다.
   { from: ".claude/harness.md", to: ".claude/harness.md" },
 ];
+
+/**
+ * 에이전트 정의 — **A 가 소유한다.** 하네스는 처음 한 번 본보기를 깔 뿐이다.
+ *
+ * Claude Code 가 `.claude/agents/` 에 실체로 있어야 읽으므로 자리는 못 옮긴다. 대신 본문에서
+ * 하네스 몫(`roles/`)을 빼냈고, 남은 것은 frontmatter 와 프로젝트 사정이다. frontmatter
+ * (`tools` · `isolation` · `SubagentStop`)는 하네스가 기대는 값이지만 파일째 A 의 것이라
+ * `sync` 가 못 고친다 — 어긋나면 `smoke` 가 짚는다.
+ *
+ * **기록부에 안 든다.** 기록부는 "설치 그대로인가" 를 묻는 장부인데, A 소유 파일에는 그
+ * 질문이 성립하지 않는다. 예전 설치본의 기록부에 남아 있다면 그것이 **옮기기 전**이라는
+ * 표식이다(`sync` 가 그것으로 마이그레이션을 판정한다).
+ */
+export const AGENT_TEMPLATES = [
+  { from: ".claude/agents/developer.md", to: ".claude/agents/developer.md" },
+  { from: ".claude/agents/qa.md", to: ".claude/agents/qa.md" },
+];
+
+/** 에이전트 정의의 경로. 하네스 소유는 아니지만 **사본에 없으면 역할이 안 뜬다.** */
+export function agentPaths() {
+  return AGENT_TEMPLATES.map((item) => item.to);
+}
+
+/**
+ * 에이전트 정의를 어떻게 할지. **`init` 과 `sync` 가 같이 쓴다** — 둘이 따로 판정하면
+ * 한쪽만 낡는다. 파일을 건드리지 않는다.
+ *
+ * | 지금 | 기록부에 | 판정 |
+ * |---|---|---|
+ * | 없다 | — | `create` — 본보기를 깐다 |
+ * | 있다 | 없다 | `same` — A 의 것이다 |
+ * | 있다 | 있고 해시가 같다 | `migrate` — 옮기기 전 설치본을 **손댄 적 없다.** 본보기로 바꾼다 |
+ * | 있다 | 있고 해시가 다르다 | `legacy` — 옮기기 전 설치본을 **A 가 고쳤다.** 덮지 않고 알린다 |
+ *
+ * `migrate` 를 그냥 두면 안 되는 이유: 그 파일의 본문은 **옛 판의 역할 지침 전부**다.
+ * 두면 훅이 싣는 새 지침과 함께 실려 두 판이 한 컨텍스트에서 부딪힌다.
+ *
+ * @param {string} tree A 의 최상단
+ * @param {{files?: object}|null} manifest 지금 기록부(없으면 `null`)
+ * @returns {{path: string, contents: string, state: string}[]}
+ */
+export function agentSteps(tree, manifest) {
+  return AGENT_TEMPLATES.map((item) => {
+    const contents = readFileSync(join(PKG, item.from), "utf8");
+    const full = join(tree, item.to);
+    if (!existsSync(full)) return { path: item.to, contents, state: "create" };
+
+    const recorded = manifest?.files?.[item.to];
+    if (!recorded) return { path: item.to, contents, state: "same" };
+
+    const current = hashOf(readFileSync(full, "utf8"));
+    return { path: item.to, contents, state: current === recorded ? "migrate" : "legacy" };
+  });
+}
+
+/** `legacy` 판정을 사람에게 풀어 쓴 것. `init`·`sync` 가 같은 문장을 낸다. */
+export function legacyAgentNote(path, pkgName) {
+  const role = path.replace(/^.*\//, "").replace(/\.md$/, "");
+  return (
+    `\`${path}\` 는 역할 지침을 갈라내기 전의 설치본인데 손댄 흔적이 있어 덮지 않았다. ` +
+    `하네스 몫은 이제 \`.claude/roles/${role}.md\` 로 옮겨 스폰 때 주입된다 — 그대로 두면 ` +
+    `**옛 지침과 새 지침이 함께 실린다.** 이 파일에서 하네스 본문을 지우고 frontmatter 와 ` +
+    `이 프로젝트 사정만 남겨라. 본보기: \`node_modules/${pkgName}/${path}\`.`
+  );
+}
 
 /**
  * 하네스가 **통째로 소유하는** 경로. `sync` 가 갱신하는 것이 정확히 이 목록이다.

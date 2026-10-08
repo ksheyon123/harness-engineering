@@ -164,6 +164,34 @@ describe("init — 설치 판정", () => {
       expect(step(plan(dir, fakeGit(".githooks")), ".claude/settings.json").state).toBe("same");
       expect(JSON.parse(first).hooks.PreToolUse).toHaveLength(1);
     });
+
+    it("역할 지침을 싣는 `SubagentStart` 를 **settings 에** 배선한다", () => {
+      // 에이전트 frontmatter 의 `SubagentStart` 는 안 돈다(실측) — settings 여야 한다.
+      const merged = JSON.parse(step(plan(tree(), fakeGit()), ".claude/settings.json").contents);
+      const [entry] = merged.hooks.SubagentStart;
+
+      expect(entry.matcher).toBe("developer|qa");
+      expect(entry.hooks[0].command).toContain("role-context.mjs");
+    });
+
+    it("에이전트 정의가 이미 있으면 덮지 않는다 — 그건 A 의 파일이다", () => {
+      const mine = "---\nname: developer\ntools: Read\n---\n우리 스택\n";
+      const dir = tree({ ".claude/agents/developer.md": mine });
+
+      apply(dir, fakeGit());
+
+      expect(readFileSync(join(dir, ".claude/agents/developer.md"), "utf8")).toBe(mine);
+    });
+
+    it("에이전트 정의는 기록부에 안 남긴다", () => {
+      const dir = tree();
+      apply(dir, fakeGit());
+
+      const { files } = JSON.parse(readFileSync(join(dir, ".claude/harness-manifest.json"), "utf8"));
+
+      expect(Object.keys(files)).not.toContain(".claude/agents/developer.md");
+      expect(Object.keys(files)).toContain(".claude/roles/developer.md");
+    });
   });
 
   /**

@@ -23,6 +23,7 @@
     ".claude/planner/",
     ".claude/skills/",
     ".claude/agents/",
+    ".claude/roles/",
     ".claude/hooks/",
     ".githooks/",
     "scripts/",

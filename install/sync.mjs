@@ -5,7 +5,7 @@
  * ## 왜 필요한가
  *
  * `npm update` 는 `node_modules` 만 갱신한다. 그런데 A 에는 복사본이 산다 —
- * `harness.md` · `planner-mode.md` · `agents/*.md` · shim 들. 그것들은 갱신되지 않으므로,
+ * `harness.md` · `planner-mode.md` · `roles/*.md` · shim 들. 그것들은 갱신되지 않으므로,
  * 패키지가 올라가면 **A 의 `developer` 는 옛 규약대로 돌고 훅은 새 규칙으로 판정한다.**
  *
  * 복사가 회피가 아니라 유일한 수단이었다는 것은 `managed.mjs` 에 적혀 있다.
@@ -19,9 +19,12 @@
  *
  * ## A 가 손댄 것은 덮지 않는다
  *
- * `developer.md` 를 자기 스택에 맞게 고치는 것은 정당하다. 기록부의 해시와 다르면
- * **A 가 손댔다는 뜻**이므로 덮지 않고 알린다. `init` 이 `core.hooksPath` 를 빼앗지
- * 않는 것과 같은 규칙이다.
+ * 기록부의 해시와 다르면 **A 가 손댔다는 뜻**이므로 덮지 않고 알린다. `init` 이
+ * `core.hooksPath` 를 빼앗지 않는 것과 같은 규칙이다. **몇 번을 돌려도 같다** — 충돌한
+ * 파일의 기록은 갱신하지 않는다(아래 `apply`).
+ *
+ * 역할을 자기 스택에 맞추는 자리는 따로 있다 — 에이전트 정의(`.claude/agents/*.md`)는 A 의
+ * 파일이라 여기서 다시 쓰지 않는다. 하네스 몫은 `.claude/roles/` 로 갈라냈다.
  */
 
 import { execFileSync } from "node:child_process";
@@ -34,7 +37,9 @@ import {
   HOOK_SHIMS,
   MANIFEST_PATH,
   VERBATIM,
+  agentSteps,
   hashOf,
+  legacyAgentNote,
   manifestContents,
   parseManifest,
 } from "./managed.mjs";
@@ -103,13 +108,51 @@ export function plan(tree) {
 
     conflicts.push({
       path: item.path,
+      recorded: recorded ?? null,
       reason: recorded
         ? "설치한 뒤 이 파일이 바뀌었다 — 덮으면 그 변경이 사라진다."
         : "설치 기록이 없어 A 가 손댄 것인지 판단할 수 없다.",
     });
   }
 
-  return { installed: manifest?.version ?? null, version: PKG_VERSION, steps, conflicts };
+  // 에이전트 정의는 A 의 것이다. 없으면 깔고, 옮기기 전 설치본이면 마이그레이션한다.
+  // `owned: false` — 기록부에 해시를 남기지 않는다(`managed.mjs` 의 `AGENT_TEMPLATES`).
+  for (const step of agentSteps(tree, manifest)) {
+    if (step.state === "legacy") {
+      conflicts.push({ path: step.path, recorded: null, reason: legacyAgentNote(step.path, PKG_NAME) });
+      continue;
+    }
+    steps.push({
+      path: step.path,
+      contents: step.contents,
+      state: step.state === "migrate" ? "update" : step.state,
+      owned: false,
+    });
+  }
+
+  return { installed: manifest?.version ?? null, version: PKG_VERSION, steps, conflicts, notes: wiringNotes(tree) };
+}
+
+/**
+ * `settings.json` 에 새 배선이 빠졌는가. **고치지 않고 알린다** — 그건 병합한 A 의 파일이라
+ * `init` 이 다시 병합한다(위 머리주석). 빠뜨리면 역할 지침이 안 실리는데, 에이전트 정의가
+ * 그때 파일을 직접 읽으라고 일러 두었을 뿐 **강제는 없다.**
+ */
+function wiringNotes(tree) {
+  let settings;
+  try {
+    settings = JSON.parse(readFileSync(join(tree, ".claude/settings.json"), "utf8"));
+  } catch {
+    return [];
+  }
+  const wired = (settings?.hooks?.SubagentStart ?? []).some((entry) =>
+    (entry.hooks ?? []).some((h) => `${h.command ?? ""}`.includes("role-context.mjs")),
+  );
+  if (wired) return [];
+  return [
+    "`.claude/settings.json` 에 `SubagentStart` → `role-context.mjs` 배선이 없다 — 역할 지침" +
+      "(`.claude/roles/`)이 스폰 때 안 실린다. `harness init` 을 다시 돌려라(있는 것은 안 덮고 더하기만 한다).",
+  ];
 }
 
 /** 판정대로 다시 쓴다. **충돌한 파일은 건너뛰고 나머지는 갱신한다.** */
@@ -126,16 +169,20 @@ export function apply(tree) {
     applied.push(step);
   }
 
-  // 기록부는 **실제로 지금 있는 내용**을 담아야 한다. 충돌해서 안 덮은 파일까지 새 해시로
-  // 적으면, 다음 `sync` 가 그 파일을 '설치 그대로' 로 오해하고 조용히 덮는다.
+  // 기록부는 **하네스가 마지막으로 쓴 내용**을 담는다. 그래야 다음 `sync` 가 "그 뒤로 누가
+  // 손댔는가" 를 물을 수 있다.
+  //
+  // 충돌한 파일은 **옛 기록을 그대로 둔다.** 한때 여기서 지금 내용(A 가 고친 것)의 해시를
+  // 적었는데, 그러면 다음 `sync` 가 `recorded === hashOf(current)` 를 보고 '설치 그대로' 라
+  // 판정해 **두 번째 실행에서 조용히 덮었다**(실측). 기록이 없던 충돌은 계속 없다.
   const files = {};
   for (const step of result.steps) {
+    if (step.owned === false) continue;
     const full = join(tree, step.path);
     if (existsSync(full)) files[step.path] = hashOf(readFileSync(full, "utf8"));
   }
   for (const conflict of result.conflicts) {
-    const full = join(tree, conflict.path);
-    if (existsSync(full)) files[conflict.path] = hashOf(readFileSync(full, "utf8"));
+    if (conflict.recorded) files[conflict.path] = conflict.recorded;
   }
 
   const manifestFull = join(tree, MANIFEST_PATH);
@@ -187,7 +234,7 @@ function cleanGitEnv() {
 }
 
 export function report(result, dryRun, write = (s) => process.stdout.write(s)) {
-  const { installed, version, steps, conflicts, applied } = result;
+  const { installed, version, steps, conflicts, applied, notes = [] } = result;
 
   if (installed === null) {
     write(
@@ -212,6 +259,8 @@ export function report(result, dryRun, write = (s) => process.stdout.write(s)) {
         `\n\n갱신본과 견주려면 \`node_modules/${PKG_NAME}\` 아래의 원본과 비교해라.\n`,
     );
   }
+
+  if (notes.length > 0) write(`\n손이 필요한 것:\n\n${notes.map((n) => `  ! ${n}`).join("\n")}\n`);
 
   write("\n");
   // 충돌은 실패가 아니다 — 사람이 볼 것이 있다는 뜻이고, 나머지는 이미 갱신됐다.

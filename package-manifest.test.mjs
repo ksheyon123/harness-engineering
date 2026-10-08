@@ -76,6 +76,9 @@ describe("발행되는 tarball", () => {
     // 하므로 원본이 tarball 에 있어야 한다.
     expect(has(".claude/agents/developer.md")).toBe(true);
     expect(has(".claude/agents/qa.md")).toBe(true);
+    // 에이전트 정의에서 갈라낸 하네스 몫. 없으면 스폰된 역할이 지침 없이 돈다.
+    expect(has(".claude/roles/developer.md")).toBe(true);
+    expect(has(".claude/roles/qa.md")).toBe(true);
     expect(has(".claude/harness.md")).toBe(true);
     expect(has(".claude/planner-mode.md")).toBe(true);
   });

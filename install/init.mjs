@@ -41,8 +41,11 @@ import {
   HOOK_SHIMS,
   MANIFEST_PATH,
   VERBATIM,
+  agentSteps,
   hashOf,
+  legacyAgentNote,
   manifestContents,
+  parseManifest,
 } from "./managed.mjs";
 import { BROKEN, COMMITTED_CHECK, inspect, pointsAtGithooks, report as smokeReport } from "./smoke.mjs";
 import { plantList } from "../.githooks/plant.mjs";
@@ -89,6 +92,11 @@ function settingsAdditions() {
         { matcher: "Edit|Write", hooks: [{ type: "command", command: command("path-ownership.mjs") }] },
       ],
       SessionStart: [{ hooks: [{ type: "command", command: command("session-role.mjs") }] }],
+      // 역할 지침(`.claude/roles/`)을 스폰 때 싣는다. **frontmatter 가 아니라 여기여야 한다** —
+      // 에이전트 frontmatter 의 `SubagentStart` 는 안 돈다(실측, `role-context.mjs` 머리주석).
+      SubagentStart: [
+        { matcher: "developer|qa", hooks: [{ type: "command", command: command("role-context.mjs") }] },
+      ],
       // 세션이 **끝나는 게 아니라 멈추는** 순간을 밖으로 알린다. URL 이 없으면 아무 일도
       // 일어나지 않으므로, 배선은 늘 깔아 두고 켜는 것은 A 가 정한다.
       Notification: [{ hooks: [{ type: "command", command: command("notify-waiting.mjs") }] }],
@@ -128,6 +136,23 @@ export function plan(tree, git) {
     steps.filter((s) => s.kind === "file").map((s) => [s.path, hashOf(s.contents)]),
   );
   steps.push(file(tree, MANIFEST_PATH, manifestContents({ version: PKG_VERSION, files: owned })));
+
+  // 에이전트 정의는 A 의 것이다 — 기록부에 해시를 안 남기고, 있으면 건드리지 않는다.
+  // 다만 판정은 **지금 쓰려는 기록부가 아니라 디스크의 옛 기록부**로 한다. 옛 기록부에
+  // 남은 해시가 '역할 지침을 갈라내기 전의 설치본' 이라는 유일한 표식이라, 새 것으로 보면
+  // 그 표식이 판정 전에 사라진다.
+  for (const step of agentSteps(tree, previousManifest(tree))) {
+    if (step.state === "legacy") {
+      notes.push(legacyAgentNote(step.path, PKG_NAME));
+      continue;
+    }
+    steps.push({
+      kind: "file",
+      path: step.path,
+      contents: step.contents,
+      state: step.state === "migrate" ? "update" : step.state,
+    });
+  }
 
   steps.push(claudeMd(tree));
   steps.push(gitignore(tree));
@@ -212,6 +237,12 @@ function file(tree, path, contents) {
     state = readFileSync(full, "utf8") === contents ? "same" : "update";
   }
   return { kind: "file", path, contents, state };
+}
+
+/** 디스크에 있는 기록부. 없거나 깨졌으면 `null`. */
+function previousManifest(tree) {
+  const full = join(tree, MANIFEST_PATH);
+  return existsSync(full) ? parseManifest(readFileSync(full, "utf8")) : null;
 }
 
 /**

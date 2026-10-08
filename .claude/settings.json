@@ -39,6 +39,17 @@
         ]
       }
     ],
+    "SubagentStart": [
+      {
+        "matcher": "developer|qa",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/role-context.mjs\""
+          }
+        ]
+      }
+    ],
     "Notification": [
       {
         "hooks": [

@@ -34,6 +34,15 @@ process.stdout.write(JSON.stringify({
 }));
 `;
 
+/** 훅 입력의 `agent_type` 으로 `<cwd>/.claude/roles/<역할>.md` 를 싣는다. 실제 계약과 같은 모양이다. */
+const ROLE_CONTEXT = `import { readFileSync } from "node:fs";
+import { join } from "node:path";
+const input = JSON.parse(readFileSync(0, "utf8") || "{}");
+let body = "";
+try { body = readFileSync(join(input.cwd, ".claude/roles", input.agent_type + ".md"), "utf8"); } catch {}
+process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: "SubagentStart", additionalContext: body } }));
+`;
+
 const agent = (role, hook) => `---
 name: ${role}
 tools: Read
@@ -59,6 +68,12 @@ const SETTINGS = {
     SessionStart: [
       { hooks: [{ type: "command", command: 'node "${CLAUDE_PROJECT_DIR}/.claude/hooks/session-role.mjs"' }] },
     ],
+    SubagentStart: [
+      {
+        matcher: "developer|qa",
+        hooks: [{ type: "command", command: 'node "${CLAUDE_PROJECT_DIR}/.claude/hooks/role-context.mjs"' }],
+      },
+    ],
   },
   worktree: { baseRef: "head" },
 };
@@ -79,6 +94,10 @@ function repo({ files = {}, drop = [], untrack = [], hooksPath = ".githooks" } =
     ".claude/skills/task/SKILL.md": "# 작업 세션으로 넘긴다\n",
     ".claude/agents/developer.md": agent("developer", "verify-green.mjs"),
     ".claude/agents/qa.md": agent("qa", "verify-checklist.mjs"),
+    // 역할 지침. 에이전트 정의에서 갈라낸 하네스 몫이라 사본에도 있어야 한다.
+    ".claude/roles/developer.md": "너는 개발자다.\n",
+    ".claude/roles/qa.md": "너는 QA 다.\n",
+    ".claude/hooks/role-context.mjs": ROLE_CONTEXT,
     ".claude/hooks/path-ownership.mjs": PATH_OWNERSHIP,
     ".claude/hooks/session-role.mjs": SESSION_ROLE,
     ".claude/hooks/verify-green.mjs": "// 본체\n",
@@ -228,7 +247,7 @@ describe("smoke — 배선이 살아 있는가", () => {
 
     it("`SubagentStop` 이 안 걸려 있으면 끊긴 것이다", () => {
       const { checks } = look({
-        files: { ".claude/agents/qa.md": "---\nname: qa\nisolation: worktree\n---\n본문\n" },
+        files: { ".claude/agents/qa.md": "---\nname: qa\ntools: Read\nisolation: worktree\n---\n본문\n" },
       });
 
       expect(find(checks, "`qa`").state).toBe("broken");
@@ -259,6 +278,64 @@ describe("smoke — 배선이 살아 있는가", () => {
 
       expect(find(checks, "`developer`").state).toBe("broken");
       expect(find(checks, "`developer`").detail).toContain("해석되지 않는다");
+    });
+
+    // 에이전트 정의는 이제 A 의 파일이라 `sync` 가 고치지 않는다. 층 0 이 새면 여기서만 드러난다.
+    it("`tools:` 가 Bash 를 주면 끊긴 것이다", () => {
+      const { checks } = look({
+        files: { ".claude/agents/developer.md": agent("developer", "verify-green.mjs").replace("tools: Read", "tools: Read, Bash") },
+      });
+
+      expect(find(checks, "`developer`").state).toBe("broken");
+      expect(find(checks, "`developer`").detail).toContain("Bash");
+    });
+
+    it("`tools:` 가 없으면 끊긴 것이다 — 전부 상속돼 Bash 도 온다", () => {
+      const { checks } = look({
+        files: { ".claude/agents/qa.md": agent("qa", "verify-checklist.mjs").replace("tools: Read\n", "") },
+      });
+
+      expect(find(checks, "`qa`").state).toBe("broken");
+      expect(find(checks, "`qa`").detail).toContain("상속");
+    });
+  });
+
+  describe("역할 지침", () => {
+    it("`SubagentStart` 배선이 없으면 끊긴 것이다", () => {
+      const settings = structuredClone(SETTINGS);
+      delete settings.hooks.SubagentStart;
+      const { checks } = look({ files: { ".claude/settings.json": JSON.stringify(settings) } });
+
+      expect(find(checks, "역할 지침").state).toBe("broken");
+      expect(find(checks, "역할 지침").detail).toContain("배선이 없다");
+    });
+
+    it("matcher 가 한 역할을 빠뜨리면 끊긴 것이다", () => {
+      const settings = structuredClone(SETTINGS);
+      settings.hooks.SubagentStart[0].matcher = "developer";
+      const { checks } = look({ files: { ".claude/settings.json": JSON.stringify(settings) } });
+
+      expect(find(checks, "역할 지침").state).toBe("broken");
+      expect(find(checks, "역할 지침").detail).toContain("qa");
+    });
+
+    it("지침 파일이 없으면 끊긴 것이다", () => {
+      const { checks } = look({ drop: [".claude/roles/qa.md"] });
+
+      expect(find(checks, "역할 지침").state).toBe("broken");
+      expect(find(checks, "역할 지침").detail).toContain(".claude/roles/qa.md");
+    });
+
+    it("훅이 지침을 안 실으면 끊긴 것이다", () => {
+      const { checks } = look({
+        files: {
+          ".claude/hooks/role-context.mjs":
+            'process.stdout.write(JSON.stringify({hookSpecificOutput:{additionalContext:"고정"}}));\n',
+        },
+      });
+
+      expect(find(checks, "역할 지침").state).toBe("broken");
+      expect(find(checks, "역할 지침").detail).toContain("안 실었다");
     });
   });
 

@@ -32,6 +32,7 @@ npx harness init                       # --dry-run 을 먼저 붙여 무엇을 �
 | 역할 선언(`너는 실행자다`) | `.claude/settings.json` 의 `SessionStart` 훅 |
 | 경로 소유권(층 1) | `.claude/settings.json` 의 `PreToolUse(Edit\|Write)` 훅 |
 | 종료 게이트 | `.claude/agents/developer.md`·`qa.md` 의 frontmatter 훅 |
+| 역할 지침 | `.claude/settings.json` 의 `SubagentStart` 훅 → `.claude/roles/<역할>.md` |
 | 규약 본문 | `.claude/CLAUDE.md` → `@harness.md` |
 | 층 2 | `.githooks/` + `core.hooksPath` |
 
@@ -90,9 +91,10 @@ npm 이 아닌 게이트(`make check` 등)는 `?` 로 찍고 넘어간다. **없
 ## `init` 이 만드는 것
 
 ```
-.claude/hooks/          path-ownership · session-role · verify-green · verify-checklist
+.claude/hooks/          path-ownership · session-role · role-context · verify-green · verify-checklist
 .githooks/              pre-commit · pre-push (+ .mjs 본체) · mark-verified
-.claude/agents/         developer.md · qa.md
+.claude/roles/          developer.md · qa.md — 역할 지침. 스폰 때 주입된다. sync 가 맞춘다
+.claude/agents/         developer.md · qa.md — 이 프로젝트의 것. 없을 때만 깐다
 .claude/harness.md      규약 본문
 .claude/planner-mode.md 기획자 모드 — 논의 · 격리 진입 · spec 작성
 .claude/planner/        논의 방식 — 작업 세션에 자동 주입된다. 갈아끼워도 된다
@@ -215,9 +217,11 @@ npm update @ksheyon123/harness-engineering
 npx harness sync
 ```
 
-**`npm update` 만으로는 부족하다.** A 에는 복사본이 산다 — `harness.md` · `planner-mode.md` · `agents/*.md` · shim 들. 그것들은 갱신되지 않으므로, 패키지만 올리면 **A 의 `developer` 는 옛 규약대로 돌고 훅은 새 규칙으로 판정한다.**
+**`npm update` 만으로는 부족하다.** A 에는 복사본이 산다 — `harness.md` · `planner-mode.md` · `roles/*.md` · shim 들. 그것들은 갱신되지 않으므로, 패키지만 올리면 **A 의 `developer` 는 옛 규약대로 돌고 훅은 새 규칙으로 판정한다.**
 
-`sync` 는 하네스가 통째로 소유하는 것만 다시 쓴다. 병합해서 만든 것(`settings.json` · `.gitignore` · `package.json` · A 의 `CLAUDE.md`)은 손대지 않는다 — 그건 A 의 파일이고 하네스는 거기 몇 줄을 얹었을 뿐이다. 그리고 **A 가 손댄 파일은 덮지 않고 알린다**(설치 기록부의 해시로 판정한다).
+`sync` 는 하네스가 통째로 소유하는 것만 다시 쓴다. 병합해서 만든 것(`settings.json` · `.gitignore` · `package.json` · A 의 `CLAUDE.md`)은 손대지 않는다 — 그건 A 의 파일이고 하네스는 거기 몇 줄을 얹었을 뿐이다. 그리고 **A 가 손댄 파일은 덮지 않고 알린다**(설치 기록부의 해시로 판정한다). 몇 번을 돌려도 같다.
+
+**에이전트 정의(`agents/*.md`)는 A 의 파일이다.** 역할을 자기 스택에 맞추는 자리라 `sync` 가 안 건드린다 — 하네스 몫(게이트 · 인계 · 보고 형식)은 `roles/*.md` 로 갈라내 스폰 때 `SubagentStart` 훅이 싣는다. 갈라내기 전에 설치한 저장소는 `sync` 가 한 번 옮긴다: 손대지 않은 에이전트 정의는 본보기로 바꾸고, 손댄 것은 알린다(하네스 본문을 지우고 프로젝트 사정만 남겨라). `settings.json` 에 `SubagentStart` 배선이 없으면 `sync` 가 그것도 알린다 — `harness init` 을 다시 돌리면 더해진다.
 
 ## 막히는 자리
 

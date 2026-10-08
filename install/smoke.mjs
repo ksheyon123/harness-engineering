@@ -31,7 +31,7 @@ import { fileURLToPath } from "node:url";
 
 import { loadConfig } from "../.claude/hooks/harness-config.mjs";
 import { cleanEnv } from "../.claude/hooks/hook-kit.mjs";
-import { managedPaths } from "./managed.mjs";
+import { agentPaths, managedPaths } from "./managed.mjs";
 import { COMMITTED, groupByState, trackingStates } from "./tracking.mjs";
 
 const OK = "ok";
@@ -138,6 +138,7 @@ export function inspect(tree, git, options = {}) {
     layerOne(tree, settings, config),
     sessionHook(tree, settings),
     ...exitGates(tree),
+    roleContext(tree, settings),
     trust(mainRoot(tree, git), trustConfig),
     layerTwo(tree, git),
     baseRef(settings),
@@ -162,7 +163,7 @@ export function inspect(tree, git, options = {}) {
  * `sync`·`doctor` 가 본체에서 볼 뿐이다. 여기 넣으면 이 검사가 자기 이름보다 넓어진다.
  */
 export function worktreeCritical() {
-  return [...managedPaths(), ".claude/CLAUDE.md", ".claude/settings.json"];
+  return [...managedPaths(), ...agentPaths(), ".claude/CLAUDE.md", ".claude/settings.json"];
 }
 
 /* ── 층 1 ─────────────────────────────────────────────────────────────────── */
@@ -267,6 +268,17 @@ function exitGates(tree) {
       return broken(name, `\`${path}\` 에 \`isolation: worktree\` 가 없다 — 네 트리에서 직접 돈다.`);
     }
 
+    // 층 0. 이 파일은 A 의 것이라 `sync` 가 못 고친다 — 어긋나면 여기서만 드러난다.
+    // `tools:` 가 아예 없으면 **전부 상속**되므로 Bash 도 온다.
+    const tools = /^\s*tools:\s*(.*)$/m.exec(front);
+    if (!tools || /\bBash\b/.test(tools[1])) {
+      return broken(
+        name,
+        `\`${path}\` 의 \`tools:\` 가 ${tools ? "Bash 를 준다" : "없어 Bash 까지 상속된다"} — 층 0 이 사라진다. ` +
+          `역할이 셸로 커밋·push 할 수 있게 되고, 인계 커밋 하나로 회수한다는 전제가 깨진다.`,
+      );
+    }
+
     // 명령은 `node "${CLAUDE_PROJECT_DIR}/.claude/hooks/<훅>"` 이다. Claude Code 는 worktree
     // 에 들어가도 `${CLAUDE_PROJECT_DIR}` 를 본체에 둔다(공식 문서) — 사본에 심기가 안 돼도
     // 본체의 훅을 부른다. 예전 상대경로 형태(`node .claude/hooks/<훅>`)도 읽는다.
@@ -282,6 +294,56 @@ function exitGates(tree) {
 
     return ok(name, `\`${path}\` → \`${target}\``);
   });
+}
+
+/* ── 역할 지침 ─────────────────────────────────────────────────────────────── */
+
+/**
+ * `SubagentStart` 가 역할 지침(`.claude/roles/<역할>.md`)을 싣는가. **돌려본다** — 이 훅은
+ * 읽기만 하므로 흔적을 안 남긴다.
+ *
+ * 빠지면 조용하다. 에이전트 정의는 이제 A 의 본보기라 지침이 거의 없고, 파일을 직접 읽으라는
+ * 한 줄에 기댈 뿐이다 — 그 역할은 게이트·경계·보고 형식을 모른 채 돌 수 있다.
+ */
+function roleContext(tree, settings) {
+  const name = "역할 지침 — SubagentStart 가 `.claude/roles/` 를 싣는다";
+  const entry = (settings?.hooks?.SubagentStart ?? []).find((e) =>
+    (e.hooks ?? []).some((h) => (h.command ?? "").includes("role-context.mjs")),
+  );
+
+  if (!entry) {
+    return broken(
+      name,
+      "`settings.json` 에 배선이 없다 — 역할이 지침 없이 스폰된다. `harness init` 을 다시 돌려라. " +
+        "(에이전트 frontmatter 에 적으면 **안 돈다** — settings 여야 한다.)",
+    );
+  }
+
+  const roles = ["developer", "qa"];
+  const matcher = entry.matcher ?? "";
+  const uncovered = roles.filter((role) => matcher && !safeMatch(`^(?:${matcher})$`, role));
+  if (uncovered.length > 0) return broken(name, `matcher \`${matcher}\` 가 ${uncovered.join(" · ")} 를 안 잡는다.`);
+
+  const path = hookPathIn(entry.hooks.find((h) => (h.command ?? "").includes("role-context.mjs")).command);
+  if (!path) return broken(name, "명령에서 `${CLAUDE_PROJECT_DIR}` 기준 경로를 못 읽었다.");
+
+  for (const role of roles) {
+    const doc = `.claude/roles/${role}.md`;
+    const head = existsSync(join(tree, doc)) ? readFileSync(join(tree, doc), "utf8").trim().split(/\r?\n/)[0] : "";
+    if (!head) return broken(name, `\`${doc}\` 가 없거나 비었다 — \`harness sync\` 로 되살려라.`);
+
+    let verdict;
+    try {
+      verdict = runHook(tree, path, { hook_event_name: "SubagentStart", agent_type: role, cwd: tree });
+    } catch (error) {
+      return broken(name, `\`${path}\` 를 돌리지 못했다 — ${firstLine(error)}`);
+    }
+    if (!`${verdict?.hookSpecificOutput?.additionalContext ?? ""}`.includes(head)) {
+      return broken(name, `\`${path}\` 가 \`${role}\` 에게 \`${doc}\` 를 안 실었다.`);
+    }
+  }
+
+  return ok(name, `\`${path}\` 가 developer · qa 에게 각자의 지침을 싣는다.`);
 }
 
 /* ── 신뢰 ─────────────────────────────────────────────────────────────────── */

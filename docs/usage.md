@@ -146,7 +146,7 @@
 | `harness gate` | 게이트를 돌릴 때. **`npm test` 를 손으로 치지 마라** — 검사는 되지만 통과 기록이 안 남아 push 에서 막힌다 |
 | `harness doctor` | 설정(`harness.config.json`)의 **값**이 의심될 때 |
 | `harness smoke` | **배선**이 끊겼는지 의심될 때 — 훅이 실재하는 파일을 가리키는지 · 돌아 판정을 내놓는지 · 전부 커밋됐는지 |
-| `harness sync` | 패키지를 올린 뒤. 저장소에 복사된 규약·에이전트 정의를 다시 쓴다 |
+| `harness sync` | 패키지를 올린 뒤. 저장소에 복사된 규약·역할 지침을 다시 쓴다(에이전트 정의는 안 건드린다) |
 
 **앞의 셋은 세션이 부른다.** 사람이 직접 칠 일은 드물다 — 뒤의 셋이 사람의 명령이다.
 
@@ -157,4 +157,4 @@
 | `.claude/planner/*.md` | **논의 방식**(② 의 질문 형식). 기본은 `grilling.md` 다. **디렉터리가 곧 스위치다** — 지우면 안 묻고, 바꾸면 그대로 돌고, 더하면 다 실린다. 작업 세션에만 붙는다 |
 | `.claude/rules/*.md` | 경로별 코딩 규약. `paths:` frontmatter 를 붙이면 **매칭되는 파일을 읽을 때만** 로드된다 — 빼면 매 세션 실려 분리한 의미가 없어진다 |
 | `.claude/harness.config.json` | 게이트 명령 · 소스 경로 · spec 위치 · 보호 브랜치. 값과 기본값은 [`implementation.md`](./implementation.md#프로젝트에-맞추기--harnessconfigjson) 에 있다 |
-| `.claude/agents/developer.md` | 개발자에게 주는 지시(테스트 스타일 등). **`harness sync` 가 덮어쓰려 하면 알리고 멈춘다** — 손댄 파일은 덮지 않는다 |
+| `.claude/agents/developer.md` · `qa.md` | 역할에게 주는 **이 프로젝트 사정**(스택 · 테스트 스타일 · 건드리지 말 곳). **이 저장소의 파일이다** — `init` 이 한 번 깔고 `harness sync` 는 손대지 않는다. 하네스 몫의 지침은 `.claude/roles/` 에 따로 있어 스폰 때 주입되고, 그쪽은 `sync` 가 맞춘다. frontmatter(`tools` · `isolation` · `SubagentStop`)는 하네스가 기대는 값이라 바꾸면 `harness smoke` 가 짚는다 |
