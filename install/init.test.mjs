@@ -115,6 +115,30 @@ describe("init — 설치 판정", () => {
       expect(s.contents).toContain(".claude/post-checkout-trace.log");
     });
 
+    it("`.worktreeinclude` 가 없으면 하네스 경로로 만든다 — Claude Code 사본엔 `post-checkout` 이 안 돈다", () => {
+      const s = step(plan(tree(), fakeGit()), ".worktreeinclude");
+
+      expect(s.state).toBe("create");
+      expect(s.contents).toMatch(/^\.claude\/settings\.json$/m);
+      expect(s.contents).toMatch(/^\.claude\/hooks\/verify-green\.mjs$/m);
+      expect(s.contents).toMatch(/^\.claude\/agents\/developer\.md$/m);
+      // 디렉터리는 `/**` 로 — 통째로 무시된 디렉터리 안은 `**/` 접두어로 닿지 않는다.
+      expect(s.contents).toMatch(/^\.claude\/rules\/\*\*$/m);
+      expect(s.contents).toMatch(/^\.claude\/planner\/\*\*$/m);
+      // 사본 안에 사본을 복사하면 재귀다.
+      expect(s.contents).not.toContain("worktrees");
+    });
+
+    it("`.worktreeinclude` 의 A 줄을 남기고 **없는 줄만** 더한다", () => {
+      const dir = tree({ ".worktreeinclude": ".env\n.claude/settings.json\n" });
+      const s = step(plan(dir, fakeGit()), ".worktreeinclude");
+
+      expect(s.state).toBe("update");
+      expect(s.contents.startsWith(".env\n")).toBe(true);
+      expect(s.contents.match(/^\.claude\/settings\.json$/gm)).toHaveLength(1);
+      expect(s.contents).toMatch(/^\.claude\/rules\/\*\*$/m);
+    });
+
     it("`settings.json` 의 기존 훅을 지우지 않고 더한다", () => {
       const dir = tree({
         ".claude/settings.json": JSON.stringify({

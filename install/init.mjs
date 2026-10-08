@@ -45,6 +45,7 @@ import {
   manifestContents,
 } from "./managed.mjs";
 import { BROKEN, COMMITTED_CHECK, inspect, pointsAtGithooks, report as smokeReport } from "./smoke.mjs";
+import { plantList } from "../.githooks/plant.mjs";
 
 /** 패키지 루트. 이 파일은 `<pkg>/install/` 에 있다. */
 const PKG = fileURLToPath(new URL("..", import.meta.url));
@@ -130,6 +131,7 @@ export function plan(tree, git) {
 
   steps.push(claudeMd(tree));
   steps.push(gitignore(tree));
+  steps.push(worktreeInclude(tree));
   // **A 의 `package.json` 은 건드리지 않는다.** 한때 여기서 `posttest` 를 배선했다 —
   // 게이트가 green 인 sha 를 기록해야 `pre-push` 가 통과시키기 때문이다.
   //
@@ -160,8 +162,10 @@ export function plan(tree, git) {
     "**사본에 도달할 길을 하나 고르라.** 하네스를 팀 규약으로 본다면 커밋해라 — " +
       "`git switch -c chore/harness-install` · `git add -A` · `git commit` " +
       "(보호 브랜치 직접 커밋은 `pre-commit` 이 막는다). 개인 도구로 본다면 커밋하지 " +
-      "말고 `.gitignore` 에 둬라 — 방금 배선한 `post-checkout` 이 사본이 만들어질 때마다 " +
-      "심는다. **둘 다 아니면** 규약도 층 1 도 에이전트 정의도 사본에서 사라진다. " +
+      "말고 `.gitignore` 에 둬라 — Claude Code 가 만드는 사본에는 방금 더한 " +
+      "`.worktreeinclude` 가, 순수 `git worktree add` 사본에는 `post-checkout` 이 심는다. " +
+      "그때는 `.worktreeinclude` 도 커밋할지 정해라(루트 파일이라 `git add -A` 에 잡힌다). " +
+      "**둘 다 아니면** 규약도 층 1 도 에이전트 정의도 사본에서 사라진다. " +
       "`harness smoke` 가 어느 쪽으로 도달하는지 판정한다.",
   );
 
@@ -259,6 +263,43 @@ function gitignore(tree) {
   };
 }
 
+/** `.worktreeinclude` 에 하네스 줄을 묶어 두는 머리. 이 줄이 있으면 **우리가 더한 것**이다. */
+const INCLUDE_HEADER = "# harness — 무시된 하네스 파일을 Claude Code 의 worktree 사본으로 복사한다";
+
+/**
+ * A 의 `.worktreeinclude` 에 하네스 경로를 더한다. **Claude Code 가 만드는 사본에 도달하는 길**이다.
+ *
+ * `post-checkout` 의 심기는 Claude Code 가 만드는 사본에서 **안 돈다**(2.1.293 실측 —
+ * `post-checkout.mjs` 머리주석). 그러면 `.claude/` 를 무시하는 A 의 사본에는 하네스가
+ * 없다. `.worktreeinclude` 는 Claude Code 가 사본을 만들 때 읽는 파일이라(gitignore 문법,
+ * **무시된 파일만** 복사한다) 그 길을 막는다. A 가 `.claude/` 를 커밋한다면 추적 파일은
+ * 복사 대상이 아니므로 이 줄들은 아무것도 안 한다 — 남는 줄이 치르는 값은 없다.
+ *
+ * **목록은 `plantList()` 에서 짓는다.** 두 길이 다른 목록을 보면 한쪽만 낡는다.
+ * 디렉터리는 끝에 `**` 를 붙여 적는다 — 통째로 무시된 디렉터리 안은 앞에 붙인 `**` 로는
+ * 닿지 않는다(Claude Code 문서).
+ *
+ * `gitignore` 와 같이 **없는 줄만 더한다.** A 의 줄은 지우지 않는다.
+ */
+function worktreeInclude(tree) {
+  const path = ".worktreeinclude";
+  const full = join(tree, path);
+  const current = existsSync(full) ? readFileSync(full, "utf8") : "";
+  const present = new Set(current.split(/\r?\n/).map((line) => line.trim()));
+
+  const lines = plantList().map((rel) => (rel.endsWith("/") ? `${rel}**` : rel));
+  const missing = lines.filter((line) => !present.has(line));
+  if (missing.length === 0) return { kind: "file", path, contents: current, state: "same" };
+
+  const prefix = current && !current.endsWith("\n") ? "\n" : "";
+  const header = present.has(INCLUDE_HEADER) ? "" : `${current ? "\n" : ""}${INCLUDE_HEADER}\n`;
+  return {
+    kind: "file",
+    path,
+    contents: current + prefix + header + missing.map((line) => `${line}\n`).join(""),
+    state: current ? "update" : "create",
+  };
+}
 
 /**
  * `core.hooksPath` 를 **절대경로**로. **이미 다른 곳을 가리키면 멈춘다.**

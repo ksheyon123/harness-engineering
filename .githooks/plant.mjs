@@ -36,6 +36,11 @@ import { managedPaths } from "../install/managed.mjs";
  * | `.claude/CLAUDE.md` | `@harness.md` 가 안 펼쳐진다 — 조상의 `CLAUDE.md` 는 로드돼도 **그 임포트는 안 펼쳐진다**(실측) |
  * | `harness.config.json` | 게이트 명령·spec 위치가 기본값으로 조용히 되돌아간다 |
  * | `.claude/harness/` | 벤더링본. shim 이 이걸 상대경로로 부르게 되면 없는 곳을 가리킨다 |
+ * | `.claude/rules/` · `.claude/planner/` | A 가 더하는 것이라 `managedPaths()` 에 없다. 사본에서 세션이 다시 열리면 조용히 빠진다 |
+ *
+ * **이 목록은 `.worktreeinclude` 의 출처이기도 하다** — `init` 이 여기서 짓는다. Claude Code 가
+ * 만드는 사본에서는 이 훅이 **안 돈다**(아래 `post-checkout.mjs` 머리주석). 그쪽 길을 막는 것이
+ * `.worktreeinclude` 이고, 두 길이 같은 목록을 봐야 한쪽만 낡지 않는다.
  *
  * **`.claude/worktrees/` 는 여기 없다.** 목적지가 원본 안에 중첩돼 있어 통째 복사는
  * 재귀에 걸려 **조용히 절반만 복사하고 성공을 반환한다**(실측). 목록을 명시하는 이유가
@@ -50,6 +55,8 @@ export function plantList() {
     // 구 위치. 아직 옮기지 않은 설치본이 있다 — 있으면 같이 간다.
     "harness.config.json",
     ".claude/harness/",
+    ".claude/rules/",
+    ".claude/planner/",
   ];
 }
 
