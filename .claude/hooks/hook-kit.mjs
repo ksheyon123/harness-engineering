@@ -208,8 +208,9 @@ function stripTicks(s) {
 
 /**
  * 역할의 마지막 응답 텍스트. `SubagentStop` 입력의 `last_assistant_message` 가 우선이고,
- * 없으면 `agent_transcript_path`(JSONL)를 뒤에서부터 훑어 텍스트가 있는 마지막 assistant
- * 엔트리를 쓴다. 어느 쪽도 못 읽으면 `null` — 제목이 폴백으로 갈 뿐 인계는 계속된다.
+ * 없으면 `agent_transcript_path`(JSONL)를 뒤에서부터 훑어 마지막 assistant 엔트리의 보고를
+ * 쓴다 — `SubagentHandback` 호출의 `message` 가 있으면 그것, 없으면 텍스트. 어느 쪽도 못
+ * 읽으면 `null` — 제목이 폴백으로 갈 뿐 인계는 계속된다.
  */
 function lastAssistantText(input) {
   if (typeof input.last_assistant_message === "string" && input.last_assistant_message.trim()) {
@@ -236,16 +237,33 @@ function lastAssistantText(input) {
     const message = entry?.message ?? entry;
     if (entry?.type !== "assistant" && message?.role !== "assistant") continue;
     const content = message?.content;
-    const text =
-      typeof content === "string"
-        ? content
-        : Array.isArray(content)
-          ? content.filter((b) => b?.type === "text").map((b) => b.text).join("\n")
-          : "";
+    if (typeof content === "string") {
+      if (content.trim()) return content;
+      continue;
+    }
+    if (!Array.isArray(content)) continue;
+
+    const handback = content.find(
+      (b) => b?.type === "tool_use" && b.name === HANDBACK_TOOL && typeof b.input?.message === "string",
+    );
+    if (handback?.input.message.trim()) return handback.input.message;
+
+    const text = content.filter((b) => b?.type === "text").map((b) => b.text).join("\n");
     if (text.trim()) return text;
   }
   return null;
 }
+
+/**
+ * 역할이 최종 보고를 **텍스트 응답이 아니라 도구 호출로** 넘기는 경로가 있다 — 보고가 이
+ * 도구의 `input.message` 에 실리고, 그때는 훅 입력에 `last_assistant_message` 가 아예 없다.
+ * transcript 의 마지막 *텍스트* 는 작업 도중의 혼잣말이라, 이 호출을 모르면 `COMMIT:` 을
+ * 놓치고 매번 고정 제목으로 떨어진다(설치된 프로젝트에서 실측: 17번 연속).
+ *
+ * 어느 경로가 쓰이는지는 Claude Code 가 정하고 우리가 고를 수 없다 — 같은 버전에서도
+ * 저장소에 따라 갈렸다. 그래서 둘 다 읽는다.
+ */
+const HANDBACK_TOOL = "SubagentHandback";
 
 function failedHandoff(role, error) {
   const detail = `${error.stdout ?? ""}${error.stderr ?? ""}`.trim() || String(error);

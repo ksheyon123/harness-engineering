@@ -291,6 +291,27 @@ spec: harness/thing/spec.md
       expect(git(dir, ["log", "-1", "--format=%s"]).trim()).toBe(SUMMARY);
     });
 
+    it("보고를 SubagentHandback 호출로 넘겼으면 그 message 에서 읽는다", () => {
+      // 이 경로에서는 last_assistant_message 가 아예 없고, transcript 의 마지막 텍스트는
+      // 작업 도중의 혼잣말이다. 실측 transcript 의 모양 그대로다.
+      const dir = passing();
+      const transcript = join(dir, ".git", "agent.jsonl");
+      const entry = (content) => JSON.stringify({ type: "assistant", message: { role: "assistant", content } });
+      writeFileSync(
+        transcript,
+        [
+          entry([{ type: "text", text: "Look for tests that cover setPin specifically." }]),
+          entry([{ type: "tool_use", name: "Write", input: { file_path: "x" } }]),
+          entry([{ type: "tool_use", name: "SubagentHandback", input: { message: `COMMIT: ${SUMMARY}\n\n쓴 파일: …` } }]),
+          JSON.stringify({ type: "user", message: { role: "user", content: [{ type: "tool_result", content: "ok" }] } }),
+        ].join("\n") + "\n",
+      );
+
+      runHook(dir, { input: { agent_transcript_path: transcript } });
+
+      expect(git(dir, ["log", "-1", "--format=%s"]).trim()).toBe(SUMMARY);
+    });
+
     it("본문 끝에 역할 줄을 남긴다", () => {
       const dir = passing();
 
