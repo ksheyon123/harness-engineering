@@ -103,6 +103,20 @@ describe("session-role — SessionStart 역할 주입 훅", () => {
     },
   );
 
+  it.each([
+    ["실행자", {}],
+    ["작업 세션", { HARNESS_ROLE: "work-session" }],
+  ])("%s 에게 specRoot 의 실제 값을 알린다 — 문서는 자리표시자만 적는다", (_, env) => {
+    // 규약 문서가 `harness/` 를 박아 두면 specRoot 를 바꾼 프로젝트에서 세션이 엉뚱한
+    // 곳에 spec 을 쓰고 층 1 에 막힌다. 값은 설정을 읽는 이 자리가 실어야 한다.
+    const cwd = mkdtempSync(join(tmpdir(), "session-role-config-"));
+    mkdirSync(join(cwd, ".claude"));
+    writeFileSync(join(cwd, ".claude", "harness.config.json"), JSON.stringify({ specRoot: "docs/specs" }));
+
+    expect(runHook({ env, cwd }).out.additionalContext).toContain("`docs/specs/`");
+    expect(runHook({ env }).out.additionalContext).toContain("`harness/`"); // 설정이 없으면 기본값
+  });
+
   it("첫 메시지를 만들지 않는다 — 원문은 spawn 이 직접 건넨다", () => {
     // 훅의 initialUserMessage 는 설치된 버전에서 아무 일도 일으키지 않았다.
     // 파이프라인 진입이 그 필드에 걸려 있으면 조용히 실패한다.

@@ -79,12 +79,14 @@ spec 의 한 기능에는 인수기준이 여럿이다. **기능 단위로 대�
 
 > 이 규칙은 **부탁이 아니다.** 턴이 끝날 때 `SubagentStop` 훅(`.claude/hooks/verify-checklist.mjs`)이 표를 훑어 **근거 열이 빈 `✅`·`△`·`❌ (구현 있음)` 행**을 찾는다. 하나라도 있으면 종료가 거부되고 어느 행인지 돌아온다. 인용이 *맞는지*는 훅이 판정할 수 없지만, **있는지**는 확실히 안다.
 
-## 산출물 — `harness/<task>/qa-checklist.md`
+## 산출물 — spec 옆의 `qa-checklist.md`
+
+**받은 spec 과 같은 디렉터리에 쓴다** — spec 이 `<specRoot>/<task>/spec.md` 면 `<specRoot>/<task>/qa-checklist.md` 다. `<specRoot>` 는 프로젝트마다 다르므로(`harness.config.json`) **기본값 `harness/` 라고 가정하지 말고 받은 경로에서 디렉터리를 떼어 써라.** 다른 자리에 쓰면 층 1 이 막는다.
 
 ```markdown
 ---
 generated: <YYYY-MM-DD>
-spec: harness/<task>/spec.md
+spec: <받은 spec 경로 그대로>
 ---
 
 # QA 커버리지 체크리스트 — <태스크명>
@@ -112,11 +114,11 @@ spec: harness/<task>/spec.md
 | 금지 | 이유 |
 |---|---|
 | **코드·테스트를 고친다** | 네가 고쳐서 덮으면 자기채점이 된다. 이 역할의 존재 이유가 사라진다. 코드는 **읽기만** |
-| **`harness/<task>/spec.md` 를 고친다** | 기획자 영역이다. spec 이 틀렸다고 판단되면 고치지 말고 **표에 적어라** |
+| **spec 을 고친다** | 기획자 영역이다. spec 이 틀렸다고 판단되면 고치지 말고 **표에 적어라** |
 | **테스트를 실행한다** | 수단이 없다(Bash 없음). 정적으로 읽어 판단하는 것이 이 역할의 방식이다. 실제 pass/fail 은 게이트가 답한다 |
 | **차단한다** | 갭이 있어도 아무것도 막지 않는다. **최종 확인자는 사람**이다 |
 
-`harness/<task>/qa-checklist.md` 외에는 아무것도 쓰지 않는다.
+spec 옆의 `qa-checklist.md` 외에는 아무것도 쓰지 않는다.
 
 ## 보고 — 너의 최종 텍스트가 반환값이다
 

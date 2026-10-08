@@ -54,6 +54,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
+import { loadConfig } from "./harness-config.mjs";
 import { emit, readHookInput } from "./hook-kit.mjs";
 
 /** `HARNESS_ROLE` 이 이 값이면 작업 세션. 미설정이면 실행자. 그 외는 오설정이다. */
@@ -72,21 +73,41 @@ const PLANNER_PREFACE =
   `아래는 \`${PLANNER_DIR}/\` 가 실은 **기획자 모드의 논의 지침**이다. ` +
   `**spec 커밋으로 오케스트레이터 모드에 들어가면 적용되지 않는다** — 그 뒤로는 묻지 않는다.`;
 
-const EXECUTOR = `너는 **실행자**다 — 맨몸 \`claude\` 로 열렸다(\`HARNESS_ROLE\` 미설정). 파이프라인 밖에 서 있다.
+/**
+ * 문서의 `<specRoot>` 자리표시자를 **실제 값으로 풀어 주는 한 줄.**
+ *
+ * 규약 문서(`harness.md` · `planner-mode.md` · 에이전트 정의)는 모든 설치본에 똑같이
+ * 복사되는 산문이라 값을 적을 수 없다 — 적으면 `specRoot` 를 바꾼 프로젝트에서 틀린 값이
+ * 되고, 세션은 그 문서를 믿고 엉뚱한 곳에 spec 을 쓰다가 층 1 에 막힌다. 그래서 문서는
+ * 자리표시자만 적고, **값은 설정을 읽는 이 훅이 세션마다 싣는다.**
+ *
+ * 서브에이전트에는 이 훅이 돌지 않는데, 그쪽은 값이 필요 없다 — 스폰 프롬프트가 spec
+ * 경로를 통째로 주고, 체크리스트는 그 옆에 쓰면 된다.
+ */
+function specRootLine(specRoot) {
+  return (
+    `- **spec 이 사는 곳은 \`${specRoot}/\` 다**(\`harness.config.json\` 의 \`specRoot\`). ` +
+    `규약 문서의 \`<specRoot>\` 는 전부 이 값으로 읽어라 — 문서에 값을 적지 않는 것은 프로젝트마다 달라서다.`
+  );
+}
+
+const executor = (specRoot) => `너는 **실행자**다 — 맨몸 \`claude\` 로 열렸다(\`HARNESS_ROLE\` 미설정). 파이프라인 밖에 서 있다.
 
 **라우팅은 "제품을 바꾸는가" 로 가른다:**
 
 - **제품(\`src/**\` · spec)을 바꾸는 일** → 넘긴다 — \`harness spawn "<사람의 원문>"\`(\`/task\` 스킬이 그것을 부른다). "로그인 어떻게 만들까" 처럼 아직 코드가 안 바뀌는 것도 **결국 제품을 남기므로** 넘긴다. 원문 그대로 싣는다 — 요약하면 spec 이 그 요약 수준에서 멈춘다. **사람에게 \`/task\` 를 치라고 요구하지 마라**: 그건 네 판정을 건너뛰는 빠른 길이지 넘기기 위한 조건이 아니다.
 - **하네스를 고치는 일**(\`.claude/\` · \`.githooks/\` · \`scripts/\` · 루트 설정 · 문서) → **네 본업이다. 논의든 편집이든 넘기지 마라** — 작업 세션도 \`developer\` 도 하네스 파일은 층 1 이 막아서, 넘기면 spec 까지 쓰고 막다른 길에 선다. 절차는 \`/harness-fix\`.
 - **아무것도 안 남기는 일**(질문 · 진단 · 리뷰) → 받는다.
-- **애매하면 확인한다** — 파일을 열어보거나 사람에게 한 문장 묻는다. **확인은 논의가 아니다**(*어느 영역인가*를 묻는 것이지 *어떻게 만들 것인가*가 아니다). 확인해도 모르면 **받아라**: 잘못 받으면 첫 편집에서 층 1 이 막지만(몇 초), 잘못 넘기면 논의·spec·커밋을 다 태운 뒤에 막힌다.`;
+- **애매하면 확인한다** — 파일을 열어보거나 사람에게 한 문장 묻는다. **확인은 논의가 아니다**(*어느 영역인가*를 묻는 것이지 *어떻게 만들 것인가*가 아니다). 확인해도 모르면 **받아라**: 잘못 받으면 첫 편집에서 층 1 이 막지만(몇 초), 잘못 넘기면 논의·spec·커밋을 다 태운 뒤에 막힌다.
+${specRootLine(specRoot)}`;
 
-const WORK = `너는 **작업 세션**이다(\`HARNESS_ROLE=${WORK_SESSION}\`). 이 세션은 **한 task** 를 끝까지 들고 간다.
+const work = (specRoot) => `너는 **작업 세션**이다(\`HARNESS_ROLE=${WORK_SESSION}\`). 이 세션은 **한 task** 를 끝까지 들고 간다.
 
 - **기획자 모드로 시작한다.** 사람과 논의하는 것이 본업이다. **\`.claude/planner-mode.md\` 를 읽어라 — 기획자 모드는 그 파일이 전부다.** 논의를 어디서 하는지, 격리에 언제 들어가는지, spec 형식·인수기준·task 경계가 거기 있다.
 - **spec 커밋이 모드 전환점**이다. 그 뒤로는 오케스트레이터 모드 — 묻지 않고 스폰 · 회수 · 검증 · QA · push 까지 간다. 멈추는 것은 닫힌 집합에 해당할 때뿐이다.
 - **하네스 파일(\`.claude/\` · \`.githooks/\` · \`scripts/\` · 루트 설정)은 이 자리에서 못 고친다** — 층 1 이 막는다. 이 task 가 하네스를 고치는 것이면 **논의를 시작하지 말고** 사람에게 알려라: 실행자 탭(맨몸 \`claude\`)에서 \`/harness-fix\` 로 해야 한다. **여기서는 spec 을 써도 구현할 자리가 없다.**
-- 세션은 끝나면 닫힌다. **spec 에 안 적힌 것은 없는 것이다.**`;
+- 세션은 끝나면 닫힌다. **spec 에 안 적힌 것은 없는 것이다.**
+${specRootLine(specRoot)}`;
 
 const input = readHookInput();
 
@@ -113,8 +134,9 @@ function baseDirOf(hookInput) {
 }
 
 function contextFor(value, baseDir) {
-  if (value === "") return EXECUTOR;
-  if (value === WORK_SESSION) return WORK + plannerDocs(baseDir);
+  const { specRoot } = loadConfig(baseDir);
+  if (value === "") return executor(specRoot);
+  if (value === WORK_SESSION) return work(specRoot) + plannerDocs(baseDir);
 
   // 조용히 실행자로 떨어뜨리지 않는다. 오설정을 기본값으로 흡수하면 역할이 틀린 채로
   // 일이 굴러가고, 그 사실을 아무도 모른다.
